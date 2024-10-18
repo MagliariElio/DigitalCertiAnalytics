@@ -1,3 +1,9 @@
-*.json
-*.txt
+
+# Output File of zgrab2
+certs_polito_*.json
+
+# Input File for analysis
+top-10m-websites.txt
+
+# DB files
 *.db

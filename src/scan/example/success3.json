@@ -1,0 +1,359 @@
+{
+    "domain": "tiktok.com",
+    "data": {
+        "tls": {
+            "status": "success",
+            "protocol": "tls",
+            "result": {
+                "handshake_log": {
+                    "server_hello": {
+                        "version": {
+                            "name": "TLSv1.2",
+                            "value": 771
+                        },
+                        "random": "rghWgiMT9Rig3rqX1nuBd1VVgis1qFHGRE9XTkdSRAE=",
+                        "session_id": "h5Z7mRoJ8/zVB7Wt6ivvyQr0LmdgrZ5qqIS8uVP8qvg=",
+                        "cipher_suite": {
+                            "hex": "0xC02F",
+                            "name": "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
+                            "value": 49199
+                        },
+                        "compression_method": 0,
+                        "ocsp_stapling": true,
+                        "ticket": false,
+                        "secure_renegotiation": true,
+                        "heartbeat": false,
+                        "extended_master_secret": false
+                    },
+                    "server_certificates": {
+                        "certificate": {
+                            "raw": "MIIGJDCCBQygAwIBAgIQCcqQsQG/SEZ7es3Bsd4LXDANBgkqhkiG9w0BAQsFADBgMQswCQYDVQQGEwJVUzEVMBMGA1UEChMMRGlnaUNlcnQgSW5jMRkwFwYDVQQLExB3d3cuZGlnaWNlcnQuY29tMR8wHQYDVQQDExZSYXBpZFNTTCBUTFMgUlNBIENBIEcxMB4XDTI0MDgyNzAwMDAwMFoXDTI1MDgyNjIzNTk1OVowFzEVMBMGA1UEAwwMKi50aWt0b2suY29tMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAt9Pc8JCbtYUNl/RvlXj1cVNxPm9bOPG9GhpDlbb/TAcbzhZmKCNhZjSp0GHyjcK2IzEcb7eSuBAVBIYn0jJU2Y068IjTl81/A0ha7FQ1Fa7P4aex8q7av++k91mPoclNb1yzCYwNjxZx1Y4ptkQSwRgcIfxUmjGprTZY16/O179Lwc94uZI3rzu3iamvdwhLm1UOlvHfi/Q//o4/n8Iy8eT1GdPCBHOqMGqudNJGvqa335fSRHesIeGv0it5OsGuzhang/4YCJasd9yF0sHRzEfyIHjSe3Xe3mGHe2ULPwZ6FTR+8lDZOMgE64k9Lt1NEdxWR+gyDNDAZLSj8zTTywIDAQABo4IDITCCAx0wHwYDVR0jBBgwFoAUDNtsgkkPSmcKuBTuesRIUojrVjgwHQYDVR0OBBYEFFahtaQg6OZS8byOcRzh8qJUGSsEMCMGA1UdEQQcMBqCDCoudGlrdG9rLmNvbYIKdGlrdG9rLmNvbTA+BgNVHSAENzA1MDMGBmeBDAECATApMCcGCCsGAQUFBwIBFhtodHRwOi8vd3d3LmRpZ2ljZXJ0LmNvbS9DUFMwDgYDVR0PAQH/BAQDAgWgMB0GA1UdJQQWMBQGCCsGAQUFBwMBBggrBgEFBQcDAjA/BgNVHR8EODA2MDSgMqAwhi5odHRwOi8vY2RwLnJhcGlkc3NsLmNvbS9SYXBpZFNTTFRMU1JTQUNBRzEuY3JsMHYGCCsGAQUFBwEBBGowaDAmBggrBgEFBQcwAYYaaHR0cDovL3N0YXR1cy5yYXBpZHNzbC5jb20wPgYIKwYBBQUHMAKGMmh0dHA6Ly9jYWNlcnRzLnJhcGlkc3NsLmNvbS9SYXBpZFNTTFRMU1JTQUNBRzEuY3J0MAwGA1UdEwEB/wQCMAAwggF+BgorBgEEAdZ5AgQCBIIBbgSCAWoBaAB2ABLxTjS9U3JMhAYZw48/ehP457Vih4icbTAFhOvlhiY6AAABkZTe/s4AAAQDAEcwRQIge8zwKxewV8zq5uMCnU9PXDuI/tM/vN9hUprKmHcL7wYCIQD+2jsSu08dNxKyw6Y6WtRaMpnQnxE8FJ2LenedoDiV9wB2AH1ZHhLheCp7HGFnfF79+NCHXBSgTpWeuQMv2Q6MLnm4AAABkZTe/wQAAAQDAEcwRQIgeZYPsMcqDhgKeuGj1NEFOJAZcNORw6H9eUdi/i/UYVMCIQD8rqIqbNx8On6EgHLefP7dG6n84RMW2NMdZUDm06HGjwB2AObSMWNAd4zBEEEG13G5zsHSQPaWhIb7uocyHf0eN45QAAABkZTe/yAAAAQDAEcwRQIhAIBJ64dSQy27AdgwzasfXcU+in2BnqJKPCbLziJ76brAAiADE3ruRz60zSA8xafCVEB1ggjCq2iiJquk5MhTl78rPTANBgkqhkiG9w0BAQsFAAOCAQEAb0YBGG8LbaQ4sXf4jJoppmRWJy0B3ul24VYK658BaMPbgCrE60vhkp4I3FSfPhXdgQvzRDgbBEqVbVAPMwaZilirmY2sFZq/a0sq3jxUAWfbAg9YzucK5UV2GKUlJEWnYCU7ix7m68jJifD5Hc20RvsQYfNoHtxA1T1tMSjL8VRWtEmx4GfDH+JHm2i0bnX9UAF2tKNs6vB9CNyfUrltkNdgXeYiIq8E8Jz7LFZ54Uw0V0hdF3bQbDasbktG5xoz6vXy37tFJYtaJ/jXg2Hu4KqnRlsuc05brdelPjkhHs9HwjUcrdKP+LXgklAQluZBbQWSHr6xoed1aF7r1Lbbcw==",
+                            "parsed": {
+                                "version": 3,
+                                "serial_number": "13014830618396700054350467523327953756",
+                                "signature_algorithm": {
+                                    "name": "SHA256-RSA",
+                                    "oid": "1.2.840.113549.1.1.11"
+                                },
+                                "issuer": {
+                                    "common_name": [
+                                        "RapidSSL TLS RSA CA G1"
+                                    ],
+                                    "country": [
+                                        "US"
+                                    ],
+                                    "organization": [
+                                        "DigiCert Inc"
+                                    ],
+                                    "organizational_unit": [
+                                        "www.digicert.com"
+                                    ]
+                                },
+                                "issuer_dn": "C=US, O=DigiCert Inc, OU=www.digicert.com, CN=RapidSSL TLS RSA CA G1",
+                                "validity": {
+                                    "start": "2024-08-27T00:00:00Z",
+                                    "end": "2025-08-26T23:59:59Z",
+                                    "length": 31535999
+                                },
+                                "subject": {
+                                    "common_name": [
+                                        "*.tiktok.com"
+                                    ]
+                                },
+                                "subject_dn": "CN=*.tiktok.com",
+                                "subject_key_info": {
+                                    "key_algorithm": {
+                                        "name": "RSA"
+                                    },
+                                    "rsa_public_key": {
+                                        "exponent": 65537,
+                                        "modulus": "t9Pc8JCbtYUNl/RvlXj1cVNxPm9bOPG9GhpDlbb/TAcbzhZmKCNhZjSp0GHyjcK2IzEcb7eSuBAVBIYn0jJU2Y068IjTl81/A0ha7FQ1Fa7P4aex8q7av++k91mPoclNb1yzCYwNjxZx1Y4ptkQSwRgcIfxUmjGprTZY16/O179Lwc94uZI3rzu3iamvdwhLm1UOlvHfi/Q//o4/n8Iy8eT1GdPCBHOqMGqudNJGvqa335fSRHesIeGv0it5OsGuzhang/4YCJasd9yF0sHRzEfyIHjSe3Xe3mGHe2ULPwZ6FTR+8lDZOMgE64k9Lt1NEdxWR+gyDNDAZLSj8zTTyw==",
+                                        "length": 2048
+                                    },
+                                    "fingerprint_sha256": "d883b34d3a2422404d2fd1d3f433fe9eb2abbc4c318be249e39f4a7b91383039"
+                                },
+                                "extensions": {
+                                    "key_usage": {
+                                        "digital_signature": true,
+                                        "key_encipherment": true,
+                                        "value": 5
+                                    },
+                                    "basic_constraints": {
+                                        "is_ca": false
+                                    },
+                                    "subject_alt_name": {
+                                        "dns_names": [
+                                            "*.tiktok.com",
+                                            "tiktok.com"
+                                        ]
+                                    },
+                                    "crl_distribution_points": [
+                                        "http://cdp.rapidssl.com/RapidSSLTLSRSACAG1.crl"
+                                    ],
+                                    "authority_key_id": "0cdb6c82490f4a670ab814ee7ac4485288eb5638",
+                                    "subject_key_id": "56a1b5a420e8e652f1bc8e711ce1f2a254192b04",
+                                    "extended_key_usage": {
+                                        "server_auth": true,
+                                        "client_auth": true
+                                    },
+                                    "certificate_policies": [
+                                        {
+                                            "id": "2.23.140.1.2.1",
+                                            "cps": [
+                                                "http://www.digicert.com/CPS"
+                                            ]
+                                        }
+                                    ],
+                                    "authority_info_access": {
+                                        "ocsp_urls": [
+                                            "http://status.rapidssl.com"
+                                        ],
+                                        "issuer_urls": [
+                                            "http://cacerts.rapidssl.com/RapidSSLTLSRSACAG1.crt"
+                                        ]
+                                    },
+                                    "signed_certificate_timestamps": [
+                                        {
+                                            "version": 0,
+                                            "log_id": "EvFONL1TckyEBhnDjz96E/jntWKHiJxtMAWE6+WGJjo=",
+                                            "timestamp": 1724779527,
+                                            "signature": "BAMARzBFAiB7zPArF7BXzOrm4wKdT09cO4j+0z+832FSmsqYdwvvBgIhAP7aOxK7Tx03ErLDpjpa1FoymdCfETwUnYt6d52gOJX3"
+                                        },
+                                        {
+                                            "version": 0,
+                                            "log_id": "fVkeEuF4KnscYWd8Xv340IdcFKBOlZ65Ay/ZDowuebg=",
+                                            "timestamp": 1724779527,
+                                            "signature": "BAMARzBFAiB5lg+wxyoOGAp64aPU0QU4kBlw05HDof15R2L+L9RhUwIhAPyuoips3Hw6foSAct58/t0bqfzhExbY0x1lQObTocaP"
+                                        },
+                                        {
+                                            "version": 0,
+                                            "log_id": "5tIxY0B3jMEQQQbXcbnOwdJA9paEhvu6hzId/R43jlA=",
+                                            "timestamp": 1724779527,
+                                            "signature": "BAMARzBFAiEAgEnrh1JDLbsB2DDNqx9dxT6KfYGeoko8JsvOInvpusACIAMTeu5HPrTNIDzFp8JUQHWCCMKraKImq6TkyFOXvys9"
+                                        }
+                                    ]
+                                },
+                                "signature": {
+                                    "signature_algorithm": {
+                                        "name": "SHA256-RSA",
+                                        "oid": "1.2.840.113549.1.1.11"
+                                    },
+                                    "value": "b0YBGG8LbaQ4sXf4jJoppmRWJy0B3ul24VYK658BaMPbgCrE60vhkp4I3FSfPhXdgQvzRDgbBEqVbVAPMwaZilirmY2sFZq/a0sq3jxUAWfbAg9YzucK5UV2GKUlJEWnYCU7ix7m68jJifD5Hc20RvsQYfNoHtxA1T1tMSjL8VRWtEmx4GfDH+JHm2i0bnX9UAF2tKNs6vB9CNyfUrltkNdgXeYiIq8E8Jz7LFZ54Uw0V0hdF3bQbDasbktG5xoz6vXy37tFJYtaJ/jXg2Hu4KqnRlsuc05brdelPjkhHs9HwjUcrdKP+LXgklAQluZBbQWSHr6xoed1aF7r1Lbbcw==",
+                                    "valid": false,
+                                    "self_signed": false
+                                },
+                                "fingerprint_md5": "080f05a63ca3a0808c492ee5b665caab",
+                                "fingerprint_sha1": "d56942c0d2f3ddc31fa867e54bd7e187b0d39cb7",
+                                "fingerprint_sha256": "459820af71f613ad662b1337eb5ae2a8ee85741bdfb18a7352dc65c12c9efb61",
+                                "tbs_noct_fingerprint": "f5d73827f9e53d48c8716bb44531e007a285e179ca00c8803b510c169bcdaa5d",
+                                "spki_subject_fingerprint": "400ce4c9d98e8763b6926d34b2568e577decc2bd793f7e38f7d4f2f79ad419e7",
+                                "tbs_fingerprint": "afb8df6c26c7dc64d1dd192251d47da9529a11a096c56e929fcba7f1c8183a73",
+                                "validation_level": "DV",
+                                "names": [
+                                    "*.tiktok.com",
+                                    "tiktok.com"
+                                ],
+                                "redacted": false
+                            }
+                        },
+                        "chain": [
+                            {
+                                "raw": "MIIEszCCA5ugAwIBAgIQCyWUIs7ZgSoVoE6ZUooO+jANBgkqhkiG9w0BAQsFADBhMQswCQYDVQQGEwJVUzEVMBMGA1UEChMMRGlnaUNlcnQgSW5jMRkwFwYDVQQLExB3d3cuZGlnaWNlcnQuY29tMSAwHgYDVQQDExdEaWdpQ2VydCBHbG9iYWwgUm9vdCBHMjAeFw0xNzExMDIxMjI0MzNaFw0yNzExMDIxMjI0MzNaMGAxCzAJBgNVBAYTAlVTMRUwEwYDVQQKEwxEaWdpQ2VydCBJbmMxGTAXBgNVBAsTEHd3dy5kaWdpY2VydC5jb20xHzAdBgNVBAMTFlJhcGlkU1NMIFRMUyBSU0EgQ0EgRzEwggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQC/uVklRBI1FuJdUEkFCuDL/I3aJQiaZ6aibRHjap/ap9zy1aYNrphe7YcaNwMoPsZvXDR+hNJOo9gbgOYVTPq8gXc84I75YKOHiVA4NrJJQZ6p2sJQyqx60HkEIjzIN+1LQLfXTlpuznToOa1hyTD0yyitFyOYwURM+/CI8FNFMpBhw22hpeAQkOOLmsqT5QZJYeik7qlvn8gfD+XdDnk3kkuuu0eG+vuyrSGr5uX5LRhFWlv1zFQDch/EKmd163m6z/ycx/qLa9zyvILc7cQpb+k7TLra9WE17YPSn9ANjG+ECo9PDW3N9lwhKQCNvw1gGoguyCQu7HE7BnW8eSSFAgMBAAGjggFmMIIBYjAdBgNVHQ4EFgQUDNtsgkkPSmcKuBTuesRIUojrVjgwHwYDVR0jBBgwFoAUTiJUIBiV5uNu5g/6+rkS7QYXjzkwDgYDVR0PAQH/BAQDAgGGMB0GA1UdJQQWMBQGCCsGAQUFBwMBBggrBgEFBQcDAjASBgNVHRMBAf8ECDAGAQH/AgEAMDQGCCsGAQUFBwEBBCgwJjAkBggrBgEFBQcwAYYYaHR0cDovL29jc3AuZGlnaWNlcnQuY29tMEIGA1UdHwQ7MDkwN6A1oDOGMWh0dHA6Ly9jcmwzLmRpZ2ljZXJ0LmNvbS9EaWdpQ2VydEdsb2JhbFJvb3RHMi5jcmwwYwYDVR0gBFwwWjA3BglghkgBhv1sAQEwKjAoBggrBgEFBQcCARYcaHR0cHM6Ly93d3cuZGlnaWNlcnQuY29tL0NQUzALBglghkgBhv1sAQIwCAYGZ4EMAQIBMAgGBmeBDAECAjANBgkqhkiG9w0BAQsFAAOCAQEAGUSlOb4K3WtmSlbmE50UYBHXM0SKXPqHMzk6XQUpCheF/4qU8aOhajsyRQFDV1ih/uPIg7YHRtFiCTq4G+zb43X1T77nJgSOI9pq/TqCwtukZ7u9VLL3JAq3Wdy2moKLvvC8tVmRzkAe0xQCkRKIjbBG80MSyDX/R4uYgj6ZiNT/Zg6GI6RofgqgpDdssLc0XIRQEotxIZcKzP3pGJ9FCbMHmMLLyuBd+uCWvVcF2ogYAawufChS/PT61D9rqzPRS5I2uqa3tmIT44JhJgWhBnFMb7AGQkvNq9KNS9dd3GWc17H/dXa1enoxzWjE0hBdFjxPhUb0W3wi8o34/m8Fxw==",
+                                "parsed": {
+                                    "version": 3,
+                                    "serial_number": "14816627491795588044059060260691382010",
+                                    "signature_algorithm": {
+                                        "name": "SHA256-RSA",
+                                        "oid": "1.2.840.113549.1.1.11"
+                                    },
+                                    "issuer": {
+                                        "common_name": [
+                                            "DigiCert Global Root G2"
+                                        ],
+                                        "country": [
+                                            "US"
+                                        ],
+                                        "organization": [
+                                            "DigiCert Inc"
+                                        ],
+                                        "organizational_unit": [
+                                            "www.digicert.com"
+                                        ]
+                                    },
+                                    "issuer_dn": "C=US, O=DigiCert Inc, OU=www.digicert.com, CN=DigiCert Global Root G2",
+                                    "validity": {
+                                        "start": "2017-11-02T12:24:33Z",
+                                        "end": "2027-11-02T12:24:33Z",
+                                        "length": 315532800
+                                    },
+                                    "subject": {
+                                        "common_name": [
+                                            "RapidSSL TLS RSA CA G1"
+                                        ],
+                                        "country": [
+                                            "US"
+                                        ],
+                                        "organization": [
+                                            "DigiCert Inc"
+                                        ],
+                                        "organizational_unit": [
+                                            "www.digicert.com"
+                                        ]
+                                    },
+                                    "subject_dn": "C=US, O=DigiCert Inc, OU=www.digicert.com, CN=RapidSSL TLS RSA CA G1",
+                                    "subject_key_info": {
+                                        "key_algorithm": {
+                                            "name": "RSA"
+                                        },
+                                        "rsa_public_key": {
+                                            "exponent": 65537,
+                                            "modulus": "v7lZJUQSNRbiXVBJBQrgy/yN2iUImmemom0R42qf2qfc8tWmDa6YXu2HGjcDKD7Gb1w0foTSTqPYG4DmFUz6vIF3POCO+WCjh4lQODaySUGeqdrCUMqsetB5BCI8yDftS0C3105abs506DmtYckw9MsorRcjmMFETPvwiPBTRTKQYcNtoaXgEJDji5rKk+UGSWHopO6pb5/IHw/l3Q55N5JLrrtHhvr7sq0hq+bl+S0YRVpb9cxUA3IfxCpndet5us/8nMf6i2vc8ryC3O3EKW/pO0y62vVhNe2D0p/QDYxvhAqPTw1tzfZcISkAjb8NYBqILsgkLuxxOwZ1vHkkhQ==",
+                                            "length": 2048
+                                        },
+                                        "fingerprint_sha256": "137b58730a3d0a2a804e62ada4c2d6e55fa9cc8abe6680e6a574a22655c6993a"
+                                    },
+                                    "extensions": {
+                                        "key_usage": {
+                                            "digital_signature": true,
+                                            "certificate_sign": true,
+                                            "crl_sign": true,
+                                            "value": 97
+                                        },
+                                        "basic_constraints": {
+                                            "is_ca": true,
+                                            "max_path_len": 0
+                                        },
+                                        "crl_distribution_points": [
+                                            "http://crl3.digicert.com/DigiCertGlobalRootG2.crl"
+                                        ],
+                                        "authority_key_id": "4e2254201895e6e36ee60ffafab912ed06178f39",
+                                        "subject_key_id": "0cdb6c82490f4a670ab814ee7ac4485288eb5638",
+                                        "extended_key_usage": {
+                                            "server_auth": true,
+                                            "client_auth": true
+                                        },
+                                        "certificate_policies": [
+                                            {
+                                                "id": "2.16.840.1.114412.1.1",
+                                                "cps": [
+                                                    "https://www.digicert.com/CPS"
+                                                ]
+                                            },
+                                            {
+                                                "id": "2.16.840.1.114412.1.2"
+                                            },
+                                            {
+                                                "id": "2.23.140.1.2.1"
+                                            },
+                                            {
+                                                "id": "2.23.140.1.2.2"
+                                            }
+                                        ],
+                                        "authority_info_access": {
+                                            "ocsp_urls": [
+                                                "http://ocsp.digicert.com"
+                                            ]
+                                        }
+                                    },
+                                    "signature": {
+                                        "signature_algorithm": {
+                                            "name": "SHA256-RSA",
+                                            "oid": "1.2.840.113549.1.1.11"
+                                        },
+                                        "value": "GUSlOb4K3WtmSlbmE50UYBHXM0SKXPqHMzk6XQUpCheF/4qU8aOhajsyRQFDV1ih/uPIg7YHRtFiCTq4G+zb43X1T77nJgSOI9pq/TqCwtukZ7u9VLL3JAq3Wdy2moKLvvC8tVmRzkAe0xQCkRKIjbBG80MSyDX/R4uYgj6ZiNT/Zg6GI6RofgqgpDdssLc0XIRQEotxIZcKzP3pGJ9FCbMHmMLLyuBd+uCWvVcF2ogYAawufChS/PT61D9rqzPRS5I2uqa3tmIT44JhJgWhBnFMb7AGQkvNq9KNS9dd3GWc17H/dXa1enoxzWjE0hBdFjxPhUb0W3wi8o34/m8Fxw==",
+                                        "valid": false,
+                                        "self_signed": false
+                                    },
+                                    "fingerprint_md5": "98eb0b62c3fe53eac8caa8fdb58020ee",
+                                    "fingerprint_sha1": "cbfe9eb43b3b37fe0dfbc4c2eb2d4e07d08bd8e8",
+                                    "fingerprint_sha256": "4422e963ee53cd58cc9f85cd40bf5ffec0095fdf1a154535661c1c06bcadc69b",
+                                    "tbs_noct_fingerprint": "b4e0a8c98b0aae43b7383037accd11a1c964971f6b74fcbc370cd030fb328ddd",
+                                    "spki_subject_fingerprint": "e306d76bf8ba45097907f1cf94397b3dc23345f00601c75528428496621589dd",
+                                    "tbs_fingerprint": "b4e0a8c98b0aae43b7383037accd11a1c964971f6b74fcbc370cd030fb328ddd",
+                                    "validation_level": "OV",
+                                    "redacted": false
+                                }
+                            }
+                        ],
+                        "validation": {
+                            "browser_trusted": false,
+                            "browser_error": "x509: failed to load system roots and no roots provided",
+                            "matches_domain": true
+                        }
+                    },
+                    "server_key_exchange": {
+                        "ecdh_params": {
+                            "curve_id": {
+                                "name": "secp256r1",
+                                "id": 23
+                            },
+                            "server_public": {
+                                "x": {
+                                    "value": "4pTbN+vQyNav7WLaPTU/lwJe2Om+ZxJIeHSIWFoWqMU=",
+                                    "length": 256
+                                },
+                                "y": {
+                                    "value": "Fojo6hGsSxQmx/dh5kEz40PHCpOAKJ+Rt41YIRyeBLA=",
+                                    "length": 256
+                                }
+                            }
+                        },
+                        "digest": "CmCB6gygYZxoQsL+niTM2KRCQ26txuVhqoZa9+5Xemo=",
+                        "signature": {
+                            "raw": "cYKx9pvtSFZ7bvEoCZwpA6qvs1U8okETo94rMFHPUa9T47x1mp9ePaPucXQ12jreqnLPZmp+bHvj/Pja/+2i3XmwxiXiYYjplTUcitCK5c84SMXSibHBRmY2HQQhriueJ4oZu2JLBBhamrNVKUKL/CaSOknDsPRKjmFW6oMlmPxLnicNRIEV+U02Z4lIJJX5zhJYupDGRw6VMagKpSiuvBZxHpWglqbhWXV+VVmN7TTOSvm1BbGHWtDNAUBl38gmJepzzKkkve1dBcsm2mCtb2moJUZq3BnKk2X6izvXMO48rnwKwcvSF92rx7swrhuW4Qh3/mulrF1Wr/pL+VOtWg==",
+                            "type": "rsa",
+                            "valid": true,
+                            "signature_and_hash_type": {
+                                "signature_algorithm": "rsa",
+                                "hash_algorithm": "sha256"
+                            },
+                            "tls_version": {
+                                "name": "TLSv1.2",
+                                "value": 771
+                            }
+                        }
+                    },
+                    "client_key_exchange": {
+                        "ecdh_params": {
+                            "curve_id": {
+                                "name": "secp256r1",
+                                "id": 23
+                            },
+                            "client_public": {
+                                "x": {
+                                    "value": "5299vggtO41t42/eM9IKgMfei7RtRfNMIqUnG4WFZw4=",
+                                    "length": 256
+                                },
+                                "y": {
+                                    "value": "ffcY+BubpzAGB+aFqFu4lKELNZ1eVeLOnkW9JEK4S6c=",
+                                    "length": 256
+                                }
+                            },
+                            "client_private": {
+                                "value": "wyAIIkyd31sa/x5eZ2H0LL8gOL/8Vl6nenYWhaVY2iU=",
+                                "length": 32
+                            }
+                        }
+                    },
+                    "client_finished": {
+                        "verify_data": "lKQhwAl/1itgRVG9"
+                    },
+                    "server_finished": {
+                        "verify_data": "waOygrc7D1obM1UI"
+                    },
+                    "key_material": {
+                        "master_secret": {
+                            "value": "RcXh/yIIggOfiiFtKbYnJRXmVdaDzDeY4RJdlTGuGwf466UnJa3Tjv+MYEW8FdwK",
+                            "length": 48
+                        },
+                        "pre_master_secret": {
+                            "value": "nb1lhorAo5AZYBsbGylOqTejNNinR93S33sgaogvUpo=",
+                            "length": 32
+                        }
+                    }
+                }
+            },
+            "timestamp": "2024-10-06T00:44:30+02:00"
+        }
+    }
+}

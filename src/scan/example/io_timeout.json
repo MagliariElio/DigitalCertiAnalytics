@@ -1,0 +1,11 @@
+{
+    "domain": "manonwire.com",
+    "data": {
+        "tls": {
+            "status": "io-timeout",
+            "protocol": "tls",
+            "timestamp": "2024-10-06T00:44:31+02:00",
+            "error": "read tcp 192.168.1.125:41330->40.78.63.252:443: read: connection reset by peer"
+        }
+    }
+}

@@ -1,0 +1,337 @@
+{
+    "domain": "cdn.shopify.com",
+    "data": {
+        "tls": {
+            "status": "success",
+            "protocol": "tls",
+            "result": {
+                "handshake_log": {
+                    "server_hello": {
+                        "version": {
+                            "name": "TLSv1.2",
+                            "value": 771
+                        },
+                        "random": "ZwHBTzshO740kAYIyKBja7cGOLwjOAG2RE9XTkdSRAE=",
+                        "session_id": "6sjm7KY67jocEgMMvLC7wHs3oupf/eFEkTHHYUzi9/E=",
+                        "cipher_suite": {
+                            "hex": "0xC02B",
+                            "name": "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256",
+                            "value": 49195
+                        },
+                        "compression_method": 0,
+                        "ocsp_stapling": true,
+                        "ticket": false,
+                        "secure_renegotiation": true,
+                        "heartbeat": false,
+                        "extended_master_secret": false
+                    },
+                    "server_certificates": {
+                        "certificate": {
+                            "raw": "MIIDgDCCAwagAwIBAgISBETneG4a5HgxFBqW6HjG8T/SMAoGCCqGSM49BAMDMDIxCzAJBgNVBAYTAlVTMRYwFAYDVQQKEw1MZXQncyBFbmNyeXB0MQswCQYDVQQDEwJFNjAeFw0yNDA4MjkxMzI2MTFaFw0yNDExMjcxMzI2MTBaMBoxGDAWBgNVBAMTD2Nkbi5zaG9waWZ5LmNvbTBZMBMGByqGSM49AgEGCCqGSM49AwEHA0IABCzIi4giLdB8DmyGDFXK518wNz7PzdYg4u4H3pheMVq1wHG3GPcdWCOjjZJSULYkgGVFtwRVsECzTxEPQ/xvIKmjggISMIICDjAOBgNVHQ8BAf8EBAMCB4AwHQYDVR0lBBYwFAYIKwYBBQUHAwEGCCsGAQUFBwMCMAwGA1UdEwEB/wQCMAAwHQYDVR0OBBYEFLgakNdXAva1XK58v/Vnk3qn8DfrMB8GA1UdIwQYMBaAFJMnRpgDqVFojpjWxEJI2yO/WJTSMFUGCCsGAQUFBwEBBEkwRzAhBggrBgEFBQcwAYYVaHR0cDovL2U2Lm8ubGVuY3Iub3JnMCIGCCsGAQUFBzAChhZodHRwOi8vZTYuaS5sZW5jci5vcmcvMBoGA1UdEQQTMBGCD2Nkbi5zaG9waWZ5LmNvbTATBgNVHSAEDDAKMAgGBmeBDAECATCCAQUGCisGAQQB1nkCBAIEgfYEgfMA8QB3AEiw42vapkc0D+VqAvqdMOscUgHLVt0sgdm7v6s52IRzAAABkZ6GNxgAAAQDAEgwRgIhAOS9BKdZHvVadoMWwZpY1Di4O5H882AeGszhVQGuiUBlAiEA7iEyAqlu/YmNgujBHX4ux90cMQjWteMrYBYV7vQN/6MAdgB2/4g/Crb7lVHCYcz1h7o0tKTNuyncaEIKn+ZnTFo6dAAAAZGehjdAAAAEAwBHMEUCICmja3naH238HRFGx/t29sa/EVPCIa28wnLK5qhopnDGAiEAq8yxNWMi1hfDdWqaxxFA6XjF4juTSQY1y5YBBQmb7NEwCgYIKoZIzj0EAwMDaAAwZQIwH/e8E0BIHLCk98N3t6MCegfECAHzwASy0ypZeNQZgFGnWFZvPjnouSKoxoTKkZjsAjEA/sjDezKkH1oYQM4fWnyLJdaDabogvahV1arEGIRFWKfVIUny7Xs3F60NXDTavLh+",
+                            "parsed": {
+                                "version": 3,
+                                "serial_number": "371896021653509838360120322765158882557906",
+                                "signature_algorithm": {
+                                    "name": "ECDSA-SHA384",
+                                    "oid": "1.2.840.10045.4.3.3"
+                                },
+                                "issuer": {
+                                    "common_name": [
+                                        "E6"
+                                    ],
+                                    "country": [
+                                        "US"
+                                    ],
+                                    "organization": [
+                                        "Let's Encrypt"
+                                    ]
+                                },
+                                "issuer_dn": "C=US, O=Let's Encrypt, CN=E6",
+                                "validity": {
+                                    "start": "2024-08-29T13:26:11Z",
+                                    "end": "2024-11-27T13:26:10Z",
+                                    "length": 7775999
+                                },
+                                "subject": {
+                                    "common_name": [
+                                        "cdn.shopify.com"
+                                    ]
+                                },
+                                "subject_dn": "CN=cdn.shopify.com",
+                                "subject_key_info": {
+                                    "key_algorithm": {
+                                        "name": "ECDSA"
+                                    },
+                                    "ecdsa_public_key": {
+                                        "b": "WsY12Ko6k+ez671VdpiGvGUdBrDMU7D2O848PifSYEs=",
+                                        "curve": "P-256",
+                                        "gx": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY=",
+                                        "gy": "T+NC4v4af5uO5+tKfA+eFivOM1drMV7Oy7ZAaDe/UfU=",
+                                        "length": 256,
+                                        "n": "/////wAAAAD//////////7zm+q2nF56E87nKwvxjJVE=",
+                                        "p": "/////wAAAAEAAAAAAAAAAAAAAAD///////////////8=",
+                                        "pub": "BCzIi4giLdB8DmyGDFXK518wNz7PzdYg4u4H3pheMVq1wHG3GPcdWCOjjZJSULYkgGVFtwRVsECzTxEPQ/xvIKk=",
+                                        "x": "LMiLiCIt0HwObIYMVcrnXzA3Ps/N1iDi7gfemF4xWrU=",
+                                        "y": "wHG3GPcdWCOjjZJSULYkgGVFtwRVsECzTxEPQ/xvIKk="
+                                    },
+                                    "fingerprint_sha256": "e7121593e91a788520be5b71a50cf3e4f25e20695c9e1ff9c802bf40e45945d1"
+                                },
+                                "extensions": {
+                                    "key_usage": {
+                                        "digital_signature": true,
+                                        "value": 1
+                                    },
+                                    "basic_constraints": {
+                                        "is_ca": false
+                                    },
+                                    "subject_alt_name": {
+                                        "dns_names": [
+                                            "cdn.shopify.com"
+                                        ]
+                                    },
+                                    "authority_key_id": "9327469803a951688e98d6c44248db23bf5894d2",
+                                    "subject_key_id": "b81a90d75702f6b55cae7cbff567937aa7f037eb",
+                                    "extended_key_usage": {
+                                        "server_auth": true,
+                                        "client_auth": true
+                                    },
+                                    "certificate_policies": [
+                                        {
+                                            "id": "2.23.140.1.2.1"
+                                        }
+                                    ],
+                                    "authority_info_access": {
+                                        "ocsp_urls": [
+                                            "http://e6.o.lencr.org"
+                                        ],
+                                        "issuer_urls": [
+                                            "http://e6.i.lencr.org/"
+                                        ]
+                                    },
+                                    "signed_certificate_timestamps": [
+                                        {
+                                            "version": 0,
+                                            "log_id": "SLDja9qmRzQP5WoC+p0w6xxSActW3SyB2bu/qznYhHM=",
+                                            "timestamp": 1724941481,
+                                            "signature": "BAMASDBGAiEA5L0Ep1ke9Vp2gxbBmljUOLg7kfzzYB4azOFVAa6JQGUCIQDuITICqW79iY2C6MEdfi7H3RwxCNa14ytgFhXu9A3/ow=="
+                                        },
+                                        {
+                                            "version": 0,
+                                            "log_id": "dv+IPwq2+5VRwmHM9Ye6NLSkzbsp3GhCCp/mZ0xaOnQ=",
+                                            "timestamp": 1724941481,
+                                            "signature": "BAMARzBFAiApo2t52h9t/B0RRsf7dvbGvxFTwiGtvMJyyuaoaKZwxgIhAKvMsTVjItYXw3VqmscRQOl4xeI7k0kGNcuWAQUJm+zR"
+                                        }
+                                    ]
+                                },
+                                "signature": {
+                                    "signature_algorithm": {
+                                        "name": "ECDSA-SHA384",
+                                        "oid": "1.2.840.10045.4.3.3"
+                                    },
+                                    "value": "MGUCMB/3vBNASBywpPfDd7ejAnoHxAgB88AEstMqWXjUGYBRp1hWbz456LkiqMaEypGY7AIxAP7Iw3sypB9aGEDOH1p8iyXWg2m6IL2oVdWqxBiERVin1SFJ8u17NxetDVw02ry4fg==",
+                                    "valid": false,
+                                    "self_signed": false
+                                },
+                                "fingerprint_md5": "15ff53b45ef1d4db5fef2b04940055d1",
+                                "fingerprint_sha1": "a892385a6b7dcd6b232970a59ea3b06eb5bef79f",
+                                "fingerprint_sha256": "61dc3fcd92ebf32613e1b71455696f3261c634efa26f119a8fd0e615e6a203a1",
+                                "tbs_noct_fingerprint": "fe349069d2707b23363b6fe36dde74c767d6923ea43ce3d14cbc702272e49645",
+                                "spki_subject_fingerprint": "962ff156d9fb97d320794dd0e30bbe6fdd36d563f408e0263aeb9103ef1c4f60",
+                                "tbs_fingerprint": "1d27fa162345b2cb4ec5d175d23a5f73d3233e10d7b4f51979877f15207e94b8",
+                                "validation_level": "DV",
+                                "names": [
+                                    "cdn.shopify.com"
+                                ],
+                                "redacted": false
+                            }
+                        },
+                        "chain": [
+                            {
+                                "raw": "MIIEVzCCAj+gAwIBAgIRALBXPpFzlydw27SHyzpFKzgwDQYJKoZIhvcNAQELBQAwTzELMAkGA1UEBhMCVVMxKTAnBgNVBAoTIEludGVybmV0IFNlY3VyaXR5IFJlc2VhcmNoIEdyb3VwMRUwEwYDVQQDEwxJU1JHIFJvb3QgWDEwHhcNMjQwMzEzMDAwMDAwWhcNMjcwMzEyMjM1OTU5WjAyMQswCQYDVQQGEwJVUzEWMBQGA1UEChMNTGV0J3MgRW5jcnlwdDELMAkGA1UEAxMCRTYwdjAQBgcqhkjOPQIBBgUrgQQAIgNiAATZ8Z5Gh/ghcWCoJuuj+rnq2h25EqfUJtlRFLFhfHWWvyILOR/VvtEKRqotPEoJhC6+QJVV6RlAN2Z17TJOdwRJ+HB7wxjnzvdxEP6sdNgA1O1tHHMWMxCcOrLqbGL0vbijgfgwgfUwDgYDVR0PAQH/BAQDAgGGMB0GA1UdJQQWMBQGCCsGAQUFBwMCBggrBgEFBQcDATASBgNVHRMBAf8ECDAGAQH/AgEAMB0GA1UdDgQWBBSTJ0aYA6lRaI6Y1sRCSNsjv1iU0jAfBgNVHSMEGDAWgBR5tFnme7bl5AFzgAiIyBpY9umbbjAyBggrBgEFBQcBAQQmMCQwIgYIKwYBBQUHMAKGFmh0dHA6Ly94MS5pLmxlbmNyLm9yZy8wEwYDVR0gBAwwCjAIBgZngQwBAgEwJwYDVR0fBCAwHjAcoBqgGIYWaHR0cDovL3gxLmMubGVuY3Iub3JnLzANBgkqhkiG9w0BAQsFAAOCAgEAfYt7SiA1sgWGCIpunk46r4AExIRcMxkKgUhNlrrv1B21hOaXN/5miE+LOTbrcmU/M9yvC6MVY730GNFoL8IhJ8j8vrOLpMY22OP6baS1k9YMrtDTlwJHoGby04ThTUeBDksS9RiuHvicZqBedQdIF65pZuhpeDcGBcLiYasQr/EO5gxxtLyTmgsHSOVSBcFOn9lgv7LECPq9i7mfH3mpxgrRKSxHpOoZ0KXMcB+hHuvlklHntvcI0mMMQ0mhYj6qtMFStkF1RpCG3IPdIwpVCQqu8GV7s8ubknRzs+3C/Bm19RFOoiPpDkwvyNfvmQ14XkyqqKK5oZ8zhD32kFRQkxa8uZSuh4aTImFxknu39waBxIRXE4jKxlAmQc4QjFZoq1KmQqQg0J/1JF8RlFvJas1VcjLvYlvUB2t6npO6oQjB3l+PNf0DpQH7iUx3Wz5AjQCi6L25FjyE06q6BZ/QlmtYdl/8ZYao4SRqPEs/6cAiF+Qf5zg2UkaWtDphl1LKMuTNLotvsX99HP69V2faNyegodQ0LyTApr/vT01YPE46vNsDLgK+4cL6TrzC/a4WcmF5SRJ938zrv/duJHLXQIku5v0+EwOy59Hdm0PT/Er/84dDV0CSjdR/2XuZM3kpysSKLgD1cKiDA+IRguODCxfO9cyYIg46v9mFmBvyH04=",
+                                "parsed": {
+                                    "version": 3,
+                                    "serial_number": "234397126118090224789023519560838753080",
+                                    "signature_algorithm": {
+                                        "name": "SHA256-RSA",
+                                        "oid": "1.2.840.113549.1.1.11"
+                                    },
+                                    "issuer": {
+                                        "common_name": [
+                                            "ISRG Root X1"
+                                        ],
+                                        "country": [
+                                            "US"
+                                        ],
+                                        "organization": [
+                                            "Internet Security Research Group"
+                                        ]
+                                    },
+                                    "issuer_dn": "C=US, O=Internet Security Research Group, CN=ISRG Root X1",
+                                    "validity": {
+                                        "start": "2024-03-13T00:00:00Z",
+                                        "end": "2027-03-12T23:59:59Z",
+                                        "length": 94607999
+                                    },
+                                    "subject": {
+                                        "common_name": [
+                                            "E6"
+                                        ],
+                                        "country": [
+                                            "US"
+                                        ],
+                                        "organization": [
+                                            "Let's Encrypt"
+                                        ]
+                                    },
+                                    "subject_dn": "C=US, O=Let's Encrypt, CN=E6",
+                                    "subject_key_info": {
+                                        "key_algorithm": {
+                                            "name": "ECDSA"
+                                        },
+                                        "ecdsa_public_key": {
+                                            "b": "szEvp+I+5+SYjgVr4/gtGRgdnG7+gUESAxQIj1ATh1rGVjmNii7RnSqFyO3T7Crv",
+                                            "curve": "P-384",
+                                            "gx": "qofKIr6LBTeOscce8yCtdG4dO2KLp5uYWfdB4IJUKjhVAvJdv1UpbDpUXjhydgq3",
+                                            "gy": "NhfeSpYmLG9dnpi/kpLcKfj0Hb0omhR86doxE7XwuMAKYLHOHX6BnXpDHXyQ6g5f",
+                                            "length": 384,
+                                            "n": "////////////////////////////////x2NNgfQ3Ld9YGg2ySLCneuzsGWrMxSlz",
+                                            "p": "//////////////////////////////////////////7/////AAAAAAAAAAD/////",
+                                            "pub": "BNnxnkaH+CFxYKgm66P6ueraHbkSp9Qm2VEUsWF8dZa/Igs5H9W+0QpGqi08SgmELr5AlVXpGUA3ZnXtMk53BEn4cHvDGOfO93EQ/qx02ADU7W0ccxYzEJw6supsYvS9uA==",
+                                            "x": "2fGeRof4IXFgqCbro/q56toduRKn1CbZURSxYXx1lr8iCzkf1b7RCkaqLTxKCYQu",
+                                            "y": "vkCVVekZQDdmde0yTncESfhwe8MY5873cRD+rHTYANTtbRxzFjMQnDqy6mxi9L24"
+                                        },
+                                        "fingerprint_sha256": "d016e1fe311948aca64f2de44ce86c9a51ca041df6103bb52a88eb3f761f57d7"
+                                    },
+                                    "extensions": {
+                                        "key_usage": {
+                                            "digital_signature": true,
+                                            "certificate_sign": true,
+                                            "crl_sign": true,
+                                            "value": 97
+                                        },
+                                        "basic_constraints": {
+                                            "is_ca": true,
+                                            "max_path_len": 0
+                                        },
+                                        "crl_distribution_points": [
+                                            "http://x1.c.lencr.org/"
+                                        ],
+                                        "authority_key_id": "79b459e67bb6e5e40173800888c81a58f6e99b6e",
+                                        "subject_key_id": "9327469803a951688e98d6c44248db23bf5894d2",
+                                        "extended_key_usage": {
+                                            "server_auth": true,
+                                            "client_auth": true
+                                        },
+                                        "certificate_policies": [
+                                            {
+                                                "id": "2.23.140.1.2.1"
+                                            }
+                                        ],
+                                        "authority_info_access": {
+                                            "issuer_urls": [
+                                                "http://x1.i.lencr.org/"
+                                            ]
+                                        }
+                                    },
+                                    "signature": {
+                                        "signature_algorithm": {
+                                            "name": "SHA256-RSA",
+                                            "oid": "1.2.840.113549.1.1.11"
+                                        },
+                                        "value": "fYt7SiA1sgWGCIpunk46r4AExIRcMxkKgUhNlrrv1B21hOaXN/5miE+LOTbrcmU/M9yvC6MVY730GNFoL8IhJ8j8vrOLpMY22OP6baS1k9YMrtDTlwJHoGby04ThTUeBDksS9RiuHvicZqBedQdIF65pZuhpeDcGBcLiYasQr/EO5gxxtLyTmgsHSOVSBcFOn9lgv7LECPq9i7mfH3mpxgrRKSxHpOoZ0KXMcB+hHuvlklHntvcI0mMMQ0mhYj6qtMFStkF1RpCG3IPdIwpVCQqu8GV7s8ubknRzs+3C/Bm19RFOoiPpDkwvyNfvmQ14XkyqqKK5oZ8zhD32kFRQkxa8uZSuh4aTImFxknu39waBxIRXE4jKxlAmQc4QjFZoq1KmQqQg0J/1JF8RlFvJas1VcjLvYlvUB2t6npO6oQjB3l+PNf0DpQH7iUx3Wz5AjQCi6L25FjyE06q6BZ/QlmtYdl/8ZYao4SRqPEs/6cAiF+Qf5zg2UkaWtDphl1LKMuTNLotvsX99HP69V2faNyegodQ0LyTApr/vT01YPE46vNsDLgK+4cL6TrzC/a4WcmF5SRJ938zrv/duJHLXQIku5v0+EwOy59Hdm0PT/Er/84dDV0CSjdR/2XuZM3kpysSKLgD1cKiDA+IRguODCxfO9cyYIg46v9mFmBvyH04=",
+                                        "valid": false,
+                                        "self_signed": false
+                                    },
+                                    "fingerprint_md5": "26864c28a4de37f569c1ec87a0eccb27",
+                                    "fingerprint_sha1": "c94dc4831a901a9fec0fb49b71bd49b5aad4fad0",
+                                    "fingerprint_sha256": "76e9e288aafc0e37f4390cbf946aad997d5c1c901b3ce513d3d8fadbabe2ab85",
+                                    "tbs_noct_fingerprint": "b35e05950cfbd8259f9375ba101870b8c3c4c0ec5a529757e63167e9de26a9e8",
+                                    "spki_subject_fingerprint": "aa6bd4427e5f61f2487251dee2bd26e714499c37d46494a28e2d1c77e8b0db93",
+                                    "tbs_fingerprint": "b35e05950cfbd8259f9375ba101870b8c3c4c0ec5a529757e63167e9de26a9e8",
+                                    "validation_level": "DV",
+                                    "redacted": false
+                                }
+                            }
+                        ],
+                        "validation": {
+                            "browser_trusted": false,
+                            "browser_error": "x509: failed to load system roots and no roots provided",
+                            "matches_domain": true
+                        }
+                    },
+                    "server_key_exchange": {
+                        "ecdh_params": {
+                            "curve_id": {
+                                "name": "secp256r1",
+                                "id": 23
+                            },
+                            "server_public": {
+                                "x": {
+                                    "value": "YHm2CfhWVtM6yQtNH9FBd00ruJ99tJRAszHyfwqNj+g=",
+                                    "length": 256
+                                },
+                                "y": {
+                                    "value": "UZOFh6DXjolQX+juxnRoLXS8y7TzUTia1q65V2DydGc=",
+                                    "length": 256
+                                }
+                            }
+                        },
+                        "digest": "Ugy4vP+u4fNmG6H8mizyzaJDN7I+I7ppH0h8um508ks=",
+                        "signature": {
+                            "raw": "MEUCIQCRaUO7BtyFd45zlsUEaM+E1zBogDEk3ACT3AmGHKMWmAIgKCxnb38OkazRIT4UYLsPoEptxNWdPW+2apkTrVPzVPs=",
+                            "type": "ecdsa",
+                            "valid": true,
+                            "signature_and_hash_type": {
+                                "signature_algorithm": "ecdsa",
+                                "hash_algorithm": "sha256"
+                            },
+                            "tls_version": {
+                                "name": "TLSv1.2",
+                                "value": 771
+                            }
+                        }
+                    },
+                    "client_key_exchange": {
+                        "ecdh_params": {
+                            "curve_id": {
+                                "name": "secp256r1",
+                                "id": 23
+                            },
+                            "client_public": {
+                                "x": {
+                                    "value": "QtUHekXHiVXjSzQR3ClrxAKjhqmL+MDS85FEwT5dzK4=",
+                                    "length": 256
+                                },
+                                "y": {
+                                    "value": "a60ut70KCUG1LqSR9+1rQzMH0ahqnvBdt0BYaelCU+M=",
+                                    "length": 256
+                                }
+                            },
+                            "client_private": {
+                                "value": "O0mWSUr0HitNuMhw15aPvYr4zE5TGwwGSmIdRzwMK4Q=",
+                                "length": 32
+                            }
+                        }
+                    },
+                    "client_finished": {
+                        "verify_data": "Tsn9/0H556ECrIN/"
+                    },
+                    "server_finished": {
+                        "verify_data": "ABx2pl2vzPHaPfHx"
+                    },
+                    "key_material": {
+                        "master_secret": {
+                            "value": "lpT6yzl88Sazpxh54Rr3m8UdSm46irfZi8yNpqt862LaOVdxot29KylE+1O0ByyB",
+                            "length": 48
+                        },
+                        "pre_master_secret": {
+                            "value": "UjHcdYAshj09EB3Z8HlP6R7kAa9EUkwhgk+WTJXtnBY=",
+                            "length": 32
+                        }
+                    }
+                }
+            },
+            "timestamp": "2024-10-06T00:44:30+02:00"
+        }
+    }
+}

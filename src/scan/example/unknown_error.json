@@ -1,0 +1,11 @@
+{
+    "domain": "matikiri.net",
+    "data": {
+        "tls": {
+            "status": "unknown-error",
+            "protocol": "tls",
+            "timestamp": "2024-10-06T00:44:30+02:00",
+            "error": "remote error: protocol version not supported"
+        }
+    }
+}

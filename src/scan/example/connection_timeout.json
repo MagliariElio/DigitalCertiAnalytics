@@ -1,0 +1,11 @@
+{
+    "domain": "itun.es",
+    "data": {
+        "tls": {
+            "status": "connection-timeout",
+            "protocol": "tls",
+            "timestamp": "2024-10-06T00:44:30+02:00",
+            "error": "dial tcp: lookup itun.es on 192.168.1.254:53: no such host"
+        }
+    }
+}

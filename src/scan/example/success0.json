@@ -1,0 +1,347 @@
+{
+    "domain": "soundcloud.com",
+    "data": {
+        "tls": {
+            "status": "success",
+            "protocol": "tls",
+            "result": {
+                "handshake_log": {
+                    "server_hello": {
+                        "version": {
+                            "name": "TLSv1.2",
+                            "value": 771
+                        },
+                        "random": "Xzd+5ADz2x1jlHveQmG3JdbDW5mbvyEiRE9XTkdSRAE=",
+                        "session_id": "g5MdzIy81Cq0JgzGUSotYLqwER7n3AVXXnFo0rHugM8=",
+                        "cipher_suite": {
+                            "hex": "0xC02F",
+                            "name": "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
+                            "value": 49199
+                        },
+                        "compression_method": 0,
+                        "ocsp_stapling": true,
+                        "ticket": false,
+                        "secure_renegotiation": true,
+                        "heartbeat": false,
+                        "extended_master_secret": false
+                    },
+                    "server_certificates": {
+                        "certificate": {
+                            "raw": "MIIGWTCCBUGgAwIBAgIMd0nHcfQrwMuhNUjkMA0GCSqGSIb3DQEBCwUAMFMxCzAJBgNVBAYTAkJFMRkwFwYDVQQKExBHbG9iYWxTaWduIG52LXNhMSkwJwYDVQQDEyBHbG9iYWxTaWduIEdDQyBSMyBEViBUTFMgQ0EgMjAyMDAeFw0yNDAyMDYxMjIyMTVaFw0yNTAzMDkxMjIyMTRaMBsxGTAXBgNVBAMMECouc291bmRjbG91ZC5jb20wggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQDUH9RaVs2h0rMv7uGyss1nR5ldjj3M4eJuh64s9QkkhamVr20zumZNjlYMpCTVPwtrIoWIUSMH4psqoE6TZwqu4mnHVz+FS1itbxGrNAB9T9rkrQ7wSHIXX+SGOn9DM2CBPbzy/dXv2euYt+Hlk8OkbUofH3pRHFR9y/1B81FYWbwbIExyAQ3LqTIHNBsYtXuY+HeKtSJdVJSSYK7YPjgb4OqymZ5/SYUiC3i78OYnXFhsrmGVpwRpEykIuc6IjB+uFEHnbOwPknZ324VYoYSLrwoRkf6Y7TCzjz+cB25pbw0jwbre9sbCgT2qLNnp8Tyj2nA/o87a1o3vRPv9gAL/AgMBAAGjggNjMIIDXzAOBgNVHQ8BAf8EBAMCBaAwDAYDVR0TAQH/BAIwADCBkwYIKwYBBQUHAQEEgYYwgYMwRgYIKwYBBQUHMAKGOmh0dHA6Ly9zZWN1cmUuZ2xvYmFsc2lnbi5jb20vY2FjZXJ0L2dzZ2NjcjNkdnRsc2NhMjAyMC5jcnQwOQYIKwYBBQUHMAGGLWh0dHA6Ly9vY3NwLmdsb2JhbHNpZ24uY29tL2dzZ2NjcjNkdnRsc2NhMjAyMDBWBgNVHSAETzBNMEEGCSsGAQQBoDIBCjA0MDIGCCsGAQUFBwIBFiZodHRwczovL3d3dy5nbG9iYWxzaWduLmNvbS9yZXBvc2l0b3J5LzAIBgZngQwBAgEwQQYDVR0fBDowODA2oDSgMoYwaHR0cDovL2NybC5nbG9iYWxzaWduLmNvbS9nc2djY3IzZHZ0bHNjYTIwMjAuY3JsMCsGA1UdEQQkMCKCECouc291bmRjbG91ZC5jb22CDnNvdW5kY2xvdWQuY29tMB0GA1UdJQQWMBQGCCsGAQUFBwMBBggrBgEFBQcDAjAfBgNVHSMEGDAWgBQNmMBzf6u9vdlHS0mtCkoMrD7HfDAdBgNVHQ4EFgQUkzztAm/VgTpKzQmjlcI6c1CCO0UwggGABgorBgEEAdZ5AgQCBIIBcASCAWwBagB2AObSMWNAd4zBEEEG13G5zsHSQPaWhIb7uocyHf0eN45QAAABjX5eeKsAAAQDAEcwRQIhAOMFUMpULr57ECku8uQnYqN+9FiaxZL0Dw0LC6ksOWQmAiB1dwwbGqpaH8nLY9T2p9iUyc4u8s44cSzPq+hX9ptW2AB3AKLjCuRF772tm3447Udnd1PXgluElNcrXhssxLlQpEfnAAABjX5eeK8AAAQDAEgwRgIhAOZEvTyZTCBkyOiL8LlvFZrFVPA4PbeAVfmxMFOvN50ZAiEAp1A+VrIz6JHKf7gb7SMBAPJnhIT6k+0Hx90+ieJalOcAdwDPEVbu1S58r/OHW9lpLpvpGnFnSrAX7KwB0lt3zsw7CAAAAY1+XnjIAAAEAwBIMEYCIQCrHrWulSIfbSeG04dA2HlqgZqJmbX0yTQA34hdhV+yVAIhAJGKTjnZev4R3gP9gV4ovqpeWjkLg7zJC6ECOSwqaL4yMA0GCSqGSIb3DQEBCwUAA4IBAQBobEYZ96pWutQVVo2GSB0CZiws9v5t330SDazv89UQ/lwles3Tuo0F5Rs7y/6LvOwcnp1BsJxe52S0Cc83IwqQR1JGO1cgkX9/SuCT+9tthWGpQp/bmhyf+Sl1ahUo4PVoskB56mlseEb6OuwY/8/7aV1Vq9MduY/m5iLq6YPdRuxBhUcDShzHZ+mUresmWwuwMFeMMjH9CMQhchW1eZmd9B+2FDjzvME6Mz34ekJiPwch55XtakLIK0HRRSpRjRo3c6u5ocvy61c/vMk8XTfFXodCPbrA4UqtBOTzD8jnWLmNIjOKTxzp6YPNGFaczaJNntiGU0+fNfdZFaaDFKy0",
+                            "parsed": {
+                                "version": 3,
+                                "serial_number": "36917909606578470846647847140",
+                                "signature_algorithm": {
+                                    "name": "SHA256-RSA",
+                                    "oid": "1.2.840.113549.1.1.11"
+                                },
+                                "issuer": {
+                                    "common_name": [
+                                        "GlobalSign GCC R3 DV TLS CA 2020"
+                                    ],
+                                    "country": [
+                                        "BE"
+                                    ],
+                                    "organization": [
+                                        "GlobalSign nv-sa"
+                                    ]
+                                },
+                                "issuer_dn": "C=BE, O=GlobalSign nv-sa, CN=GlobalSign GCC R3 DV TLS CA 2020",
+                                "validity": {
+                                    "start": "2024-02-06T12:22:15Z",
+                                    "end": "2025-03-09T12:22:14Z",
+                                    "length": 34300799
+                                },
+                                "subject": {
+                                    "common_name": [
+                                        "*.soundcloud.com"
+                                    ]
+                                },
+                                "subject_dn": "CN=*.soundcloud.com",
+                                "subject_key_info": {
+                                    "key_algorithm": {
+                                        "name": "RSA"
+                                    },
+                                    "rsa_public_key": {
+                                        "exponent": 65537,
+                                        "modulus": "1B/UWlbNodKzL+7hsrLNZ0eZXY49zOHiboeuLPUJJIWpla9tM7pmTY5WDKQk1T8LayKFiFEjB+KbKqBOk2cKruJpx1c/hUtYrW8RqzQAfU/a5K0O8EhyF1/khjp/QzNggT288v3V79nrmLfh5ZPDpG1KHx96URxUfcv9QfNRWFm8GyBMcgENy6kyBzQbGLV7mPh3irUiXVSUkmCu2D44G+Dqspmef0mFIgt4u/DmJ1xYbK5hlacEaRMpCLnOiIwfrhRB52zsD5J2d9uFWKGEi68KEZH+mO0ws48/nAduaW8NI8G63vbGwoE9qizZ6fE8o9pwP6PO2taN70T7/YAC/w==",
+                                        "length": 2048
+                                    },
+                                    "fingerprint_sha256": "4385e9ad483e4c772832d8a3985af64fa149ff92fa5fc47cada2371a6de41281"
+                                },
+                                "extensions": {
+                                    "key_usage": {
+                                        "digital_signature": true,
+                                        "key_encipherment": true,
+                                        "value": 5
+                                    },
+                                    "basic_constraints": {
+                                        "is_ca": false
+                                    },
+                                    "subject_alt_name": {
+                                        "dns_names": [
+                                            "*.soundcloud.com",
+                                            "soundcloud.com"
+                                        ]
+                                    },
+                                    "crl_distribution_points": [
+                                        "http://crl.globalsign.com/gsgccr3dvtlsca2020.crl"
+                                    ],
+                                    "authority_key_id": "0d98c0737fabbdbdd9474b49ad0a4a0cac3ec77c",
+                                    "subject_key_id": "933ced026fd5813a4acd09a395c23a7350823b45",
+                                    "extended_key_usage": {
+                                        "server_auth": true,
+                                        "client_auth": true
+                                    },
+                                    "certificate_policies": [
+                                        {
+                                            "id": "1.3.6.1.4.1.4146.1.10",
+                                            "cps": [
+                                                "https://www.globalsign.com/repository/"
+                                            ]
+                                        },
+                                        {
+                                            "id": "2.23.140.1.2.1"
+                                        }
+                                    ],
+                                    "authority_info_access": {
+                                        "ocsp_urls": [
+                                            "http://ocsp.globalsign.com/gsgccr3dvtlsca2020"
+                                        ],
+                                        "issuer_urls": [
+                                            "http://secure.globalsign.com/cacert/gsgccr3dvtlsca2020.crt"
+                                        ]
+                                    },
+                                    "signed_certificate_timestamps": [
+                                        {
+                                            "version": 0,
+                                            "log_id": "5tIxY0B3jMEQQQbXcbnOwdJA9paEhvu6hzId/R43jlA=",
+                                            "timestamp": 1707222137,
+                                            "signature": "BAMARzBFAiEA4wVQylQuvnsQKS7y5Cdio370WJrFkvQPDQsLqSw5ZCYCIHV3DBsaqlofyctj1Pan2JTJzi7yzjhxLM+r6Ff2m1bY"
+                                        },
+                                        {
+                                            "version": 0,
+                                            "log_id": "ouMK5EXvva2bfjjtR2d3U9eCW4SU1yteGyzEuVCkR+c=",
+                                            "timestamp": 1707222137,
+                                            "signature": "BAMASDBGAiEA5kS9PJlMIGTI6IvwuW8VmsVU8Dg9t4BV+bEwU683nRkCIQCnUD5WsjPokcp/uBvtIwEA8meEhPqT7QfH3T6J4lqU5w=="
+                                        },
+                                        {
+                                            "version": 0,
+                                            "log_id": "zxFW7tUufK/zh1vZaS6b6RpxZ0qwF+ysAdJbd87MOwg=",
+                                            "timestamp": 1707222137,
+                                            "signature": "BAMASDBGAiEAqx61rpUiH20nhtOHQNh5aoGaiZm19Mk0AN+IXYVfslQCIQCRik452Xr+Ed4D/YFeKL6qXlo5C4O8yQuhAjksKmi+Mg=="
+                                        }
+                                    ]
+                                },
+                                "signature": {
+                                    "signature_algorithm": {
+                                        "name": "SHA256-RSA",
+                                        "oid": "1.2.840.113549.1.1.11"
+                                    },
+                                    "value": "aGxGGfeqVrrUFVaNhkgdAmYsLPb+bd99Eg2s7/PVEP5cJXrN07qNBeUbO8v+i7zsHJ6dQbCcXudktAnPNyMKkEdSRjtXIJF/f0rgk/vbbYVhqUKf25ocn/kpdWoVKOD1aLJAeeppbHhG+jrsGP/P+2ldVavTHbmP5uYi6umD3UbsQYVHA0ocx2fplK3rJlsLsDBXjDIx/QjEIXIVtXmZnfQfthQ487zBOjM9+HpCYj8HIeeV7WpCyCtB0UUqUY0aN3OruaHL8utXP7zJPF03xV6HQj26wOFKrQTk8w/I51i5jSIzik8c6emDzRhWnM2iTZ7YhlNPnzX3WRWmgxSstA==",
+                                    "valid": false,
+                                    "self_signed": false
+                                },
+                                "fingerprint_md5": "200c0f586748f05463909603c7b21c9b",
+                                "fingerprint_sha1": "d8cf532fa1efe2f994971ca55570882fc87ba7da",
+                                "fingerprint_sha256": "c793259df817e77806dc0ee5c900bd8b8e267b80d23114e8a3ec3e3d40f1c1ed",
+                                "tbs_noct_fingerprint": "710a0b06dc6f6992e7a198dd176c022c454e7492314d557d361587d79b66d6c5",
+                                "spki_subject_fingerprint": "3719169e00f6719099930874b3565c24214582d2ce7aef51b79a6e2ed057dec8",
+                                "tbs_fingerprint": "33a8bc9c608c4652c7306135b6f59dd71b8a866040a09d6d1b074755546f2415",
+                                "validation_level": "DV",
+                                "names": [
+                                    "*.soundcloud.com",
+                                    "soundcloud.com"
+                                ],
+                                "redacted": false
+                            }
+                        },
+                        "chain": [
+                            {
+                                "raw": "MIIEsDCCA5igAwIBAgIQd70OB0LV2enQSdd00CpvmjANBgkqhkiG9w0BAQsFADBMMSAwHgYDVQQLExdHbG9iYWxTaWduIFJvb3QgQ0EgLSBSMzETMBEGA1UEChMKR2xvYmFsU2lnbjETMBEGA1UEAxMKR2xvYmFsU2lnbjAeFw0yMDA3MjgwMDAwMDBaFw0yOTAzMTgwMDAwMDBaMFMxCzAJBgNVBAYTAkJFMRkwFwYDVQQKExBHbG9iYWxTaWduIG52LXNhMSkwJwYDVQQDEyBHbG9iYWxTaWduIEdDQyBSMyBEViBUTFMgQ0EgMjAyMDCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAKxnlJV/de+OpwyvCXAJIcxPCqkFPh1lttW2oljS3oUqPKq8qX6m7K0OVKaKG3GXi4CJ4fHVUgZYE6HRdjqjhhnuHY6EBCBegcUFgPG0scB12Wi8BHm9zKjWxo3Y2bwhO8Fvr8R42pW0eINc6OTbQXC0VWFCMVzpcqgz6X49KMZowAMFV6XqtItcG0cMS//9dOJs4oBlpuqX9INxMTGp6EASAF9cnlAGy/RXkVS9nOLCCa7pCYV+WgDKLTF+OK2Vxw3RUJ/p8009lQeUARv2UCcNNPCifYX1xIspvarkdjzLwzOdLahDdQbJON58zN4V+lMj0msg+c0KnywPIRp3BMkCAwEAAaOCAYUwggGBMA4GA1UdDwEB/wQEAwIBhjAdBgNVHSUEFjAUBggrBgEFBQcDAQYIKwYBBQUHAwIwEgYDVR0TAQH/BAgwBgEB/wIBADAdBgNVHQ4EFgQUDZjAc3+rvb3ZR0tJrQpKDKw+x3wwHwYDVR0jBBgwFoAUj/BLf6guRSSuTVD6Y5qL3uLdG7wwewYIKwYBBQUHAQEEbzBtMC4GCCsGAQUFBzABhiJodHRwOi8vb2NzcDIuZ2xvYmFsc2lnbi5jb20vcm9vdHIzMDsGCCsGAQUFBzAChi9odHRwOi8vc2VjdXJlLmdsb2JhbHNpZ24uY29tL2NhY2VydC9yb290LXIzLmNydDA2BgNVHR8ELzAtMCugKaAnhiVodHRwOi8vY3JsLmdsb2JhbHNpZ24uY29tL3Jvb3QtcjMuY3JsMEcGA1UdIARAMD4wPAYEVR0gADA0MDIGCCsGAQUFBwIBFiZodHRwczovL3d3dy5nbG9iYWxzaWduLmNvbS9yZXBvc2l0b3J5LzANBgkqhkiG9w0BAQsFAAOCAQEAy8j/c550ea86oCkfr2W+ptTCYe6iVzvo7H0V1vUEADJOWelTv07Obf+YkEatdN1Jg09ctgSNv2h+LMTkKRZdAXmsE3N5ve+z1Oa9kuiu7284LjeS09zHJQB4DJJJkvtIbjL/ylMK1fbMHhAWi0O194TWvH3XWZGXZ6ByxTUIv1+kAIql/Mt29PmKraTT5jrzcVzQ5A9jw16yysuRXRrLODlkS1hyBjsfyTNZrmL1h117IFgntBA5SQNVl9ckedq5r4RSAU85jV8XK5ULREjRZt2I6M9Po9QL7guFLu4sPFJpwR1sPJvubS2THeo7SxYoNDtdyBHs7euaGcMaD/fayQ==",
+                                "parsed": {
+                                    "version": 3,
+                                    "serial_number": "159159760133684200934995208963191631770",
+                                    "signature_algorithm": {
+                                        "name": "SHA256-RSA",
+                                        "oid": "1.2.840.113549.1.1.11"
+                                    },
+                                    "issuer": {
+                                        "common_name": [
+                                            "GlobalSign"
+                                        ],
+                                        "organization": [
+                                            "GlobalSign"
+                                        ],
+                                        "organizational_unit": [
+                                            "GlobalSign Root CA - R3"
+                                        ]
+                                    },
+                                    "issuer_dn": "OU=GlobalSign Root CA - R3, O=GlobalSign, CN=GlobalSign",
+                                    "validity": {
+                                        "start": "2020-07-28T00:00:00Z",
+                                        "end": "2029-03-18T00:00:00Z",
+                                        "length": 272592000
+                                    },
+                                    "subject": {
+                                        "common_name": [
+                                            "GlobalSign GCC R3 DV TLS CA 2020"
+                                        ],
+                                        "country": [
+                                            "BE"
+                                        ],
+                                        "organization": [
+                                            "GlobalSign nv-sa"
+                                        ]
+                                    },
+                                    "subject_dn": "C=BE, O=GlobalSign nv-sa, CN=GlobalSign GCC R3 DV TLS CA 2020",
+                                    "subject_key_info": {
+                                        "key_algorithm": {
+                                            "name": "RSA"
+                                        },
+                                        "rsa_public_key": {
+                                            "exponent": 65537,
+                                            "modulus": "rGeUlX91746nDK8JcAkhzE8KqQU+HWW21baiWNLehSo8qrypfqbsrQ5UpoobcZeLgInh8dVSBlgTodF2OqOGGe4djoQEIF6BxQWA8bSxwHXZaLwEeb3MqNbGjdjZvCE7wW+vxHjalbR4g1zo5NtBcLRVYUIxXOlyqDPpfj0oxmjAAwVXpeq0i1wbRwxL//104mzigGWm6pf0g3ExManoQBIAX1yeUAbL9FeRVL2c4sIJrukJhX5aAMotMX44rZXHDdFQn+nzTT2VB5QBG/ZQJw008KJ9hfXEiym9quR2PMvDM50tqEN1Bsk43nzM3hX6UyPSayD5zQqfLA8hGncEyQ==",
+                                            "length": 2048
+                                        },
+                                        "fingerprint_sha256": "49cef02f815f3b0f2e79de70dc9392ceee4ccc1e3bd4f7ea7723788673186d7e"
+                                    },
+                                    "extensions": {
+                                        "key_usage": {
+                                            "digital_signature": true,
+                                            "certificate_sign": true,
+                                            "crl_sign": true,
+                                            "value": 97
+                                        },
+                                        "basic_constraints": {
+                                            "is_ca": true,
+                                            "max_path_len": 0
+                                        },
+                                        "crl_distribution_points": [
+                                            "http://crl.globalsign.com/root-r3.crl"
+                                        ],
+                                        "authority_key_id": "8ff04b7fa82e4524ae4d50fa639a8bdee2dd1bbc",
+                                        "subject_key_id": "0d98c0737fabbdbdd9474b49ad0a4a0cac3ec77c",
+                                        "extended_key_usage": {
+                                            "server_auth": true,
+                                            "client_auth": true
+                                        },
+                                        "certificate_policies": [
+                                            {
+                                                "id": "2.5.29.32.0",
+                                                "cps": [
+                                                    "https://www.globalsign.com/repository/"
+                                                ]
+                                            }
+                                        ],
+                                        "authority_info_access": {
+                                            "ocsp_urls": [
+                                                "http://ocsp2.globalsign.com/rootr3"
+                                            ],
+                                            "issuer_urls": [
+                                                "http://secure.globalsign.com/cacert/root-r3.crt"
+                                            ]
+                                        }
+                                    },
+                                    "signature": {
+                                        "signature_algorithm": {
+                                            "name": "SHA256-RSA",
+                                            "oid": "1.2.840.113549.1.1.11"
+                                        },
+                                        "value": "y8j/c550ea86oCkfr2W+ptTCYe6iVzvo7H0V1vUEADJOWelTv07Obf+YkEatdN1Jg09ctgSNv2h+LMTkKRZdAXmsE3N5ve+z1Oa9kuiu7284LjeS09zHJQB4DJJJkvtIbjL/ylMK1fbMHhAWi0O194TWvH3XWZGXZ6ByxTUIv1+kAIql/Mt29PmKraTT5jrzcVzQ5A9jw16yysuRXRrLODlkS1hyBjsfyTNZrmL1h117IFgntBA5SQNVl9ckedq5r4RSAU85jV8XK5ULREjRZt2I6M9Po9QL7guFLu4sPFJpwR1sPJvubS2THeo7SxYoNDtdyBHs7euaGcMaD/fayQ==",
+                                        "valid": false,
+                                        "self_signed": false
+                                    },
+                                    "fingerprint_md5": "a6e7e3484827fdc4e0c9165baa82c74c",
+                                    "fingerprint_sha1": "1c610a0a87d492f48322c2afd3be9b6ad36b6bee",
+                                    "fingerprint_sha256": "762538439509c411c437d3c567563e1378671281fc4a1464add031870843676e",
+                                    "tbs_noct_fingerprint": "1a73badcdc3967f21bc74c4919458298360c740de88a3cc1f4bfc5b9ee44026e",
+                                    "spki_subject_fingerprint": "fb85d422a579a928231f45ceb6088c244b496403a0d602702dbc252afde59cd6",
+                                    "tbs_fingerprint": "1a73badcdc3967f21bc74c4919458298360c740de88a3cc1f4bfc5b9ee44026e",
+                                    "validation_level": "unknown",
+                                    "redacted": false
+                                }
+                            }
+                        ],
+                        "validation": {
+                            "browser_trusted": false,
+                            "browser_error": "x509: failed to load system roots and no roots provided",
+                            "matches_domain": true
+                        }
+                    },
+                    "server_key_exchange": {
+                        "ecdh_params": {
+                            "curve_id": {
+                                "name": "secp256r1",
+                                "id": 23
+                            },
+                            "server_public": {
+                                "x": {
+                                    "value": "YFvsyWnTQADsbSCwkJDR7W8UC7qlTnzMWipIYhHnSLQ=",
+                                    "length": 256
+                                },
+                                "y": {
+                                    "value": "TFuXAXhtXaMduyWCcRCg+a5Rca0cFM1RDaCpqGw3+kM=",
+                                    "length": 256
+                                }
+                            }
+                        },
+                        "digest": "7HBXy1FRbsfqbdw5bSZQ8Ebp5LtvOSUZCqB36C7kIVM=",
+                        "signature": {
+                            "raw": "tJU1D+0mRum1iCS/diCRgKXz8HU0tGyO2xipXLbrhugo20nSoarKqDJXsZjjQbbEcj5dYYQwQZYXC62ycBQb04O+/53rtG6FvoulOhMb2pcvoFI2dW3CEo2WXqCT4Ts+F2jhZFwPauZulA1vmn/FFbqX8isZS1KurgaJLYB9gJ7eatTM8tndD53Dm+pkZRUoSvMAw0ityt8iRzGaMCvrYigCVx/95soX1S+hV4WuV3DFAKbM7guokxx1N586jATaTp7z18cawqzFXNElMZyQ1RF8wN6DjNLwZh0GR6JGUXH/r0NmEkb2ym/DsrztpQI2Ms6xKIrVMYD8vEBXjbxOfg==",
+                            "type": "rsa",
+                            "valid": true,
+                            "signature_and_hash_type": {
+                                "signature_algorithm": "rsa",
+                                "hash_algorithm": "sha256"
+                            },
+                            "tls_version": {
+                                "name": "TLSv1.2",
+                                "value": 771
+                            }
+                        }
+                    },
+                    "client_key_exchange": {
+                        "ecdh_params": {
+                            "curve_id": {
+                                "name": "secp256r1",
+                                "id": 23
+                            },
+                            "client_public": {
+                                "x": {
+                                    "value": "T/XicUoVGiEKutdkCmJ38Wi3ueKxMVeThsgW3bJsj1g=",
+                                    "length": 256
+                                },
+                                "y": {
+                                    "value": "jndQ9hxTCIQn1zTUjTMZSnH4O8M5/UEToFbu1UGft1Q=",
+                                    "length": 256
+                                }
+                            },
+                            "client_private": {
+                                "value": "++eynPo8S/sNd8M2a0XVpmGWs9+7u/9F4Ybb4Uc+lJU=",
+                                "length": 32
+                            }
+                        }
+                    },
+                    "client_finished": {
+                        "verify_data": "hBVBRQO+aRGUGZ7M"
+                    },
+                    "server_finished": {
+                        "verify_data": "9B/iBcJxC93wG33t"
+                    },
+                    "key_material": {
+                        "master_secret": {
+                            "value": "fcOvdbfNLqQ2N5MrJ0ZnSTNZum+WAB4M4OYqIttCIq7m4dKPDIDiE86Hi9RC3qOk",
+                            "length": 48
+                        },
+                        "pre_master_secret": {
+                            "value": "l6E1OUHNbKM2CSz7FMg6NdPVGZuBkVS2+d0TWQsEwv0=",
+                            "length": 32
+                        }
+                    }
+                }
+            },
+            "timestamp": "2024-10-06T00:44:30+02:00"
+        }
+    }
+}
