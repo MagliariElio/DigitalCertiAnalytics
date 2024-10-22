@@ -197,7 +197,7 @@ def check_chain_certificates(input_file):
     return
     
 def main():
-    result_json_file = os.path.abspath('res/certs_polito_windows_2.json')
+    result_json_file = os.path.abspath('res/certs_polito.json')
     
     count_status(result_json_file)
     # save_an_example_status(result_json_file)

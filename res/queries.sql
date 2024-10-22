@@ -11,6 +11,12 @@ SELECT COUNT(*) FROM Certificates WHERE ocsp_must_stapling = 'Enabled';
 SELECT COUNT(*) FROM Certificates WHERE ocsp_must_stapling <> 'Enabled';
 
 
+SELECT COUNT(*) AS certificate_count, Issuers.organization
+FROM Certificates 
+LEFT JOIN Issuers ON Certificates.issuer_id = Issuers.issuer_id 
+WHERE Issuers.organization IS NOT NULL AND TRIM(Issuers.organization) <> ''
+GROUP BY Issuers.organization
+ORDER BY certificate_count DESC;
 
 
 
@@ -18,7 +24,7 @@ SELECT COUNT(*) FROM Certificates WHERE ocsp_must_stapling <> 'Enabled';
 WITH IssuersCounts AS (
 	SELECT COUNT(*) AS certificate_count, Issuers.organization
 	FROM Certificates 
-	INNER JOIN Issuers ON Certificates.issuer_id = Issuers.issuer_id 
+	LEFT JOIN Issuers ON Certificates.issuer_id = Issuers.issuer_id 
 	WHERE Issuers.organization IS NOT NULL AND TRIM(Issuers.organization) <> ''
 	GROUP BY Issuers.organization
 	ORDER BY certificate_count DESC

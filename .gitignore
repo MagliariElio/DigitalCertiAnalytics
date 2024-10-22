@@ -1,9 +1,11 @@
 
 # Output File of zgrab2
-certs_polito_*.json
+certs_polito.json
 
 # Input File for analysis
-top-10m-websites.txt
+top-10m-websites-dom-cop.txt
+domini_europei_google.txt
+domini_italiani_google.txt
 
 # DB files
 *.db

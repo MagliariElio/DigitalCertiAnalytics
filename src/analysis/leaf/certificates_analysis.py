@@ -370,11 +370,11 @@ def leaf_certificates_analysis_main():
     setup_logging()
     logging.info("Inizio dell'applicazione.")
     
-    result_json_file = os.path.abspath('../res/certs_polito_windows_2.json')
+    result_json_file = os.path.abspath('../res/certs_polito.json')
 
     # Inizializza la connessione al database
-    # db_path = os.path.abspath('analysis/leaf/leaf_certificates.db')
-    db_path = os.path.abspath('../leaf_certificates_light.db')
+    db_path = os.path.abspath('analysis/leaf/leaf_certificates.db')
+    # db_path = os.path.abspath('../leaf_certificates_light.db')
     schema_path = os.path.abspath('db/schema_leaf_db.sql')
     database = Database(db_path=db_path, schema_path=schema_path)
     database.connect(delete_database=args.delete_db)

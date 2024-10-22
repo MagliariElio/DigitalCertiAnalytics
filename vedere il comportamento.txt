@@ -1,0 +1,11 @@
+vedere il comportamento dei domini con 0 SCT, quindi con certificati con 0 SCT
+
+99% signature non valida perchè? Da fare manualmente
+
+estensione microsoft server gated nel extendend key usage 
+
+siti più utilizzati europei o nazionali.
+
+approfondire must stapling
+
+descrivere meglio come viene fatta la verifica del SCT.
