@@ -3,19 +3,9 @@ import logging
 from typing import Optional
 from datetime import datetime
 from bean.certificate import Certificate
-import requests
-from cryptography import x509
-from cryptography.x509 import ocsp
-from cryptography.x509.ocsp import OCSPResponseStatus
-from cryptography.x509.ocsp import OCSPCertStatus
-from base64 import b64decode, b64encode
-import base64
-from urllib.parse import urljoin
-from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.hashes import SHA1, SHA256, SHA224, SHA384, SHA512
-from cryptography.hazmat.backends import default_backend
-from cryptography.hazmat.primitives.serialization import pkcs7
 from cryptography.x509.extensions import UserNotice
+from utils.utils import verify_signature, find_raw_cert_issuer, check_ocsp_status, reorder_signature_algorithm
 
 # Admin: Anuar Elio Magliari 
 # Politecnico di Torino
@@ -42,14 +32,7 @@ class CertificateDAO:
         ''', (domain, status, protocol, timestamp, error_message, download_date))
         logging.debug(f"Errore inserito per dominio: {domain}")
 
-    def _get_issuer_cert_from_chain(self, chain, issuer_dn):
-        for cert in chain:
-            subject_dn = cert.get("parsed", {}).get("subject_dn", "")
-            if(subject_dn == issuer_dn):
-                return cert.get("raw", None)
-        return None
-
-    def insert_issuer(self, parsed, digital_certificate: Certificate, chain) -> int:
+    def insert_issuer(self, parsed, handshake_log) -> int:
         """Inserisce un issuer nel database e restituisce l'issuer_id."""
         issuer = parsed.get("issuer", {})
         
@@ -61,161 +44,22 @@ class CertificateDAO:
         issuer_province = ', '.join(issuer.get("province", []))
         issuer_organizational_unit = ', '.join(issuer.get("organizational_unit", []))
 
-        extensions = parsed.get("extensions", {})        
+        authority_key_id = parsed.get("extensions", {}).get("authority_key_id", "")
 
-        authority_key_id = extensions.get("authority_key_id", "")
-        aia = extensions.get("authority_info_access", {})
-        authority_info_access = aia
-
-        authority_info_access_is_critical = digital_certificate.is_aia_critical(issuer_common_name)
-
-        issuer_urls = aia.get("issuer_urls", [])
-        issuer_url = next(iter(issuer_urls), None)
-        ocsp_urls = aia.get("ocsp_urls", [])
-
-        hash_algorithms = [SHA256(), SHA1(), SHA224(), SHA384(), SHA512()]
-        
-        # Prende il certificato dell'issuer per controllare l'OCSP
-        issuer_cert_raw = self._get_issuer_cert_from_chain(chain, issuer_dn)
-        issuer_cert = digital_certificate.get_certificate_from_raw(issuer_cert_raw)
-        
-        ocsp_check = "No Request Done"
-        
-        # TODO: rimuovere il commento quando si deve analizzare questa parte
-        """
-        ocsp_check = "No Issuer Url Found"
-        if(issuer_url is not None and issuer_cert is not None):
-            for ocsp_url in ocsp_urls:
-                for hash_algorithm in hash_algorithms:
-                    ocsp_check = self._ocsp_check(raw, hash_algorithm, issuer_url, issuer_common_name, ocsp_url, issuer_cert)
-                    
-                    if(ocsp_check != "Impossible Retrieve OCSP Information"):
-                        break
-                
-                if(ocsp_check != "Impossible Retrieve OCSP Information"):
-                        break
-        """
+        chain = handshake_log.get("server_certificates", {}).get("chain", [])
+        raw = find_raw_cert_issuer(chain, issuer_dn)
 
         self.cursor.execute("""
-            INSERT INTO Issuers (common_name, organization, country, issuer_dn, locality, province, organizational_unit,
-            authority_key_id, authority_info_access_is_critical, authority_info_access, ocsp_check)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(issuer_dn) DO UPDATE SET
-            common_name=excluded.common_name,
-            organization=excluded.organization,
-            country=excluded.country,
-            locality=excluded.locality,
-            province=excluded.province,
-            organizational_unit=excluded.organizational_unit,
-            authority_key_id=excluded.authority_key_id,
-            authority_info_access_is_critical=excluded.authority_info_access_is_critical,
-            authority_info_access=excluded.authority_info_access,
-            ocsp_check=excluded.ocsp_check
+            INSERT INTO Issuers (common_name, organization, country, issuer_dn, locality, province, 
+            organizational_unit, authority_key_id, raw)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
-            issuer_common_name, issuer_organization, issuer_country, issuer_dn, issuer_locality, issuer_province, issuer_organizational_unit, 
-              authority_key_id, authority_info_access_is_critical, json.dumps(authority_info_access), ocsp_check
+            issuer_common_name, issuer_organization, issuer_country, issuer_dn, issuer_locality, 
+            issuer_province, issuer_organizational_unit, authority_key_id, raw
         ))
 
-        logging.debug(f"Issuer inserito/aggiornato: {issuer_dn}")
-        return self.cursor.lastrowid
-
-    def _make_ocsp_query(self, raw, issuer_certificate, alg, ocsp_link):
-        digital_certificate = Certificate(raw).get_cert()
-        
-        builder = ocsp.OCSPRequestBuilder()
-        builder = builder.add_certificate(digital_certificate, issuer_certificate, alg)
-        req = builder.build()
-        req_path = base64.b64encode(req.public_bytes(serialization.Encoding.DER))
-        final_url = urljoin(ocsp_link + '/', req_path.decode('ascii'))
-        ocsp_resp = requests.get(final_url)
-        return ocsp_resp
-    
-    def _get_issuer_certificate_from_issuer_link(self, issuer_link, issuer_common_name):
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.183 Safari/537.36'
-        }
-        
-        try:
-            req = requests.get(issuer_link, headers=headers, allow_redirects=True)
-        except Exception as e:
-            logging.error(f"Errore nel recupero del certificato ({issuer_link}): {e}")
-            return "Impossible Retrieve OCSP Information"
-        
-        if req.status_code == 200:
-            content_type = req.headers.get('Content-Type', '')
-
-            if (
-                "application/x-x509-ca-cert" in content_type or 
-                "application/octet-stream" in content_type or 
-                "application/pkix-cert" in content_type or
-                content_type == ""
-            ):
-                try:
-                    issuer_cert = x509.load_der_x509_certificate(req.content, backend=default_backend())
-                    return issuer_cert
-                except Exception as e:
-                    logging.error(f"Errore nel parsing del certificato DER ({issuer_link}): {e}")
-                    return "Impossible Retrieve OCSP Information"
-            elif (
-                "application/x-pem-file" in content_type or
-                "text/plain" in content_type      
-            ):
-                try:
-                    pem_data = req.content.decode('utf-8')
-                    issuer_cert = x509.load_pem_x509_certificate(pem_data.encode('utf-8'), backend=default_backend())
-                    return issuer_cert
-                except Exception as e:
-                    logging.error(f"Errore nel parsing del certificato PEM ({issuer_link}): {e}")
-                    return "Impossible Retrieve OCSP Information"
-            elif "application/pkcs7-mime" in content_type:
-                try:
-                    pkcs7_data = req.content
-                    issuer_certs = pkcs7.load_der_pkcs7_certificates(pkcs7_data)
-                    
-                    issuer_cert = None
-                    for cert in issuer_certs:
-                        if (cert.subject.get_attributes_for_oid(x509.NameOID.COMMON_NAME)[0].value == issuer_common_name):
-                            issuer_cert = cert
-
-                    if(issuer_cert is None):
-                        logging.error(f"Errore certificato non trovato durante il parsing del PKCS #7 ({issuer_link}): {e}")
-                        return "Impossible Retrieve OCSP Information"    
-                    return issuer_cert
-                except Exception as e:
-                    logging.error(f"Errore nel parsing del PKCS #7 ({issuer_link}): {e}")
-                    return "Impossible Retrieve OCSP Information"
-            else:
-                logging.error(f"Formato del certificato sconosciuto ({issuer_link}): {content_type}")
-                return "Impossible Retrieve OCSP Information"
-        else:
-            logging.error(f"Errore nel recupero del certificato ({issuer_link}). Stato: {req.status_code}")
-            return "Impossible Retrieve OCSP Information"
-    
-    def _ocsp_check(self, raw, hash_alg, issuer_link, issuer_common_name, ocsp_link, issuer_cert) -> str:
-        # Controlla l'OCSP, se il certificato dell'issuer è stato trovato nella catena si usa quello, altrimenti si richiede tramite issuer link
-        
-        # Prende l'issuer certificate dal link, ma potrebbe ritornare una stringa in caso di errore
-        if(issuer_cert is None):
-            issuer_cert = self._get_issuer_certificate_from_issuer_link(issuer_link, issuer_common_name)
-        
-        if(issuer_cert is str):
-            return issuer_cert
-        
-        ocsp_resp = self._make_ocsp_query(raw, issuer_cert, hash_alg, ocsp_link)
-        
-        if ocsp_resp.ok:
-            ocsp_decoded = ocsp.load_der_ocsp_response(ocsp_resp.content)
-            if ocsp_decoded.response_status == OCSPResponseStatus.SUCCESSFUL:
-                if ocsp_decoded.certificate_status == OCSPCertStatus.GOOD:
-                    return "Good"
-                elif ocsp_decoded.certificate_status == OCSPCertStatus.REVOKED:
-                    return "Revoked"
-                elif ocsp_decoded.certificate_status == OCSPCertStatus.UNKNOWN:
-                    return "Unknown"
-            else:
-                return "Impossible Retrieve OCSP Information"
-        else:
-            return "Not Ok OCSP Response"
+        logging.debug(f"Issuer inserito: {issuer_dn}")
+        return (self.cursor.lastrowid, issuer_common_name, issuer_dn)
 
     def insert_subject(self, parsed, digital_certificate: Certificate) -> int:
         """Inserisce un subject nel database e restituisce il subject_id."""
@@ -230,25 +74,12 @@ class CertificateDAO:
         self.cursor.execute("""
             INSERT INTO Subjects (common_name, subject_dn, subject_key_id, subject_alt_name, subject_alt_name_is_critical)
             VALUES (?, ?, ?, ?, ?)
-            ON CONFLICT(subject_dn) DO UPDATE SET
-            common_name=excluded.common_name,
-            subject_key_id=excluded.subject_key_id,
-            subject_alt_name=excluded.subject_alt_name,
-            subject_alt_name_is_critical=excluded.subject_alt_name_is_critical
         """, (subject_common_name, subject_dn, subject_key_id, subject_alt_name, subject_alt_name_is_critical))
 
-        logging.debug(f"Subject inserito/aggiornato: {subject_dn}")
+        logging.debug(f"Subject inserito: {subject_dn}")
         return self.cursor.lastrowid
 
-    def _reorder_signature_algorithm(self, signature_algorithm):
-        if 'RSA' in signature_algorithm and '-' in signature_algorithm:
-            hash_algorithm, signing_algorithm = signature_algorithm.split('-')
-            
-            return f"{signing_algorithm}-{hash_algorithm}"
-        
-        return signature_algorithm  
-
-    def insert_certificate(self, json_row, parsed, issuer_id, subject_id) -> Optional[int]:
+    def insert_certificate(self, json_row, parsed, issuer_id, subject_id, issuer_common_name, issuer_dn) -> Optional[int]:
         """Inserisce un certificato nel database e restituisce il certificate_id."""
         download_date = json_row.get("data", {}).get("tls", {}).get("timestamp", datetime.now().isoformat())
         handshake_log = json_row.get("data", {}).get("tls", {}).get("result", {}).get("handshake_log", {})
@@ -258,7 +89,7 @@ class CertificateDAO:
         domain = json_row.get("domain", "")
         version = parsed.get("version", 0)
         signature_algorithm = parsed.get("signature_algorithm", {}).get("name", "")
-        signature_algorithm = self._reorder_signature_algorithm(signature_algorithm)
+        signature_algorithm = reorder_signature_algorithm(signature_algorithm)
         key_algorithm = parsed.get("subject_key_info", {}).get("key_algorithm", {}).get("name", "")
         
         key_length = parsed.get("subject_key_info", {}).get("rsa_public_key", {}).get("length", 0)
@@ -270,26 +101,44 @@ class CertificateDAO:
         validity_length = parsed.get("validity", {}).get("length", "")
         validation_level = parsed.get("validation_level", "")
         redacted = parsed.get("redacted", False)
-        signature_valid = parsed.get("signature", {}).get("valid", False)
-        self_signed = parsed.get("signature", {}).get("self_signed", False)
+                
         raw = handshake_log.get("server_certificates", {}).get("certificate", {}).get("raw", {})
-        
         digital_certificate = Certificate(raw)
+
+        chain = handshake_log.get("server_certificates", {}).get("chain", [])
+
+        self_signed = parsed.get("signature", {}).get("self_signed", False)
+        signature_valid = "Error"  # errore di default, nel caso non avesse alcuna catena
+        if len(chain) > 0:
+            issuer_cert = digital_certificate.get_certificate_from_raw(find_raw_cert_issuer(chain, issuer_dn))
+            if(issuer_cert is not None):
+                leaf_cert = digital_certificate.get_cert()
+                signature_valid = verify_signature(leaf_cert, issuer_cert)
+                
         ocsp_must_stapling = digital_certificate.is_ocsp_must_staple()
+        
+        extensions = parsed.get("extensions", {})
+        aia = extensions.get("authority_info_access", {})
+        authority_info_access = aia
+
+        authority_info_access_is_critical = digital_certificate.is_aia_critical(issuer_common_name)
+
+        ocsp_check = "No Request Done"
         
         self.cursor.execute("""
             INSERT INTO Certificates (
                 serial_number, domain, version, signature_algorithm, key_algorithm, key_length, 
                 validity_start, validity_end, validity_length, issuer_id, 
                 subject_id, validation_level, redacted, signature_valid, self_signed, download_date, 
-                ocsp_stapling, ocsp_must_stapling, raw
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(serial_number) DO NOTHING
+                ocsp_stapling, ocsp_must_stapling, authority_info_access_is_critical, authority_info_access, 
+                ocsp_check, chain_length, raw
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             serial_number, domain, version, signature_algorithm, key_algorithm, key_length,
             validity_start, validity_end, validity_length, issuer_id,
             subject_id, validation_level, redacted, signature_valid, self_signed, download_date, 
-            ocsp_stapling, ocsp_must_stapling, raw
+            ocsp_stapling, ocsp_must_stapling, authority_info_access_is_critical, json.dumps(authority_info_access), 
+            ocsp_check, len(chain), raw
         ))
 
         logging.debug(f"Certificato inserito: {serial_number}")
@@ -330,6 +179,7 @@ class CertificateDAO:
         for policy in certificate_policies:
             policy_identifier = policy['policy_identifier']
             
+            # Filtra le User Notices
             def filter_user_notice(items): 
                 if items is None:
                     items = []
@@ -338,14 +188,14 @@ class CertificateDAO:
             cps = filter_user_notice(policy.get('cps', []))
             policy_qualifiers = filter_user_notice(policy.get('policy_qualifiers', []))
             
-            is_critical = policy.get('is_critical', False)
+            is_cp_critical = policy.get('is_cp_critical', False)
             
             self.cursor.execute("""
                 INSERT INTO CertificatePolicies (
-                    extension_id, policy_identifier, cps, policy_qualifiers, is_critical
+                    extension_id, policy_identifier, cps, policy_qualifiers, is_cp_critical
                 ) VALUES (?, ?, ?, ?, ?)
             """, (
-                extension_id, policy_identifier, json.dumps(cps), json.dumps(policy_qualifiers), is_critical
+                extension_id, policy_identifier, json.dumps(cps), json.dumps(policy_qualifiers), is_cp_critical
             ))
 
             logging.debug(f"Policy inserita per l'extension ID: {extension_id}, policy_identifier: {policy_identifier}")
@@ -359,7 +209,17 @@ class CertificateDAO:
             return
         
         for sct in signed_certificate_timestamps:
-            log_id = sct.get("log_id", "")
+            log_id_str = sct.get("log_id", "")
+            log_id = self.get_sct_log(log_id_str)
+            
+            # Inserimento di un nuovo record nella tabella dei logs per log_id che non è stato trovato
+            if(log_id == -1):
+                operator_id = self.get_sct_unknown_operator()
+                json_log = {
+                    "log_id": log_id_str
+                }
+                log_id = self.insert_sct_log(operator_id, json_log)
+            
             signature = sct.get("signature", "")
             timestamp = sct.get("timestamp", "")
             version = sct.get("version", "")
@@ -375,9 +235,9 @@ class CertificateDAO:
             logging.debug(f"SCT inserito per il certificate ID: {certificate_id}")
         return
 
-    def insert_certificate_full(self, json_row, parsed, digital_certificate: Certificate, issuer_id, subject_id):
+    def insert_certificate_full(self, json_row, parsed, digital_certificate: Certificate, issuer_id, subject_id, issuer_common_name, issuer_dn):
         """Processa e inserisce un certificato nel database, comprese le estensioni."""
-        certificate_id = self.insert_certificate(json_row, parsed, issuer_id, subject_id)
+        certificate_id = self.insert_certificate(json_row, parsed, issuer_id, subject_id, issuer_common_name, issuer_dn)
         
         if certificate_id:
             # Inserisce le Extensions
@@ -402,19 +262,169 @@ class CertificateDAO:
         raw = server_certificates.get("certificate", {}).get("raw", {})
 
         digital_certificate = Certificate(raw)
-
-        chain = server_certificates.get("chain", [])
         
         # Inserisci Issuer
-        issuer_id = self.insert_issuer(parsed, digital_certificate, chain)
+        issuer_id, issuer_common_name, issuer_dn = self.insert_issuer(parsed, handshake_log)
 
         # Inserisci Subject
         subject_id = self.insert_subject(parsed, digital_certificate)
         
         # Inserisci Certificate e Extensions
-        self.insert_certificate_full(json_row, parsed, digital_certificate, issuer_id, subject_id)
+        self.insert_certificate_full(json_row, parsed, digital_certificate, issuer_id, subject_id, issuer_common_name, issuer_dn)
         return
 
+    def check_ocsp_status_for_certificates(self, batch_size=1000):
+        """Controlla lo stato OCSP per ciascun certificato nel database e aggiorna il relativo stato."""
+        try:
+            certificate_counts = 0
+            while True:
+                self.cursor.execute("""
+                    SELECT c.certificate_id, c.authority_info_access, i.common_name, i.raw AS issuer_cert_raw, c.raw AS leaf_cert_raw
+                    FROM Certificates AS c 
+                    INNER JOIN Issuers AS i ON c.issuer_id = i.issuer_id
+                    WHERE c.ocsp_check = 'No Request Done'
+                    LIMIT ?
+                """, (batch_size, ))
+                
+                # Prendi tutti i record
+                rows = self.cursor.fetchall()
+
+                # Se non ci sono più record, interrompi il ciclo
+                if not rows:
+                    break
+                
+                for row in rows:
+                    certificate_id = None
+                    
+                    try:
+                        certificate_id = row['certificate_id']
+                        
+                        aia = row['authority_info_access']
+                        aia = json.loads(aia)
+
+                        issuer_urls = aia.get("issuer_urls", [])
+                        issuer_url = next(iter(issuer_urls), None)
+            
+                        ocsp_urls = aia.get("ocsp_urls", [])
+
+                        hash_algorithms = [SHA256(), SHA1(), SHA384(), SHA512(), SHA224()]
+                        
+                        # Prende il certificato dell'issuer per controllare l'OCSP
+                        digital_certificate = Certificate(None)
+                        leaf_cert_raw = row['leaf_cert_raw']
+                        issuer_cert_raw = row['issuer_cert_raw']
+                        issuer_cert = digital_certificate.get_certificate_from_raw(issuer_cert_raw)
+                        
+                        issuer_common_name = row['common_name']
+                        
+                        ocsp_check = "No Issuer Url Found"
+                        if(issuer_url is not None and issuer_cert is not None):
+                            for ocsp_url in ocsp_urls:
+                                for hash_algorithm in hash_algorithms:
+                                    ocsp_check = check_ocsp_status(leaf_cert_raw, hash_algorithm, issuer_url, issuer_common_name, ocsp_url, issuer_cert)
+                                    
+                                    if(ocsp_check != "Impossible Retrieve OCSP Information"):
+                                        break
+                                
+                                if(ocsp_check != "Impossible Retrieve OCSP Information"):
+                                        break
+                        
+                        if(ocsp_check == "Impossible Retrieve OCSP Information"):
+                            logging.error(f"Impossibile recuperare le informazioni OCSP per il certificato ID {certificate_id}. Verifica la connessione o il formato del certificato.")                            
+                        
+                        # Aggiornamento dell'OCSP status nel db
+                        self.cursor.execute("""
+                            UPDATE Certificates
+                            SET ocsp_check = ?
+                            WHERE certificate_id = ?
+                        """, (ocsp_check, certificate_id))
+                        self.conn.commit()
+
+                    except Exception as e:
+                        logging.error(f"Errore durante il controllo dello stato OCSP per il certificato ID {certificate_id}: {e}")
+                
+                # Incremento del numero di certificati processati
+                certificate_counts += batch_size
+                print(f"\rNumero di Certificati processati: {certificate_counts}", end="")
+                
+        except json.JSONDecodeError as json_err:
+            logging.error(f"Errore nella deserializzazione del JSON: {json_err}")
+        except Exception as e:
+            logging.error(f"Errore generale durante il controllo dello stato OCSP: {e}")
+    
+    def insert_sct_log_operator(self, operator):
+        """Inserisce un operatore SCT nel database."""
+
+        name = operator.get("name", "")
+        email = ', '.join(operator.get("email", []))
+        
+        self.cursor.execute("""
+            INSERT INTO LogsOperators (name, email) 
+            VALUES (?, ?)
+        """, (
+            name, email
+        ))
+        
+        logging.debug(f"SCT operator inserito: {self.cursor.lastrowid}")
+        return self.cursor.lastrowid
+    
+    def insert_sct_log(self, operator_id, json_log):
+        """Inserisce un log SCT nel database associandolo a un operatore."""
+        
+        description = json_log.get("description", "")
+        log_id = json_log.get("log_id", "")
+        key = json_log.get("key", "")
+        url = json_log.get("url", "")
+        mmd = json_log.get("mmd", "")
+        state_usable_timestamp = json_log.get("state", {}).get("usable", {}).get("timestamp", "")
+        state_retired_timestamp = json_log.get("state", {}).get("retired", {}).get("timestamp", "")
+        state_qualified_timestamp = json_log.get("state", {}).get("qualified", {}).get("timestamp", "")
+        temporal_start = json_log.get("temporal_interval", {}).get("start_inclusive", "")
+        temporal_end = json_log.get("temporal_interval", {}).get("end_exclusive", "")
+        
+        self.cursor.execute("""
+            INSERT INTO Logs (operator_id, description, log_id, key, url, 
+                mmd, state_usable_timestamp, state_retired_timestamp, state_qualified_timestamp, temporal_start, temporal_end) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(log_id) DO NOTHING
+        """, (
+            operator_id, description, log_id, key, url, mmd, state_usable_timestamp, state_retired_timestamp, state_qualified_timestamp,
+            temporal_start, temporal_end
+        ))
+        
+        logging.debug(f"Log SCT inserito: {self.cursor.lastrowid}")
+        return self.cursor.lastrowid
+
+    def get_sct_unknown_operator(self):
+        """Recupera l'id del record dell'operatore fantasma."""
+        try:
+            self.cursor.execute("""
+                SELECT id FROM LogsOperators WHERE name = 'unknown' and email = ''
+            """)
+            
+            result = self.cursor.fetchone()
+            return result['id']
+        except Exception as e:
+            logging.error("Errore: %s", str(e))
+            return -1
+        
+    def get_sct_log(self, log_id):
+        """Recupera l'id del record di log in base al log_id."""
+        try:
+            self.cursor.execute("""
+                SELECT id FROM Logs WHERE log_id = ?
+            """, (log_id, ))
+            
+            result = self.cursor.fetchone()
+            if result is not None:
+                log_id_value = result['id']
+                return log_id_value
+            
+            return -1
+        except Exception as e:
+            logging.error("Errore: %s", str(e))
+            return -1
+    
     def get_issuer_certificate_count(self):
         """Conta il numero di certificati per ciascun issuer."""
         try:
@@ -506,9 +516,16 @@ class CertificateDAO:
 
             logging.debug(f"Risultati ottenuti: {len(results)}")
 
-            convert_to_day = lambda seconds: seconds / 31536000
-            count_dict = {convert_to_day(row[0]): row[1] for row in results}
-
+            convert_to_year = lambda seconds: seconds // 31536000
+            count_dict = {}
+            for row in results:
+                year = convert_to_year(row[0])
+                value = row[1]
+                if year in count_dict:
+                    count_dict[year] += value
+                else:
+                    count_dict[year] = value
+                    
             logging.info(f"Totale trovati: {len(count_dict)}")
             return count_dict
         except Exception as e:
@@ -608,7 +625,7 @@ class CertificateDAO:
         try:
             self.cursor.execute("""
                 SELECT ocsp_check, COUNT(*) AS count
-                FROM Issuers
+                FROM Certificates
                 GROUP BY ocsp_check;
             """)
             
@@ -629,7 +646,7 @@ class CertificateDAO:
         try:
             self.cursor.execute("""
                 SELECT authority_info_access_is_critical, COUNT(*) AS count
-                FROM Issuers
+                FROM Certificates
                 GROUP BY authority_info_access_is_critical
                 ORDER BY count DESC;
             """)
@@ -931,9 +948,10 @@ class CertificateDAO:
             self.cursor.execute("""
                 SELECT count_sct, COUNT(*) AS certificate_count
                 FROM (
-                    SELECT COUNT(*) AS count_sct
-                    FROM SignedCertificateTimestamps
-                    GROUP BY certificate_id) AS sct_counts
+                    SELECT COUNT(s.certificate_id) AS count_sct
+                    FROM Certificates AS c LEFT JOIN SignedCertificateTimestamps s
+                    ON s.certificate_id = c.certificate_id 
+                    GROUP BY c.certificate_id) AS sct_counts
                 GROUP BY count_sct
                 ORDER BY count_sct ASC;
             """)
@@ -944,21 +962,42 @@ class CertificateDAO:
 
             count_dict = {row[0]: row[1] for row in results}
 
-            print(count_dict)
-
             logging.info(f"Totale trovati: {len(count_dict)}")
             return count_dict
         except Exception as e:
             logging.error("Errore: %s", str(e))
             return {}
         
-    def get_top_sct_issuers(self) -> dict:
+    def get_top_sct_logs(self) -> dict:
         """Mostra quali log di SCT sono stati usati più spesso."""
         try:
             self.cursor.execute("""
-                SELECT log_id, COUNT(*) AS count
-                FROM SignedCertificateTimestamps
-                GROUP BY log_id
+                SELECT l.description, COUNT(*) AS count
+                FROM SignedCertificateTimestamps AS s INNER JOIN Logs AS l ON s.log_id = l.id
+                GROUP BY l.description
+                HAVING count > 5
+                ORDER BY count DESC;
+            """)
+            results = self.cursor.fetchall()
+
+            logging.debug(f"Risultati ottenuti: {len(results)}")
+
+            count_dict = {row[0]: row[1] for row in results}
+
+            logging.info(f"Totale trovati: {len(count_dict)}")
+            return count_dict
+        except Exception as e:
+            logging.error("Errore: %s", str(e))
+            return {}
+    
+    def get_top_sct_log_operators(self) -> dict:
+        """Conta i log di SCT per ogni operatore, mostrando quelli più utilizzati."""
+        try:
+            self.cursor.execute("""
+                SELECT lo.name, COUNT(*) AS count
+                FROM SignedCertificateTimestamps AS s INNER JOIN Logs AS l ON s.log_id = l.id
+                INNER JOIN LogsOperators AS lo ON l.operator_id = lo.id
+                GROUP BY lo.name
                 ORDER BY count DESC;
             """)
             results = self.cursor.fetchall()
@@ -994,7 +1033,29 @@ class CertificateDAO:
         except Exception as e:
             logging.error("Errore: %s", str(e))
             return {}
-        
+    
+    def get_critical_vs_non_critical_cp_policies(self) -> dict:
+        """Mostra la proporzione di certificate policies critici rispetto a quelli non critici."""
+        try:
+            self.cursor.execute("""
+                SELECT is_cp_critical, COUNT(*) AS count
+                FROM CertificatePolicies
+                GROUP BY is_cp_critical
+                ORDER BY count DESC;
+            """)
+            
+            results = self.cursor.fetchall()
+
+            logging.debug(f"Risultati ottenuti: {len(results)}")
+
+            count_dict = {row[0]: row[1] for row in results}
+
+            logging.info(f"Totale trovati: {len(count_dict)}")
+            return count_dict
+        except Exception as e:
+            logging.error("Errore: %s", str(e))
+            return {}
+    
     """
     def get_count_per_entity(self) -> dict:
         "" Commento. ""

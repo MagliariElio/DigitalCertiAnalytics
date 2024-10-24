@@ -12,15 +12,13 @@ CREATE TABLE IF NOT EXISTS Issuers (
     issuer_id INTEGER PRIMARY KEY AUTOINCREMENT,    
     common_name VARCHAR,
     organization VARCHAR,
-    issuer_dn TEXT UNIQUE,
+    issuer_dn TEXT,
     country VARCHAR,
     province VARCHAR, 
     locality VARCHAR,
     organizational_unit VARCHAR,
     authority_key_id VARCHAR,
-    authority_info_access_is_critical VARCHAR(12) CHECK (authority_info_access_is_critical IN ('Critical', 'Not Critical', 'Not Found', 'Error')),
-    authority_info_access TEXT,
-    ocsp_check VARCHAR(36) DEFAULT 'No Request Done' CHECK (ocsp_check IN ('Good', 'Revoked', 'Unknown', 'Impossible Retrieve OCSP Information', 'Not Ok OCSP Response', 'No Issuer Url Found', 'No Request Done'))
+    raw BLOB DEFAULT NULL
 );
 
 -- -----------------------------------------------------
@@ -31,7 +29,7 @@ DROP TABLE IF EXISTS `Subjects`;
 CREATE TABLE IF NOT EXISTS Subjects (
     subject_id INTEGER PRIMARY KEY AUTOINCREMENT,    
     common_name VARCHAR,
-    subject_dn TEXT UNIQUE,
+    subject_dn TEXT,
     subject_key_id VARCHAR,
     subject_alt_name TEXT,
     subject_alt_name_is_critical VARCHAR(12) CHECK (subject_alt_name_is_critical IN ('Critical', 'Not Critical', 'Not Found', 'Error'))
@@ -44,7 +42,7 @@ DROP TABLE IF EXISTS `Certificates`;
 
 CREATE TABLE IF NOT EXISTS Certificates (
     certificate_id INTEGER PRIMARY KEY AUTOINCREMENT,    
-    serial_number VARCHAR UNIQUE,
+    serial_number VARCHAR,
     domain VARCHAR,
     issuer_id INT,
     subject_id INT,
@@ -55,12 +53,16 @@ CREATE TABLE IF NOT EXISTS Certificates (
     validity_start TIMESTAMP,
     validity_end TIMESTAMP,
     validity_length INT,
+    authority_info_access_is_critical VARCHAR(12) CHECK (authority_info_access_is_critical IN ('Critical', 'Not Critical', 'Not Found', 'Error')),
+    authority_info_access TEXT,
+    ocsp_check VARCHAR(36) DEFAULT 'No Request Done' CHECK (ocsp_check IN ('Good', 'Revoked', 'Unknown', 'Impossible Retrieve OCSP Information', 'Not Ok OCSP Response', 'No Issuer Url Found', 'No Request Done')),
     ocsp_stapling INT,
     ocsp_must_stapling VARCHAR(9) DEFAULT 'Not Found' CHECK (ocsp_must_stapling IN ('Enabled', 'Not Found', 'Error')),
     validation_level VARCHAR,
-    signature_valid BOOLEAN,
+    signature_valid VARCHAR(20) DEFAULT 'Error' CHECK (signature_valid IN ('Valid', 'Not Valid', 'Error', 'Unsupported key type')),
     self_signed BOOLEAN,
     redacted BOOLEAN,
+    chain_length INT DEFAULT 0,
     download_date TIMESTAMP,
     raw BLOB,
     FOREIGN KEY (issuer_id) REFERENCES Issuers(issuer_id),
@@ -98,6 +100,7 @@ CREATE TABLE SignedCertificateTimestamps (
     version INTEGER NOT NULL,        
     signature TEXT NOT NULL,
     FOREIGN KEY (certificate_id) REFERENCES Certificates(certificate_id)
+    FOREIGN KEY (log_id) REFERENCES Logs(id)
 );
 
 -- -----------------------------------------------------
@@ -111,7 +114,7 @@ CREATE TABLE IF NOT EXISTS CertificatePolicies (
     policy_identifier VARCHAR,
     cps TEXT[],
     policy_qualifiers TEXT,
-    is_critical BOOLEAN DEFAULT FALSE,
+    is_cp_critical BOOLEAN DEFAULT FALSE,
     FOREIGN KEY (extension_id) REFERENCES Extensions(extension_id)
 );
 
@@ -129,6 +132,37 @@ CREATE TABLE Errors (
     error_message TEXT,
     download_date TIMESTAMP
 );
+
+-- -----------------------------------------------------
+-- Table `leaf_certificates_db`.`LogsOperators`
+-- -----------------------------------------------------
+DROP TABLE IF EXISTS `LogsOperators`;
+CREATE TABLE LogsOperators (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name VARCHAR(255) NOT NULL,
+    email TEXT
+);
+
+-- -----------------------------------------------------
+-- Table `leaf_certificates_db`.`Logs`
+-- -----------------------------------------------------
+DROP TABLE IF EXISTS `Logs`;
+CREATE TABLE Logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    operator_id INT NOT NULL,
+    description VARCHAR(255) NOT NULL,
+    log_id VARCHAR(255) UNIQUE NOT NULL,
+    key TEXT NOT NULL,
+    url TEXT NOT NULL,
+    mmd INT NOT NULL,
+    state_usable_timestamp TIMESTAMPTZ,
+    state_retired_timestamp TIMESTAMPTZ,
+    state_qualified_timestamp TIMESTAMPTZ,
+    temporal_start TIMESTAMPTZ NOT NULL,
+    temporal_end TIMESTAMPTZ NOT NULL,
+    FOREIGN KEY (operator_id) REFERENCES Operators(id)
+);
+
 
 PRAGMA foreign_keys = ON;
 

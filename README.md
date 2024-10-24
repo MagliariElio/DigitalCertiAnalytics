@@ -141,6 +141,7 @@ Il programma può essere eseguito tramite il terminale o la riga di comando. Son
 ### Opzioni disponibili:
 - `--delete_db`: elimina il database esistente prima di iniziare l'analisi.
 - `--leaf_analysis`: esegue l'analisi dei certificati leaf.
+- `--leaf_ocsp_analysis`: esegue l'analisi OCSP per i certificati leaf.
 - `--plot_results`: genera e visualizza grafici dai dati analizzati.
 
 #### Esempi di utilizzo:

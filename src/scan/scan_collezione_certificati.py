@@ -199,14 +199,14 @@ def check_chain_certificates(input_file):
 def main():
     result_json_file = os.path.abspath('res/certs_polito.json')
     
-    count_status(result_json_file)
+    # count_status(result_json_file)
     # save_an_example_status(result_json_file)
     
     # check_error_rows(result_json_file)
 
     # check_chain_certificates(result_json_file)
 
-    # download_json_domain(result_json_file, "terrafly.com", None)
+    download_json_domain(result_json_file, "blackterrier.pp.ua", None)
     # download_json_domain(result_json_file, None, 112200)
 
 if __name__ == "__main__":

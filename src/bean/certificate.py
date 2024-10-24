@@ -16,13 +16,22 @@ class Certificate:
     def get_cert(self):
         return self.cert
 
+    def load_cert_from_string(self, raw):
+        """Crea una stringa PEM da un certificato raw."""
+        if(raw is None):
+            return None
+        
+        # Aggiungi le intestazioni PEM
+        pem = f"-----BEGIN CERTIFICATE-----\n{raw}\n-----END CERTIFICATE-----"
+        return pem
+
     def get_certificate_from_raw(self, raw):
         """Carica il certificato da una stringa."""
         if(raw is None):
             return None
         
         # Aggiungi le intestazioni PEM
-        pem = f"-----BEGIN CERTIFICATE-----\n{raw}\n-----END CERTIFICATE-----"
+        pem = self.load_cert_from_string(raw)
         
         # Decodifica la stringa PEM e carica il certificato
         cert_bytes = pem.encode('utf-8')
@@ -53,7 +62,7 @@ class Certificate:
                     'policy_identifier': policy_info.policy_identifier.dotted_string,
                     'cps': policy_info.policy_qualifiers,  
                     'policy_qualifiers': policy_info.policy_qualifiers,  
-                    'is_critical': "Critical" if cp_ext.critical else "Not Critical"  
+                    'is_cp_critical': "Critical" if cp_ext.critical else "Not Critical"  
                 }
                 policies.append(policy)
 

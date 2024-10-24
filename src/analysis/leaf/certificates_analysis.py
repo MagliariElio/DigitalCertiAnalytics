@@ -49,7 +49,48 @@ def leaf_certificates_analysis(certificates_file, dao: CertificateDAO, database:
                 logging.error(f"Errore nell'elaborazione della riga {line_number}: {e}")
     return
 
+def process_ocsp_check_status_request(dao: CertificateDAO, database: Database):
+    """Elabora la richiesta per controllare lo stato OCSP di tutti i certificati nel DAO."""
+    try:
+        with database.transaction():
+            dao.check_ocsp_status_for_certificates()
+    except Exception as e:
+        logging.error(f"Errore nell'elaborazione della richiesta di controllo OCSP: {e}")
+        
+def process_insert_sct_logs(log_list_path, dao: CertificateDAO, database: Database):
+    """Elabora e inserisce i log SCT nel database a partire da un file JSON."""
+    
+    with open(log_list_path, 'r') as log_list_reader:
+        try:
+            data = json.load(log_list_reader)
+            operators = data.get("operators", [])
+        except json.JSONDecodeError as e:
+            logging.error(f"Errore nel parsing del file JSON: {e}")
+            return
+        except Exception as e:
+            logging.error(f"Errore nell'apertura del file: {e}")
+            return
+        
+        for operator in operators:
+            with database.transaction():
+                operator_id = dao.insert_sct_log_operator(operator)
+                logs = operator.get("logs", [])
+                for json_log in logs:
+                    dao.insert_sct_log(operator_id, json_log)
+        
+        # Inserimento di un operatore fantasma in caso non un log id non appartenesse all'elenco
+        operator = {
+            "name": "unknown",
+            "email": ""
+        }
+        dao.insert_sct_log_operator(operator)
+        logging.info("SCT Operators e SCT Logs memorizzati con successo.")
+
+    return
+
 def plot_leaf_certificates_analysis(dao: CertificateDAO):
+    """Genera e salva vari grafici relativi all'analisi dei certificati."""
+    
     plotter = GraphPlotter()
     
     # Emissione dei Certificati da Parte degli Issuer
@@ -79,10 +120,11 @@ def plot_leaf_certificates_analysis(dao: CertificateDAO):
     result = dao.get_validity_duration_distribution()
     data = pd.DataFrame(list(result.items()), columns=['Validity Length', 'Certificate Count'])
     filename = os.path.abspath('analysis/leaf/plots/validity_duration_distribution.png')
-    data.set_index('Certificate Count', inplace=True)
-    plotter.plot_histogram(
-        data=data, 
-        y='Validity Length',
+    data.set_index('Validity Length', inplace=True)
+    plotter.plot_bar_chart(
+        data=data,
+        x=data.index,
+        y='Certificate Count',
         title='Distribuzione della Durata di Validità', 
         xlabel='Durata (anni)',
         ylabel='Numero di Certificati', 
@@ -322,20 +364,27 @@ def plot_leaf_certificates_analysis(dao: CertificateDAO):
         filename=filename
     )
     
-    # Top SCT Issuers
-    result = dao.get_top_sct_issuers()
-    data = pd.DataFrame(list(result.items()), columns=['Log ID', 'Certificate Count'])
-    filename = os.path.abspath('analysis/leaf/plots/top_sct_issuers.png')
-    data.set_index('Log ID', inplace=True)
+    # Top SCT Logs
+    result = dao.get_top_sct_logs()
+    data = pd.DataFrame(list(result.items()), columns=['Log Name', 'Certificate Count'])
+    filename = os.path.abspath('analysis/leaf/plots/top_sct_logs.png')
+    data.set_index('Log Name', inplace=True)
     plotter.plot_bar_chart(
         data=data, 
         x=data.index,
         y='Certificate Count',
-        title='Top SCT Issuers', 
-        xlabel='Log ID',
+        title='Top SCT Logs', 
+        xlabel='Logs Name',
         ylabel='Numero di Certificati', 
         filename=filename
     )
+    
+    # Top SCT Log Operators
+    result = dao.get_top_sct_log_operators()
+    data = pd.DataFrame(list(result.items()), columns=['Log Operator', 'Certificate Count'])
+    filename = os.path.abspath('analysis/leaf/plots/top_sct_log_operators.png')
+    data.set_index('Log Operator', inplace=True)
+    plotter.plot_pie_chart(data, column='Certificate Count', title='Top SCT Log Operators', filename=filename)
     
     # Estensioni Critiche vs Non Critiche delle Subject Alternative Name
     result = dao.get_critical_vs_non_critical_san_extensions()
@@ -352,6 +401,21 @@ def plot_leaf_certificates_analysis(dao: CertificateDAO):
         filename=filename
     )
     
+    # Estensioni Critiche vs Non Critiche del Certificate Policies
+    result = dao.get_critical_vs_non_critical_cp_policies()
+    filename = os.path.abspath('analysis/leaf/plots/critical_vs_non_critical_cp_policies.png')
+    data = pd.DataFrame(list(result.items()), columns=['Flag', 'Count'])
+    data.set_index('Flag', inplace=True)
+    plotter.plot_bar_chart(
+        data=data, 
+        x=data.index,
+        y='Count',
+        title='Estensioni Critiche vs Non Critiche del Certificate Policies', 
+        xlabel='Flag',
+        ylabel='Numero di Certificati', 
+        filename=filename
+    )
+    
     return
 
 
@@ -360,6 +424,7 @@ def leaf_certificates_analysis_main():
     parser = argparse.ArgumentParser(description='Analisi dei certificati.')
     parser.add_argument('--delete_db', action='store_true', help='Se presente, elimina il database prima di iniziare.')
     parser.add_argument('--leaf_analysis', action='store_true', help='Analizza i certificati leaf.')
+    parser.add_argument('--leaf_ocsp_analysis', action='store_true', help='Esegue l\'analisi OCSP per i certificati leaf.')
     parser.add_argument('--plot_results', action='store_true', 
                     help='Genera e visualizza i grafici se sono presenti dati analizzati. Utilizza questo flag per attivare la visualizzazione dei risultati grafici dell\'analisi dei certificati.')
 
@@ -374,7 +439,6 @@ def leaf_certificates_analysis_main():
 
     # Inizializza la connessione al database
     db_path = os.path.abspath('analysis/leaf/leaf_certificates.db')
-    # db_path = os.path.abspath('../leaf_certificates_light.db')
     schema_path = os.path.abspath('db/schema_leaf_db.sql')
     database = Database(db_path=db_path, schema_path=schema_path)
     database.connect(delete_database=args.delete_db)
@@ -382,12 +446,26 @@ def leaf_certificates_analysis_main():
     # Crea un'istanza del DAO
     dao = CertificateDAO(database.conn)
 
+    # Inserisce gli SCT Operators e SCT Logs 
+    if(args.delete_db):
+        log_list_file = os.path.abspath('../res/log_list.json')
+        process_insert_sct_logs(log_list_file, dao, database)
+
     # Esegui l'analisi dei certificati
     if(args.leaf_analysis):
+        logging.info("Inizio analisi certificati Leaf.")      
         leaf_certificates_analysis(result_json_file, dao, database)
+        logging.info("Analisi dei certificati Leaf completata con successo.")        
 
+    if(args.leaf_ocsp_analysis):
+        logging.info("Inizio dell'analisi OCSP per i certificati.")  
+        process_ocsp_check_status_request(dao, database)
+        logging.info("Analisi OCSP per i certificati completata.")
+    
     if(args.plot_results):
+        logging.info("Inizio generazione grafici per certificati leaf.")        
         plot_leaf_certificates_analysis(dao)
+        logging.info("Generazione dei grafici per l'analisi dei certificati leaf completata.")
 
     # Chiudi la connessione al database
     database.close()

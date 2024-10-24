@@ -130,14 +130,26 @@ Questo documento descrive le varie query SQL eseguite per analizzare i certifica
 
 ---
 
-## Top SCT Issuers
+## Top SCT Logs
 - **Descrizione**: Mostra quali log di SCT sono stati usati più spesso.
-- **Grafico Consigliato**: Bar Chart per rappresentare i principali Issuer di SCT.
+- **Grafico Consigliato**: Bar Chart per rappresentare i principali Log di SCT.
+
+---
+
+## Top SCT Log Operators
+- **Descrizione**: Conta i log di SCT per ogni operatore, mostrando quelli più utilizzati.
+- **Grafico Consigliato**: Bar Chart per rappresentare i principali operatori di log.
 
 ---
 
 ## Estensioni Critiche vs Non Critiche delle Subject Alternative Name
 - **Descrizione**: Mostra la proporzione di estensioni critiche vs non critiche nelle Subject Alternative Name.
 - **Grafico Consigliato**: Pie Chart per visualizzare la proporzione di estensioni critiche.
+
+---
+
+## Estensioni Critiche vs Non Critiche del Certificate Policies
+- **Descrizione**: Mostra la proporzione di certificate policies critici rispetto a quelli non critici.
+- **Grafico Consigliato**: Pie Chart o Bar Chart per confrontare estensioni critiche e non critiche.
 
 ---

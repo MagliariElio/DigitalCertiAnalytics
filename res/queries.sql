@@ -4,19 +4,11 @@ SELECT COUNT(*) FROM Errors;
 
 SELECT COUNT(*) FROM Extensions;
 
-SELECT DISTINCT extended_key_usage_is_critical FROM Extensions;
-
--- OCSP must stapling
-SELECT COUNT(*) FROM Certificates WHERE ocsp_must_stapling = 'Enabled';
-SELECT COUNT(*) FROM Certificates WHERE ocsp_must_stapling <> 'Enabled';
+SELECT COUNT(*) AS count, *
+FROM Certificates AS c
+GROUP BY c.signature_algorithm
 
 
-SELECT COUNT(*) AS certificate_count, Issuers.organization
-FROM Certificates 
-LEFT JOIN Issuers ON Certificates.issuer_id = Issuers.issuer_id 
-WHERE Issuers.organization IS NOT NULL AND TRIM(Issuers.organization) <> ''
-GROUP BY Issuers.organization
-ORDER BY certificate_count DESC;
 
 
 
@@ -24,7 +16,7 @@ ORDER BY certificate_count DESC;
 WITH IssuersCounts AS (
 	SELECT COUNT(*) AS certificate_count, Issuers.organization
 	FROM Certificates 
-	LEFT JOIN Issuers ON Certificates.issuer_id = Issuers.issuer_id 
+	INNER JOIN Issuers ON Certificates.issuer_id = Issuers.issuer_id 
 	WHERE Issuers.organization IS NOT NULL AND TRIM(Issuers.organization) <> ''
 	GROUP BY Issuers.organization
 	ORDER BY certificate_count DESC
@@ -109,14 +101,14 @@ ORDER BY
     key_algorithm, 
     key_length;
 
--- Stato OCSP dei Certificati (DA RIVEDERE, non andrebbe nel CERTIFICATES?)
+-- Stato OCSP dei Certificati
 SELECT ocsp_check, COUNT(*) AS count
-FROM Issuers
+FROM Certificates
 GROUP BY ocsp_check;
 
 -- Estensioni Critiche vs Non Critiche dell'AIA negli Issuers
 SELECT authority_info_access_is_critical, COUNT(*) AS count
-FROM Issuers
+FROM Certificates
 GROUP BY authority_info_access_is_critical
 ORDER BY count DESC;
 
@@ -206,16 +198,25 @@ ORDER BY month_year ASC;
 -- Numero dei Signed Certificate Timestamps (SCT) per Certificato
 SELECT count_sct, COUNT(*) AS certificate_count
 FROM (
-	SELECT COUNT(*) AS count_sct
-	FROM SignedCertificateTimestamps
-	GROUP BY certificate_id) AS sct_counts
+	SELECT COUNT(s.certificate_id) AS count_sct
+	FROM Certificates AS c LEFT JOIN SignedCertificateTimestamps s
+	ON s.certificate_id = c.certificate_id 
+	GROUP BY c.certificate_id) AS sct_counts
 GROUP BY count_sct
-ORDER BY count_sct DESC;
+ORDER BY count_sct ASC;
 
--- Top SCT Issuers
-SELECT log_id, COUNT(*) AS count
-FROM SignedCertificateTimestamps
-GROUP BY log_id
+-- Top SCT Logs
+SELECT l.description, COUNT(*) AS count
+FROM SignedCertificateTimestamps AS s INNER JOIN Logs AS l ON s.log_id = l.id
+GROUP BY l.description
+HAVING count > 5
+ORDER BY count DESC;
+
+-- Top SCT Log Operators
+SELECT lo.name, COUNT(*) AS count
+FROM SignedCertificateTimestamps AS s INNER JOIN Logs AS l ON s.log_id = l.id
+INNER JOIN LogsOperators AS lo ON l.operator_id = lo.id
+GROUP BY lo.name
 ORDER BY count DESC;
 
 -- Estensioni Critiche vs Non Critiche delle Subject Alternative Name nelle Subjects
@@ -224,3 +225,8 @@ FROM Subjects
 GROUP BY subject_alt_name_is_critical
 ORDER BY count DESC;
 
+-- Estensioni Critiche vs Non Critiche del Certificate Policies
+SELECT is_cp_critical, COUNT(*) AS count
+FROM CertificatePolicies
+GROUP BY is_cp_critical
+ORDER BY count DESC;

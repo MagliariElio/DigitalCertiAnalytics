@@ -47,11 +47,9 @@ class Database:
         """Crea gli indici per migliorare le prestazioni delle query."""
         cursor = self.conn.cursor()
         cursor.executescript("""
-            CREATE INDEX IF NOT EXISTS idx_certificates_serial_number ON Certificates(serial_number);
-            CREATE INDEX IF NOT EXISTS idx_issuers_issuer_dn ON Issuers(issuer_dn);
-            CREATE INDEX IF NOT EXISTS idx_subjects_subject_dn ON Subjects(subject_dn);
             CREATE INDEX IF NOT EXISTS idx_certificates_validity_start ON Certificates(validity_start);
             CREATE INDEX IF NOT EXISTS idx_certificates_validity_end ON Certificates(validity_end);
+            CREATE INDEX IF NOT EXISTS idx_logs_log_id ON Logs(log_id);
         """)
         self.conn.commit()
         logging.info("Indici creati con successo.")
