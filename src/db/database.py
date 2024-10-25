@@ -3,15 +3,21 @@ from sqlite3 import Connection
 from contextlib import contextmanager
 import logging
 import os
+from enum import Enum
 
 # Admin: Anuar Elio Magliari 
 # Politecnico di Torino
 
+class DatabaseType(Enum):
+    LEAF = "leaf",
+    INTERMEDIATE = "intermediate"
+
 class Database:
-    def __init__(self, db_path: str, schema_path: str):
+    def __init__(self, db_path: str, schema_path: str, db_type: DatabaseType):
         self.db_path = db_path
         self.schema_path = schema_path
         self.conn: Connection = None
+        self.db_type = db_type
 
     def connect(self, delete_database=True):
         """Crea una connessione al database SQLite."""
@@ -40,17 +46,34 @@ class Database:
             schema_sql = f.read()
         cursor = self.conn.cursor()
         cursor.executescript(schema_sql)
+        
+        if(self.db_type == DatabaseType.INTERMEDIATE):
+            cursor.executescript("""
+                DROP TABLE IF EXISTS Errors;
+            """)
+        
         self.conn.commit()
         logging.info("Tabelle create con successo.")
 
     def create_indexes(self):
         """Crea gli indici per migliorare le prestazioni delle query."""
         cursor = self.conn.cursor()
-        cursor.executescript("""
-            CREATE INDEX IF NOT EXISTS idx_certificates_validity_start ON Certificates(validity_start);
-            CREATE INDEX IF NOT EXISTS idx_certificates_validity_end ON Certificates(validity_end);
-            CREATE INDEX IF NOT EXISTS idx_logs_log_id ON Logs(log_id);
-        """)
+        
+        if self.db_type == DatabaseType.LEAF:
+            # Inserisci qui gli indici specifici solo per il database leaf
+            cursor.executescript("""
+                CREATE INDEX IF NOT EXISTS idx_certificates_validity_start ON Certificates(validity_start);
+                CREATE INDEX IF NOT EXISTS idx_certificates_validity_end ON Certificates(validity_end);
+                CREATE INDEX IF NOT EXISTS idx_logs_log_id ON Logs(log_id);
+            """)
+        elif self.db_type == DatabaseType.INTERMEDIATE:
+            # Inserisci qui gli indici specifici solo per il database intermediate
+            cursor.executescript("""
+                CREATE INDEX IF NOT EXISTS idx_certificates_validity_start ON Certificates(validity_start);
+                CREATE INDEX IF NOT EXISTS idx_certificates_validity_end ON Certificates(validity_end);
+                CREATE INDEX IF NOT EXISTS idx_logs_log_id ON Logs(log_id);
+            """)
+        
         self.conn.commit()
         logging.info("Indici creati con successo.")
 

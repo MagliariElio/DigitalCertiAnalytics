@@ -139,9 +139,12 @@ cd DigitalCertiAnalytics
 Il programma può essere eseguito tramite il terminale o la riga di comando. Sono disponibili diversi flag che controllano l'esecuzione del programma.
 
 ### Opzioni disponibili:
-- `--delete_db`: elimina il database esistente prima di iniziare l'analisi.
+- `--delete_all_db`: elimina i database esistenti prima di iniziare l'analisi.
+- `--delete_leaf_db`: elimina il database leaf esistente prima di iniziare l'analisi.
+- `--delete_intermediate_db`: elimina il database intermediate esistente prima di iniziare l'analisi.
 - `--leaf_analysis`: esegue l'analisi dei certificati leaf.
 - `--leaf_ocsp_analysis`: esegue l'analisi OCSP per i certificati leaf.
+- `--intermediate_analysis`: esegue l'analisi dei certificati intermediate.
 - `--plot_results`: genera e visualizza grafici dai dati analizzati.
 
 #### Esempi di utilizzo:
@@ -151,9 +154,9 @@ Il programma può essere eseguito tramite il terminale o la riga di comando. Son
    python analysis.main -m --leaf_analysis
    ```
 
-2. **Eliminare il database e analizzare i certificati**:
+2. **Eliminare il database e analizzare i certificati leaf**:
    ```bash
-   python analysis.main -m --delete_db --leaf_analysis
+   python analysis.main -m --delete_leaf_db --leaf_analysis
    ```
 
 3. **Generare e visualizzare i grafici dai dati**:
@@ -163,7 +166,7 @@ Il programma può essere eseguito tramite il terminale o la riga di comando. Son
 
 4. **Eseguire tutte le operazioni (elimina DB, analizza certificati e visualizza grafici)**:
    ```bash
-   python analysis.main -m --delete_db --leaf_analysis --plot_results
+   python analysis.main -m --delete_leaf_db --leaf_analysis --plot_results
    ```
 
 ### 3. Struttura dei File

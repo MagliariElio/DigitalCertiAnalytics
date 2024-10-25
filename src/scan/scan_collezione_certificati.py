@@ -29,6 +29,7 @@ def count_status(input_file):
     print("Sum of all values: ", status_count)
     print("Total Number of values: ", line_num)
     print("Number of rows excluded from the computation: ", line_num - status_count)
+    return
 
 def create_dir(out_dir, rm_dir=True):
     if(rm_dir == True and os.path.exists(out_dir)):
@@ -193,7 +194,47 @@ def check_chain_certificates(input_file):
     else:
         print("Ci sono dei domini che non hanno una catena")
         print(domains)
+    return
+
+def count_root_cert_chain(input_file):
+    out_file = "src/scan/count_root_certs_chain.log"
+    count_certs = 0
+    
+    with open(input_file, 'r') as reader, open(out_file, 'w+') as writer:
+        for line_num, row in enumerate(reader, start=1):
+            try:
+                json_row = json.loads(row)
+                
+                status = json_row["data"]["tls"]["status"]
+                
+                count_self_signed = 0
+                if status == "success":
+                    handshake_log = json_row.get("data", {}).get("tls", {}).get("result", {}).get("handshake_log", {})
+                    server_certificates = handshake_log.get("server_certificates", {})
+                    chain = server_certificates.get("chain", [])
+                    
+                    for cert in chain:
+                        is_self_signed = cert.get("parsed", {}).get("signature", {}).get("self_signed", {})
+                        if(is_self_signed):
+                            count_self_signed += 1
+                    
+                    if(count_self_signed > 1):
+                        count_certs += 1
+                        domain = json_row.get("domain", "")
+                        writer.write(f"Il dominio {domain} ha esattamente {count_self_signed} self signed.\n")
+                        writer.write(f"Certificato presente alla riga numero {line_num} dell'input file.\n")
+                        writer.write("------------------------------------------------------------------\n")
+                       
+            except json.JSONDecodeError:
+                print(f"Errore nel parsing della riga: {row}")
         
+    with open(out_file, 'r') as reader:
+        original_content = reader.readlines()
+
+    with open(out_file, 'w') as writer:
+        writer.write(f"Numero totale di certificati che hanno certificati self signed nella catena: {count_certs}\n\n")
+        writer.writelines(original_content)
+
     return
     
 def main():
@@ -206,8 +247,10 @@ def main():
 
     # check_chain_certificates(result_json_file)
 
-    download_json_domain(result_json_file, "blackterrier.pp.ua", None)
-    # download_json_domain(result_json_file, None, 112200)
+    # download_json_domain(result_json_file, "worldbank.org", None)
+    # download_json_domain(result_json_file, None, 1505)
+
+    count_root_cert_chain(result_json_file)
 
 if __name__ == "__main__":
     main()

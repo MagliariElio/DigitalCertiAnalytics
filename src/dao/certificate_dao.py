@@ -16,7 +16,7 @@ class CertificateDAO:
         self.cursor = self.conn.cursor()
 
     def insert_error_row(self, json_row):
-        """Inserisce un errore nel database."""
+        """Inserisce la riga di errore nel database. Vale solo per i certificati Leaf."""
         domain = json_row.get("domain", "")
         tls = json_row.get("data", {}).get("tls", {})
         
@@ -481,7 +481,7 @@ class CertificateDAO:
                     LIMIT 11
                 ),
                 Others AS (
-                    SELECT 'Others' AS country, SUM(country_count) AS country_count
+                    SELECT 'Others' AS country, COALESCE(SUM(country_count), 0) AS country_count
                     FROM IssuersCounts 
                     WHERE country NOT IN (SELECT country FROM TopCountry)
                 )
@@ -799,7 +799,7 @@ class CertificateDAO:
             for row in results:
                 key_usage = json.loads(row[0])
                 key_usage.pop('value', None)
-                count_dict[json.dumps(key_usage)] = row[1]
+                count_dict[json.dumps(", ".join(key_usage.keys()))] = row[1]
 
             logging.info(f"Totale trovati: {len(count_dict)}")
             return count_dict
@@ -843,7 +843,10 @@ class CertificateDAO:
 
             logging.debug(f"Risultati ottenuti: {len(results)}")
 
-            count_dict = {row[0]: row[1] for row in results}
+            count_dict = {}
+            for row in results:
+                key_usage = json.loads(row[0])
+                count_dict[json.dumps(", ".join(key_usage.keys()))] = row[1]
 
             logging.info(f"Totale trovati: {len(count_dict)}")
             return count_dict

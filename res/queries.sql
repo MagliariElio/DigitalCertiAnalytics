@@ -5,12 +5,20 @@ SELECT COUNT(*) FROM Errors;
 SELECT COUNT(*) FROM Extensions;
 
 SELECT COUNT(*) AS count, *
-FROM Certificates AS c
-GROUP BY c.signature_algorithm
+FROM Certificates
+GROUP BY ocsp_must_stapling
 
+--------------
 
+-- Check OCSP Status for certificates
+SELECT c.certificate_id, c.authority_info_access, i.common_name, i.raw AS issuer_cert_raw, c.raw AS leaf_cert_raw
+FROM certificates AS c 
+INNER JOIN Issuers AS i ON c.issuer_id = i.issuer_id
+WHERE c.ocsp_check = 'No Request Done'
+LIMIT 1000
 
-
+--------------
+-- Query per il plot dei risultati
 
 -- Conta quanti Issuer hanno emesso un certificato
 WITH IssuersCounts AS (
@@ -42,19 +50,19 @@ WHERE organization = 'DigiCert, Inc.';
 
 -- Numero di certificati emessi in diversi paesi
 WITH IssuersCounts AS (
-	SELECT COUNT(*) AS country_count, Issuers.country
+	SELECT Issuers.country, COUNT(*) AS country_count
 	FROM Issuers
 	WHERE TRIM(Issuers.country) <> '' AND TRIM(Issuers.country) <> '--'
 	GROUP BY Issuers.country
 	ORDER BY country_count DESC
 ),
 TopCountry AS (
-	SELECT country_count, country
+	SELECT country, country_count
 	FROM IssuersCounts
 	LIMIT 11
 ),
 Others AS (
-	SELECT SUM(country_count) AS country_count, 'Others' AS country
+	SELECT 'Others' AS country, COALESCE(SUM(country_count), 0) AS country_count
 	FROM IssuersCounts 
 	WHERE country NOT IN (SELECT country FROM TopCountry)
 )
