@@ -8,6 +8,13 @@ SELECT COUNT(*) AS count, *
 FROM Certificates
 GROUP BY ocsp_must_stapling
 
+-- Controlla se esistono differenze tra i dati del subject e issuer (Query per i certificati ROOT)
+-- Da eliminare la tabella Issuer una volta caricati tutti i root
+SELECT COUNT(*)
+FROM Certificates AS c INNER JOIN Subjects AS s ON c.subject_id = s.subject_id 
+INNER JOIN Issuers AS i ON c.issuer_id = i.issuer_id
+WHERE s.common_name = i.common_name AND s.subject_dn = i.issuer_dn
+
 --------------
 
 -- Check OCSP Status for certificates

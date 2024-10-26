@@ -3,9 +3,10 @@ import logging
 from typing import Optional
 from datetime import datetime
 from bean.certificate import Certificate
+from db.database import DatabaseType
 from cryptography.hazmat.primitives.hashes import SHA1, SHA256, SHA224, SHA384, SHA512
 from cryptography.x509.extensions import UserNotice
-from utils.utils import verify_signature, find_raw_cert_issuer, check_ocsp_status, reorder_signature_algorithm
+from utils.utils import verify_signature, find_raw_cert_issuer, check_ocsp_status, reorder_signature_algorithm, count_intermediate_and_root_certificates
 
 # Admin: Anuar Elio Magliari 
 # Politecnico di Torino
@@ -79,14 +80,14 @@ class CertificateDAO:
         logging.debug(f"Subject inserito: {subject_dn}")
         return self.cursor.lastrowid
 
-    def insert_certificate(self, json_row, parsed, issuer_id, subject_id, issuer_common_name, issuer_dn) -> Optional[int]:
+    def insert_certificate(self, json_row, parsed, issuer_id, subject_id, issuer_common_name, issuer_dn, certificate_type: DatabaseType) -> Optional[int]:
         """Inserisce un certificato nel database e restituisce il certificate_id."""
         download_date = json_row.get("data", {}).get("tls", {}).get("timestamp", datetime.now().isoformat())
         handshake_log = json_row.get("data", {}).get("tls", {}).get("result", {}).get("handshake_log", {})
         ocsp_stapling = handshake_log.get("server_hello", {}).get("ocsp_stapling", False)
 
         serial_number = parsed.get("serial_number", "")
-        domain = json_row.get("domain", "")
+        leaf_domain = json_row.get("domain", "")
         version = parsed.get("version", 0)
         signature_algorithm = parsed.get("signature_algorithm", {}).get("name", "")
         signature_algorithm = reorder_signature_algorithm(signature_algorithm)
@@ -109,12 +110,20 @@ class CertificateDAO:
 
         self_signed = parsed.get("signature", {}).get("self_signed", False)
         signature_valid = "Error"  # errore di default, nel caso non avesse alcuna catena
-        if len(chain) > 0:
-            issuer_cert = digital_certificate.get_certificate_from_raw(find_raw_cert_issuer(chain, issuer_dn))
-            if(issuer_cert is not None):
+        
+        if(certificate_type == DatabaseType.ROOT):
+            leaf_cert = digital_certificate.get_cert()
+            # Il certificato root si autofirma
+            signature_valid = verify_signature(cert=leaf_cert, ca_cert=leaf_cert)
+        else:
+            if len(chain) > 0:
+                issuer_cert = digital_certificate.get_certificate_from_raw(find_raw_cert_issuer(chain, issuer_dn))
                 leaf_cert = digital_certificate.get_cert()
-                signature_valid = verify_signature(leaf_cert, issuer_cert)
-                
+                if(issuer_cert is None):
+                    signature_valid = "Issuer not found"
+                else:
+                    signature_valid = verify_signature(leaf_cert, issuer_cert)
+                    
         ocsp_must_stapling = digital_certificate.is_ocsp_must_staple()
         
         extensions = parsed.get("extensions", {})
@@ -125,20 +134,23 @@ class CertificateDAO:
 
         ocsp_check = "No Request Done"
         
+        certificate = handshake_log.get("server_certificates", {}).get("certificate", {})
+        num_intermediate_certificates, has_root_certificate = count_intermediate_and_root_certificates(chain, certificate)
+        
         self.cursor.execute("""
             INSERT INTO Certificates (
-                serial_number, domain, version, signature_algorithm, key_algorithm, key_length, 
+                serial_number, leaf_domain, version, signature_algorithm, key_algorithm, key_length, 
                 validity_start, validity_end, validity_length, issuer_id, 
                 subject_id, validation_level, redacted, signature_valid, self_signed, download_date, 
                 ocsp_stapling, ocsp_must_stapling, authority_info_access_is_critical, authority_info_access, 
-                ocsp_check, chain_length, raw
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ocsp_check, num_intermediate_certificates, has_root_certificate, raw
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
-            serial_number, domain, version, signature_algorithm, key_algorithm, key_length,
+            serial_number, leaf_domain, version, signature_algorithm, key_algorithm, key_length,
             validity_start, validity_end, validity_length, issuer_id,
             subject_id, validation_level, redacted, signature_valid, self_signed, download_date, 
             ocsp_stapling, ocsp_must_stapling, authority_info_access_is_critical, json.dumps(authority_info_access), 
-            ocsp_check, len(chain), raw
+            ocsp_check, num_intermediate_certificates, has_root_certificate, raw
         ))
 
         logging.debug(f"Certificato inserito: {serial_number}")
@@ -235,9 +247,9 @@ class CertificateDAO:
             logging.debug(f"SCT inserito per il certificate ID: {certificate_id}")
         return
 
-    def insert_certificate_full(self, json_row, parsed, digital_certificate: Certificate, issuer_id, subject_id, issuer_common_name, issuer_dn):
+    def insert_certificate_full(self, json_row, parsed, digital_certificate: Certificate, issuer_id, subject_id, issuer_common_name, issuer_dn, certificate_type: DatabaseType):
         """Processa e inserisce un certificato nel database, comprese le estensioni."""
-        certificate_id = self.insert_certificate(json_row, parsed, issuer_id, subject_id, issuer_common_name, issuer_dn)
+        certificate_id = self.insert_certificate(json_row, parsed, issuer_id, subject_id, issuer_common_name, issuer_dn, certificate_type)
         
         if certificate_id:
             # Inserisce le Extensions
@@ -253,7 +265,7 @@ class CertificateDAO:
             if (certificate_policies is not None):
                 self.insert_certificate_policies(extension_id, certificate_policies)
 
-    def process_insert_certificate(self, json_row):
+    def process_insert_certificate(self, json_row, certificate_type: DatabaseType):
         """Processa e inserisce un certificato nel database."""
         parsed = json_row.get("data", {}).get("tls", {}).get("result", {}).get("handshake_log", {}).get("server_certificates", {}).get("certificate", {}).get("parsed", {})
 
@@ -270,7 +282,7 @@ class CertificateDAO:
         subject_id = self.insert_subject(parsed, digital_certificate)
         
         # Inserisci Certificate e Extensions
-        self.insert_certificate_full(json_row, parsed, digital_certificate, issuer_id, subject_id, issuer_common_name, issuer_dn)
+        self.insert_certificate_full(json_row, parsed, digital_certificate, issuer_id, subject_id, issuer_common_name, issuer_dn, certificate_type)
         return
 
     def check_ocsp_status_for_certificates(self, batch_size=1000):

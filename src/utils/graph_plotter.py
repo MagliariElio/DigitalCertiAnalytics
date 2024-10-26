@@ -1,9 +1,21 @@
 import os
+import logging, warnings
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 
 class GraphPlotter:
+    def close_all_plots(self):
+        """Chiude tutte le figure aperte."""
+        logging.info("Chiusura di tutte le figure aperte...")
+        plt.close('all')
+        return
+        
+    def disable_logging(self):
+        logging.getLogger('matplotlib').setLevel(logging.ERROR)
+        logging.getLogger('seaborn').setLevel(logging.ERROR)
+        warnings.filterwarnings("ignore", category=FutureWarning)
+
     def plot_bar_chart(self, data, x, y, title, xlabel, ylabel, filename):
         """Crea un grafico a barre ottimizzato per la visualizzazione dei dati."""
         plt.figure(figsize=(14, 7))  
@@ -26,7 +38,9 @@ class GraphPlotter:
         if not os.path.exists(directory):
             os.makedirs(directory)  
         
-        plt.savefig(filename, dpi=300) 
+        plt.savefig(filename, dpi=300)
+        
+        logging.info(f"Grafico '{title}' generato con successo e salvato in {filename}.")
         plt.close()
 
     def plot_pie_chart(self, data, column, title, filename):
@@ -44,7 +58,9 @@ class GraphPlotter:
         if not os.path.exists(directory):
             os.makedirs(directory)  
         
-        plt.savefig(filename, dpi=300)  
+        plt.savefig(filename, dpi=300)
+        
+        logging.info(f"Grafico '{title}' generato con successo e salvato in {filename}.")
         plt.close()
 
     def plot_histogram(self, data, y, title, xlabel, ylabel, filename):
@@ -72,6 +88,8 @@ class GraphPlotter:
             os.makedirs(directory)
 
         plt.savefig(filename, dpi=300)
+        
+        logging.info(f"Grafico '{title}' generato con successo e salvato in {filename}.")
         plt.close()
 
     def plot_line_chart(self, data, x, y, title, xlabel, ylabel, filename):
@@ -97,6 +115,8 @@ class GraphPlotter:
             os.makedirs(directory)
 
         plt.savefig(filename, dpi=300)
+        
+        logging.info(f"Grafico '{title}' generato con successo e salvato in {filename}.")
         plt.close()
 
     def plot_scatter_plot(self, data, x, y, title, xlabel, ylabel, filename):
@@ -120,7 +140,9 @@ class GraphPlotter:
         if not os.path.exists(directory):
             os.makedirs(directory)  
 
-        plt.savefig(filename, dpi=300)  
+        plt.savefig(filename, dpi=300)
+        
+        logging.info(f"Grafico '{title}' generato con successo e salvato in {filename}.")
         plt.close()
 
     def plot_box_plot(self, data, x, y, title, xlabel, ylabel, filename):
@@ -137,7 +159,9 @@ class GraphPlotter:
         if not os.path.exists(directory):
             os.makedirs(directory)  
         
-        plt.savefig(filename, dpi=300)  
+        plt.savefig(filename, dpi=300)
+        
+        logging.info(f"Grafico '{title}' generato con successo e salvato in {filename}.")
         plt.close()
 
     def plot_stacked_bar_chart(self, data, title, xlabel, ylabel, filename):
@@ -157,7 +181,9 @@ class GraphPlotter:
         if not os.path.exists(directory):
             os.makedirs(directory)  
         
-        plt.savefig(filename, dpi=300)  
+        plt.savefig(filename, dpi=300)
+        
+        logging.info(f"Grafico '{title}' generato con successo e salvato in {filename}.")
         plt.close()
 
     def plot_dot_plot(self, data, x, y, title, xlabel, ylabel, filename):
@@ -194,5 +220,7 @@ class GraphPlotter:
             os.makedirs(directory)
 
         plt.savefig(filename, dpi=300)
+        
+        logging.info(f"Grafico '{title}' generato con successo e salvato in {filename}.")
         plt.close()
 

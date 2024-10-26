@@ -1,0 +1,225 @@
+2024-10-27 00:28:04,837 - INFO - certificates_analysis.py:326 - certificates_analysis_main() - Inizio dell'applicazione.
+2024-10-27 00:28:04,845 - INFO - database.py:27 - connect() - Database eliminato con successo: /home/elion-man/TEST_TESI/src/analysis/root/root_certificates.db
+2024-10-27 00:28:04,869 - INFO - database.py:51 - create_tables() - Tabelle create con successo.
+2024-10-27 00:28:04,921 - INFO - database.py:80 - create_indexes() - Indici creati con successo.
+2024-10-27 00:28:05,219 - INFO - certificates_analysis.py:214 - process_insert_sct_logs() - SCT Operators e SCT Logs memorizzati con successo.
+2024-10-27 00:28:05,220 - INFO - certificates_analysis.py:464 - certificates_analysis_main() - Inizio analisi certificati Root.
+2024-10-27 00:28:05,872 - INFO - certificates_analysis.py:36 - handle_exit_signal() - Segnale SIGINT (Ctrl + C) ricevuto. Inizio della procedura di chiusura...
+2024-10-27 00:28:05,874 - INFO - certificates_analysis.py:18 - close_connections() - Inizio chiusura delle connessioni ai database...
+2024-10-27 00:28:05,877 - INFO - database.py:108 - close() - Connessione al database chiusa.
+2024-10-27 00:28:05,879 - INFO - certificates_analysis.py:30 - close_connections() - Connessione al database Root chiusa con successo.
+2024-10-27 00:28:05,881 - INFO - certificates_analysis.py:32 - close_connections() - Tutte le connessioni ai database sono state chiuse.
+2024-10-27 00:28:05,883 - INFO - certificates_analysis.py:38 - handle_exit_signal() - Uscita dell'applicazione in corso...
+2024-10-27 00:29:09,553 - INFO - certificates_analysis.py:331 - certificates_analysis_main() - Inizio dell'applicazione.
+2024-10-27 00:29:09,556 - INFO - database.py:27 - connect() - Database eliminato con successo: /home/elion-man/TEST_TESI/src/analysis/root/root_certificates.db
+2024-10-27 00:29:09,603 - INFO - database.py:51 - create_tables() - Tabelle create con successo.
+2024-10-27 00:29:09,694 - INFO - database.py:80 - create_indexes() - Indici creati con successo.
+2024-10-27 00:29:10,366 - INFO - certificates_analysis.py:219 - process_insert_sct_logs() - SCT Operators e SCT Logs memorizzati con successo.
+2024-10-27 00:29:10,368 - INFO - certificates_analysis.py:469 - certificates_analysis_main() - Inizio analisi certificati Root.
+2024-10-27 00:29:11,102 - INFO - certificates_analysis.py:39 - handle_exit_signal() - Segnale SIGINT (Ctrl + C) ricevuto. Inizio della procedura di chiusura...
+2024-10-27 00:29:11,105 - INFO - certificates_analysis.py:18 - close_connections() - Inizio chiusura delle connessioni ai database...
+2024-10-27 00:29:11,108 - INFO - database.py:108 - close() - Connessione al database chiusa.
+2024-10-27 00:29:11,110 - INFO - certificates_analysis.py:30 - close_connections() - Connessione al database Root chiusa con successo.
+2024-10-27 00:29:11,113 - INFO - certificates_analysis.py:35 - close_connections() - Tutte le connessioni ai database sono state chiuse.
+2024-10-27 00:29:11,114 - INFO - certificates_analysis.py:41 - handle_exit_signal() - Uscita dell'applicazione in corso...
+2024-10-27 00:38:48,133 - INFO - certificates_analysis.py:362 - certificates_analysis_main() - Inizio dell'applicazione.
+2024-10-27 00:38:48,137 - INFO - database.py:27 - connect() - Database eliminato con successo: /home/elion-man/TEST_TESI/src/analysis/root/root_certificates.db
+2024-10-27 00:38:48,143 - INFO - database.py:51 - create_tables() - Tabelle create con successo.
+2024-10-27 00:38:48,153 - INFO - database.py:80 - create_indexes() - Indici creati con successo.
+2024-10-27 00:38:48,211 - INFO - certificates_analysis.py:247 - process_insert_sct_logs() - SCT Operators e SCT Logs memorizzati con successo.
+2024-10-27 00:38:48,212 - INFO - certificates_analysis.py:500 - certificates_analysis_main() - Inizio analisi certificati Root.
+2024-10-27 00:38:48,732 - INFO - certificates_analysis.py:48 - handle_exit_signal() - Segnale SIGINT (Ctrl + C) ricevuto. Inizio della procedura di chiusura...
+2024-10-27 00:38:48,735 - INFO - certificates_analysis.py:18 - close_connections() - Inizio chiusura delle connessioni ai database...
+2024-10-27 00:38:48,738 - INFO - database.py:108 - close() - Connessione al database chiusa.
+2024-10-27 00:38:48,740 - INFO - certificates_analysis.py:30 - close_connections() - Connessione al database Root chiusa con successo.
+2024-10-27 00:38:48,745 - INFO - certificates_analysis.py:44 - close_connections() - Tutte le connessioni ai database sono state chiuse.
+2024-10-27 00:38:48,746 - INFO - certificates_analysis.py:50 - handle_exit_signal() - Uscita dell'applicazione in corso...
+2024-10-27 00:39:12,881 - INFO - certificates_analysis.py:362 - certificates_analysis_main() - Inizio dell'applicazione.
+2024-10-27 00:39:12,886 - INFO - database.py:42 - _initialize_database() - Connessione al database esistente: /home/elion-man/TEST_TESI/src/analysis/root/root_certificates.db
+2024-10-27 00:39:12,887 - INFO - certificates_analysis.py:512 - certificates_analysis_main() - Inizio generazione grafici per certificati Root.
+2024-10-27 00:39:12,893 - INFO - certificates_analysis.py:312 - plot_root_certificates_analysis() - La cartella 'analysis/root/plots' è stata rimossa.
+2024-10-27 00:39:12,896 - INFO - certificates_analysis.py:316 - plot_root_certificates_analysis() - La cartella 'analysis/root/plots' è stata creata.
+2024-10-27 00:39:12,898 - INFO - certificate_dao.py:473 - get_issuer_certificate_count() - Totale issuers trovati: 1
+2024-10-27 00:39:13,312 - ERROR - plotter_utils.py:52 - plot_general_certificates_analysis() - Errore nella generazione di un grafico: float() argument must be a string or a real number, not 'NoneType'
+2024-10-27 00:39:13,313 - INFO - certificates_analysis.py:514 - certificates_analysis_main() - Generazione dei grafici per l'analisi dei certificati Root completata.
+2024-10-27 00:39:13,318 - INFO - database.py:108 - close() - Connessione al database chiusa.
+2024-10-27 00:39:13,320 - INFO - certificates_analysis.py:520 - certificates_analysis_main() - Applicazione terminata correttamente.
+2024-10-27 00:39:37,234 - INFO - certificates_analysis.py:362 - certificates_analysis_main() - Inizio dell'applicazione.
+2024-10-27 00:39:37,237 - INFO - database.py:27 - connect() - Database eliminato con successo: /home/elion-man/TEST_TESI/src/analysis/root/root_certificates.db
+2024-10-27 00:39:37,247 - INFO - database.py:51 - create_tables() - Tabelle create con successo.
+2024-10-27 00:39:37,256 - INFO - database.py:80 - create_indexes() - Indici creati con successo.
+2024-10-27 00:39:37,306 - INFO - certificates_analysis.py:247 - process_insert_sct_logs() - SCT Operators e SCT Logs memorizzati con successo.
+2024-10-27 00:39:37,307 - INFO - certificates_analysis.py:500 - certificates_analysis_main() - Inizio analisi certificati Root.
+2024-10-27 00:39:47,681 - ERROR - certificate.py:41 - get_certificate_from_raw() - Certificato non valido, errore nel parsing: error parsing asn1 value: ParseError { kind: EncodedDefault, location: ["RawCertificate::tbs_cert", "TbsCertificate::extensions", 1, "Extension::critical"] }
+2024-10-27 00:39:47,684 - ERROR - certificate.py:133 - is_sub_alt_name_critical() - Errore imprevisto durante il controllo Sub Alt Name: 'NoneType' object has no attribute 'extensions'
+2024-10-27 00:39:47,686 - ERROR - certificate.py:41 - get_certificate_from_raw() - Certificato non valido, errore nel parsing: error parsing asn1 value: ParseError { kind: EncodedDefault, location: ["RawCertificate::tbs_cert", "TbsCertificate::extensions", 1, "Extension::critical"] }
+2024-10-27 00:39:47,689 - ERROR - utils.py:60 - verify_signature() - Impossibile verificare la firma: il certificato non è presente
+2024-10-27 00:39:47,691 - ERROR - certificate.py:147 - is_ocsp_must_staple() - Errore imprevisto durante il controllo OCSP must stapling: 'NoneType' object has no attribute 'extensions'
+2024-10-27 00:39:47,693 - ERROR - certificate.py:55 - is_aia_critical() - Errore imprevisto durante il controllo AIA (): 'NoneType' object has no attribute 'extensions'
+2024-10-27 00:39:47,696 - ERROR - certificate.py:41 - get_certificate_from_raw() - Certificato non valido, errore nel parsing: error parsing asn1 value: ParseError { kind: EncodedDefault, location: ["RawCertificate::tbs_cert", "TbsCertificate::extensions", 1, "Extension::critical"] }
+2024-10-27 00:39:47,698 - ERROR - certificate.py:91 - is_crl_distr_point_critical() - Errore imprevisto durante il controllo Crl Distr Point: 'NoneType' object has no attribute 'extensions'
+2024-10-27 00:39:47,701 - ERROR - certificate.py:105 - is_key_usage_critical() - Errore imprevisto durante il controllo Key Usage: 'NoneType' object has no attribute 'extensions'
+2024-10-27 00:39:47,703 - ERROR - certificate.py:119 - is_extended_key_usage_critical() - Errore imprevisto durante il controllo Extended Key Usage: 'NoneType' object has no attribute 'extensions'
+2024-10-27 00:39:47,706 - ERROR - certificate.py:77 - get_cp() - Errore imprevisto nel recupero delle CERTIFICATE_POLICIES: 'NoneType' object has no attribute 'extensions'
+2024-10-27 00:40:01,776 - INFO - certificates_analysis.py:48 - handle_exit_signal() - Segnale SIGINT (Ctrl + C) ricevuto. Inizio della procedura di chiusura...
+2024-10-27 00:40:01,778 - INFO - certificates_analysis.py:18 - close_connections() - Inizio chiusura delle connessioni ai database...
+2024-10-27 00:40:01,780 - INFO - database.py:108 - close() - Connessione al database chiusa.
+2024-10-27 00:40:01,787 - INFO - certificates_analysis.py:30 - close_connections() - Connessione al database Root chiusa con successo.
+2024-10-27 00:40:01,790 - INFO - certificates_analysis.py:44 - close_connections() - Tutte le connessioni ai database sono state chiuse.
+2024-10-27 00:40:01,791 - INFO - certificates_analysis.py:50 - handle_exit_signal() - Uscita dell'applicazione in corso...
+2024-10-27 00:40:04,505 - INFO - certificates_analysis.py:362 - certificates_analysis_main() - Inizio dell'applicazione.
+2024-10-27 00:40:04,510 - INFO - database.py:27 - connect() - Database eliminato con successo: /home/elion-man/TEST_TESI/src/analysis/root/root_certificates.db
+2024-10-27 00:40:04,515 - INFO - database.py:51 - create_tables() - Tabelle create con successo.
+2024-10-27 00:40:04,525 - INFO - database.py:80 - create_indexes() - Indici creati con successo.
+2024-10-27 00:40:04,579 - INFO - certificates_analysis.py:247 - process_insert_sct_logs() - SCT Operators e SCT Logs memorizzati con successo.
+2024-10-27 00:40:04,581 - INFO - certificates_analysis.py:500 - certificates_analysis_main() - Inizio analisi certificati Root.
+2024-10-27 00:40:05,761 - INFO - certificates_analysis.py:48 - handle_exit_signal() - Segnale SIGINT (Ctrl + C) ricevuto. Inizio della procedura di chiusura...
+2024-10-27 00:40:05,764 - INFO - certificates_analysis.py:18 - close_connections() - Inizio chiusura delle connessioni ai database...
+2024-10-27 00:40:05,766 - INFO - database.py:108 - close() - Connessione al database chiusa.
+2024-10-27 00:40:05,769 - INFO - certificates_analysis.py:30 - close_connections() - Connessione al database Root chiusa con successo.
+2024-10-27 00:40:05,774 - INFO - certificates_analysis.py:44 - close_connections() - Tutte le connessioni ai database sono state chiuse.
+2024-10-27 00:40:05,775 - INFO - certificates_analysis.py:50 - handle_exit_signal() - Uscita dell'applicazione in corso...
+2024-10-27 00:40:08,333 - INFO - certificates_analysis.py:362 - certificates_analysis_main() - Inizio dell'applicazione.
+2024-10-27 00:40:08,336 - INFO - database.py:27 - connect() - Database eliminato con successo: /home/elion-man/TEST_TESI/src/analysis/root/root_certificates.db
+2024-10-27 00:40:08,341 - INFO - database.py:51 - create_tables() - Tabelle create con successo.
+2024-10-27 00:40:08,350 - INFO - database.py:80 - create_indexes() - Indici creati con successo.
+2024-10-27 00:40:08,408 - INFO - certificates_analysis.py:247 - process_insert_sct_logs() - SCT Operators e SCT Logs memorizzati con successo.
+2024-10-27 00:40:08,409 - INFO - certificates_analysis.py:500 - certificates_analysis_main() - Inizio analisi certificati Root.
+2024-10-27 00:40:08,745 - INFO - certificates_analysis.py:48 - handle_exit_signal() - Segnale SIGINT (Ctrl + C) ricevuto. Inizio della procedura di chiusura...
+2024-10-27 00:40:08,748 - INFO - certificates_analysis.py:18 - close_connections() - Inizio chiusura delle connessioni ai database...
+2024-10-27 00:40:08,750 - INFO - database.py:108 - close() - Connessione al database chiusa.
+2024-10-27 00:40:08,752 - INFO - certificates_analysis.py:30 - close_connections() - Connessione al database Root chiusa con successo.
+2024-10-27 00:40:08,756 - INFO - certificates_analysis.py:44 - close_connections() - Tutte le connessioni ai database sono state chiuse.
+2024-10-27 00:40:08,756 - INFO - certificates_analysis.py:50 - handle_exit_signal() - Uscita dell'applicazione in corso...
+2024-10-27 00:40:24,536 - INFO - certificates_analysis.py:362 - certificates_analysis_main() - Inizio dell'applicazione.
+2024-10-27 00:40:24,539 - INFO - database.py:27 - connect() - Database eliminato con successo: /home/elion-man/TEST_TESI/src/analysis/root/root_certificates.db
+2024-10-27 00:40:24,545 - INFO - database.py:51 - create_tables() - Tabelle create con successo.
+2024-10-27 00:40:24,554 - INFO - database.py:80 - create_indexes() - Indici creati con successo.
+2024-10-27 00:40:24,609 - INFO - certificates_analysis.py:247 - process_insert_sct_logs() - SCT Operators e SCT Logs memorizzati con successo.
+2024-10-27 00:40:24,610 - INFO - certificates_analysis.py:500 - certificates_analysis_main() - Inizio analisi certificati Root.
+2024-10-27 00:41:20,804 - INFO - certificates_analysis.py:48 - handle_exit_signal() - Segnale SIGINT (Ctrl + C) ricevuto. Inizio della procedura di chiusura...
+2024-10-27 00:41:20,808 - INFO - certificates_analysis.py:18 - close_connections() - Inizio chiusura delle connessioni ai database...
+2024-10-27 00:41:20,811 - INFO - database.py:108 - close() - Connessione al database chiusa.
+2024-10-27 00:41:20,813 - INFO - certificates_analysis.py:30 - close_connections() - Connessione al database Root chiusa con successo.
+2024-10-27 00:41:20,817 - INFO - certificates_analysis.py:44 - close_connections() - Tutte le connessioni ai database sono state chiuse.
+2024-10-27 00:41:20,818 - INFO - certificates_analysis.py:50 - handle_exit_signal() - Uscita dell'applicazione in corso...
+2024-10-27 00:41:23,106 - INFO - certificates_analysis.py:362 - certificates_analysis_main() - Inizio dell'applicazione.
+2024-10-27 00:41:23,111 - INFO - database.py:27 - connect() - Database eliminato con successo: /home/elion-man/TEST_TESI/src/analysis/root/root_certificates.db
+2024-10-27 00:41:23,149 - INFO - database.py:51 - create_tables() - Tabelle create con successo.
+2024-10-27 00:41:23,226 - INFO - database.py:80 - create_indexes() - Indici creati con successo.
+2024-10-27 00:41:23,788 - INFO - certificates_analysis.py:247 - process_insert_sct_logs() - SCT Operators e SCT Logs memorizzati con successo.
+2024-10-27 00:41:23,790 - INFO - certificates_analysis.py:500 - certificates_analysis_main() - Inizio analisi certificati Root.
+2024-10-27 00:43:25,267 - INFO - certificates_analysis.py:362 - certificates_analysis_main() - Inizio dell'applicazione.
+2024-10-27 00:43:25,273 - INFO - database.py:27 - connect() - Database eliminato con successo: /home/elion-man/TEST_TESI/src/analysis/root/root_certificates.db
+2024-10-27 00:43:25,286 - INFO - database.py:51 - create_tables() - Tabelle create con successo.
+2024-10-27 00:43:25,302 - INFO - database.py:80 - create_indexes() - Indici creati con successo.
+2024-10-27 00:43:25,359 - INFO - certificates_analysis.py:247 - process_insert_sct_logs() - SCT Operators e SCT Logs memorizzati con successo.
+2024-10-27 00:43:25,361 - INFO - certificates_analysis.py:500 - certificates_analysis_main() - Inizio analisi certificati Root.
+2024-10-27 00:44:26,601 - INFO - certificates_analysis.py:48 - handle_exit_signal() - Segnale SIGINT (Ctrl + C) ricevuto. Inizio della procedura di chiusura...
+2024-10-27 00:44:26,621 - INFO - certificates_analysis.py:18 - close_connections() - Inizio chiusura delle connessioni ai database...
+2024-10-27 00:44:26,623 - INFO - database.py:108 - close() - Connessione al database chiusa.
+2024-10-27 00:44:26,626 - INFO - certificates_analysis.py:30 - close_connections() - Connessione al database Root chiusa con successo.
+2024-10-27 00:44:26,630 - INFO - certificates_analysis.py:44 - close_connections() - Tutte le connessioni ai database sono state chiuse.
+2024-10-27 00:44:26,631 - INFO - certificates_analysis.py:50 - handle_exit_signal() - Uscita dell'applicazione in corso...
+2024-10-27 00:44:29,963 - INFO - certificates_analysis.py:362 - certificates_analysis_main() - Inizio dell'applicazione.
+2024-10-27 00:44:29,969 - INFO - database.py:27 - connect() - Database eliminato con successo: /home/elion-man/TEST_TESI/src/analysis/root/root_certificates.db
+2024-10-27 00:44:30,008 - INFO - database.py:51 - create_tables() - Tabelle create con successo.
+2024-10-27 00:44:30,081 - INFO - database.py:80 - create_indexes() - Indici creati con successo.
+2024-10-27 00:44:30,657 - INFO - certificates_analysis.py:247 - process_insert_sct_logs() - SCT Operators e SCT Logs memorizzati con successo.
+2024-10-27 00:44:30,659 - INFO - certificates_analysis.py:500 - certificates_analysis_main() - Inizio analisi certificati Root.
+2024-10-27 00:48:09,593 - INFO - certificates_analysis.py:48 - handle_exit_signal() - Segnale SIGINT (Ctrl + C) ricevuto. Inizio della procedura di chiusura...
+2024-10-27 00:48:09,597 - INFO - certificates_analysis.py:18 - close_connections() - Inizio chiusura delle connessioni ai database...
+2024-10-27 00:48:09,599 - INFO - database.py:108 - close() - Connessione al database chiusa.
+2024-10-27 00:48:09,601 - INFO - certificates_analysis.py:30 - close_connections() - Connessione al database Root chiusa con successo.
+2024-10-27 00:48:09,605 - INFO - certificates_analysis.py:44 - close_connections() - Tutte le connessioni ai database sono state chiuse.
+2024-10-27 00:48:09,605 - INFO - certificates_analysis.py:50 - handle_exit_signal() - Uscita dell'applicazione in corso...
+2024-10-27 00:48:11,823 - INFO - certificates_analysis.py:362 - certificates_analysis_main() - Inizio dell'applicazione.
+2024-10-27 00:48:11,830 - INFO - database.py:27 - connect() - Database eliminato con successo: /home/elion-man/TEST_TESI/src/analysis/root/root_certificates.db
+2024-10-27 00:48:11,879 - INFO - database.py:51 - create_tables() - Tabelle create con successo.
+2024-10-27 00:48:11,969 - INFO - database.py:80 - create_indexes() - Indici creati con successo.
+2024-10-27 00:48:12,300 - INFO - certificates_analysis.py:247 - process_insert_sct_logs() - SCT Operators e SCT Logs memorizzati con successo.
+2024-10-27 00:48:12,302 - INFO - certificates_analysis.py:500 - certificates_analysis_main() - Inizio analisi certificati Root.
+2024-10-27 00:48:22,660 - INFO - certificates_analysis.py:48 - handle_exit_signal() - Segnale SIGINT (Ctrl + C) ricevuto. Inizio della procedura di chiusura...
+2024-10-27 00:48:22,663 - INFO - certificates_analysis.py:18 - close_connections() - Inizio chiusura delle connessioni ai database...
+2024-10-27 00:48:22,665 - INFO - database.py:108 - close() - Connessione al database chiusa.
+2024-10-27 00:48:22,667 - INFO - certificates_analysis.py:30 - close_connections() - Connessione al database Root chiusa con successo.
+2024-10-27 00:48:22,671 - INFO - certificates_analysis.py:44 - close_connections() - Tutte le connessioni ai database sono state chiuse.
+2024-10-27 00:48:22,672 - INFO - certificates_analysis.py:50 - handle_exit_signal() - Uscita dell'applicazione in corso...
+2024-10-27 00:48:24,874 - INFO - certificates_analysis.py:362 - certificates_analysis_main() - Inizio dell'applicazione.
+2024-10-27 00:48:24,878 - INFO - database.py:27 - connect() - Database eliminato con successo: /home/elion-man/TEST_TESI/src/analysis/root/root_certificates.db
+2024-10-27 00:48:24,901 - INFO - database.py:51 - create_tables() - Tabelle create con successo.
+2024-10-27 00:48:24,944 - INFO - database.py:80 - create_indexes() - Indici creati con successo.
+2024-10-27 00:48:25,252 - INFO - certificates_analysis.py:247 - process_insert_sct_logs() - SCT Operators e SCT Logs memorizzati con successo.
+2024-10-27 00:48:25,254 - INFO - certificates_analysis.py:500 - certificates_analysis_main() - Inizio analisi certificati Root.
+2024-10-27 00:49:07,836 - INFO - certificates_analysis.py:48 - handle_exit_signal() - Segnale SIGINT (Ctrl + C) ricevuto. Inizio della procedura di chiusura...
+2024-10-27 00:49:07,839 - INFO - certificates_analysis.py:18 - close_connections() - Inizio chiusura delle connessioni ai database...
+2024-10-27 00:49:07,841 - INFO - database.py:108 - close() - Connessione al database chiusa.
+2024-10-27 00:49:07,843 - INFO - certificates_analysis.py:30 - close_connections() - Connessione al database Root chiusa con successo.
+2024-10-27 00:49:07,846 - INFO - certificates_analysis.py:44 - close_connections() - Tutte le connessioni ai database sono state chiuse.
+2024-10-27 00:49:07,847 - INFO - certificates_analysis.py:50 - handle_exit_signal() - Uscita dell'applicazione in corso...
+2024-10-27 00:49:10,026 - INFO - certificates_analysis.py:362 - certificates_analysis_main() - Inizio dell'applicazione.
+2024-10-27 00:49:10,031 - INFO - database.py:27 - connect() - Database eliminato con successo: /home/elion-man/TEST_TESI/src/analysis/root/root_certificates.db
+2024-10-27 00:49:10,036 - INFO - database.py:51 - create_tables() - Tabelle create con successo.
+2024-10-27 00:49:10,047 - INFO - database.py:80 - create_indexes() - Indici creati con successo.
+2024-10-27 00:49:10,107 - INFO - certificates_analysis.py:247 - process_insert_sct_logs() - SCT Operators e SCT Logs memorizzati con successo.
+2024-10-27 00:49:10,109 - INFO - certificates_analysis.py:500 - certificates_analysis_main() - Inizio analisi certificati Root.
+2024-10-27 00:52:36,781 - INFO - certificates_analysis.py:48 - handle_exit_signal() - Segnale SIGINT (Ctrl + C) ricevuto. Inizio della procedura di chiusura...
+2024-10-27 00:52:36,785 - INFO - certificates_analysis.py:18 - close_connections() - Inizio chiusura delle connessioni ai database...
+2024-10-27 00:52:36,787 - INFO - database.py:108 - close() - Connessione al database chiusa.
+2024-10-27 00:52:36,789 - INFO - certificates_analysis.py:30 - close_connections() - Connessione al database Root chiusa con successo.
+2024-10-27 00:52:36,793 - INFO - certificates_analysis.py:44 - close_connections() - Tutte le connessioni ai database sono state chiuse.
+2024-10-27 00:52:36,794 - INFO - certificates_analysis.py:50 - handle_exit_signal() - Uscita dell'applicazione in corso...
+2024-10-27 00:52:39,072 - INFO - certificates_analysis.py:371 - certificates_analysis_main() - Inizio dell'applicazione.
+2024-10-27 00:52:39,079 - INFO - database.py:27 - connect() - Database eliminato con successo: /home/elion-man/TEST_TESI/src/analysis/root/root_certificates.db
+2024-10-27 00:52:39,101 - INFO - database.py:51 - create_tables() - Tabelle create con successo.
+2024-10-27 00:52:39,147 - INFO - database.py:80 - create_indexes() - Indici creati con successo.
+2024-10-27 00:52:39,445 - INFO - certificates_analysis.py:256 - process_insert_sct_logs() - SCT Operators e SCT Logs memorizzati con successo.
+2024-10-27 00:52:39,447 - INFO - certificates_analysis.py:509 - certificates_analysis_main() - Inizio analisi certificati Root.
+2024-10-27 00:54:00,399 - INFO - certificates_analysis.py:49 - handle_exit_signal() - Segnale SIGINT (Ctrl + C) ricevuto. Inizio della procedura di chiusura...
+2024-10-27 00:54:00,403 - INFO - certificates_analysis.py:19 - close_connections() - Inizio chiusura delle connessioni ai database...
+2024-10-27 00:54:00,405 - INFO - database.py:108 - close() - Connessione al database chiusa.
+2024-10-27 00:54:00,407 - INFO - certificates_analysis.py:31 - close_connections() - Connessione al database Root chiusa con successo.
+2024-10-27 00:54:00,411 - INFO - certificates_analysis.py:45 - close_connections() - Tutte le connessioni ai database sono state chiuse.
+2024-10-27 00:54:00,411 - INFO - certificates_analysis.py:51 - handle_exit_signal() - Uscita dell'applicazione in corso...
+2024-10-27 00:54:02,979 - INFO - certificates_analysis.py:371 - certificates_analysis_main() - Inizio dell'applicazione.
+2024-10-27 00:54:02,984 - INFO - database.py:27 - connect() - Database eliminato con successo: /home/elion-man/TEST_TESI/src/analysis/root/root_certificates.db
+2024-10-27 00:54:03,016 - INFO - database.py:51 - create_tables() - Tabelle create con successo.
+2024-10-27 00:54:03,062 - INFO - database.py:80 - create_indexes() - Indici creati con successo.
+2024-10-27 00:54:03,360 - INFO - certificates_analysis.py:256 - process_insert_sct_logs() - SCT Operators e SCT Logs memorizzati con successo.
+2024-10-27 00:54:03,361 - INFO - certificates_analysis.py:509 - certificates_analysis_main() - Inizio analisi certificati Root.
+2024-10-27 00:54:33,052 - INFO - certificates_analysis.py:371 - certificates_analysis_main() - Inizio dell'applicazione.
+2024-10-27 00:54:33,055 - INFO - database.py:27 - connect() - Database eliminato con successo: /home/elion-man/TEST_TESI/src/analysis/root/root_certificates.db
+2024-10-27 00:54:33,083 - INFO - database.py:51 - create_tables() - Tabelle create con successo.
+2024-10-27 00:54:33,159 - INFO - database.py:80 - create_indexes() - Indici creati con successo.
+2024-10-27 00:54:33,774 - INFO - certificates_analysis.py:256 - process_insert_sct_logs() - SCT Operators e SCT Logs memorizzati con successo.
+2024-10-27 00:54:33,776 - INFO - certificates_analysis.py:509 - certificates_analysis_main() - Inizio analisi certificati Root.
+2024-10-27 00:54:49,711 - INFO - certificates_analysis.py:49 - handle_exit_signal() - Segnale SIGINT (Ctrl + C) ricevuto. Inizio della procedura di chiusura...
+2024-10-27 00:54:49,713 - INFO - certificates_analysis.py:19 - close_connections() - Inizio chiusura delle connessioni ai database...
+2024-10-27 00:54:49,715 - INFO - database.py:108 - close() - Connessione al database chiusa.
+2024-10-27 00:54:49,716 - INFO - certificates_analysis.py:31 - close_connections() - Connessione al database Root chiusa con successo.
+2024-10-27 00:54:49,717 - INFO - certificates_analysis.py:45 - close_connections() - Tutte le connessioni ai database sono state chiuse.
+2024-10-27 00:54:49,718 - INFO - certificates_analysis.py:51 - handle_exit_signal() - Uscita dell'applicazione in corso...
+2024-10-27 00:54:52,543 - INFO - certificates_analysis.py:371 - certificates_analysis_main() - Inizio dell'applicazione.
+2024-10-27 00:54:52,547 - INFO - database.py:27 - connect() - Database eliminato con successo: /home/elion-man/TEST_TESI/src/analysis/root/root_certificates.db
+2024-10-27 00:54:52,592 - INFO - database.py:51 - create_tables() - Tabelle create con successo.
+2024-10-27 00:54:52,669 - INFO - database.py:80 - create_indexes() - Indici creati con successo.
+2024-10-27 00:54:53,186 - INFO - certificates_analysis.py:256 - process_insert_sct_logs() - SCT Operators e SCT Logs memorizzati con successo.
+2024-10-27 00:54:53,188 - INFO - certificates_analysis.py:509 - certificates_analysis_main() - Inizio analisi certificati Root.
+2024-10-27 00:55:11,776 - INFO - certificates_analysis.py:49 - handle_exit_signal() - Segnale SIGINT (Ctrl + C) ricevuto. Inizio della procedura di chiusura...
+2024-10-27 00:55:11,780 - INFO - certificates_analysis.py:19 - close_connections() - Inizio chiusura delle connessioni ai database...
+2024-10-27 00:55:11,781 - INFO - database.py:108 - close() - Connessione al database chiusa.
+2024-10-27 00:55:11,784 - INFO - certificates_analysis.py:31 - close_connections() - Connessione al database Root chiusa con successo.
+2024-10-27 00:55:11,785 - INFO - certificates_analysis.py:45 - close_connections() - Tutte le connessioni ai database sono state chiuse.
+2024-10-27 00:55:11,786 - INFO - certificates_analysis.py:51 - handle_exit_signal() - Uscita dell'applicazione in corso...
+2024-10-27 00:55:13,825 - INFO - certificates_analysis.py:362 - certificates_analysis_main() - Inizio dell'applicazione.
+2024-10-27 00:55:13,830 - INFO - database.py:27 - connect() - Database eliminato con successo: /home/elion-man/TEST_TESI/src/analysis/root/root_certificates.db
+2024-10-27 00:55:13,841 - INFO - database.py:51 - create_tables() - Tabelle create con successo.
+2024-10-27 00:55:13,854 - INFO - database.py:80 - create_indexes() - Indici creati con successo.
+2024-10-27 00:55:13,910 - INFO - certificates_analysis.py:247 - process_insert_sct_logs() - SCT Operators e SCT Logs memorizzati con successo.
+2024-10-27 00:55:13,911 - INFO - certificates_analysis.py:500 - certificates_analysis_main() - Inizio analisi certificati Root.
+2024-10-27 00:55:32,738 - INFO - certificates_analysis.py:48 - handle_exit_signal() - Segnale SIGINT (Ctrl + C) ricevuto. Inizio della procedura di chiusura...
+2024-10-27 00:55:32,744 - INFO - certificates_analysis.py:18 - close_connections() - Inizio chiusura delle connessioni ai database...
+2024-10-27 00:55:32,747 - INFO - database.py:108 - close() - Connessione al database chiusa.
+2024-10-27 00:55:32,750 - INFO - certificates_analysis.py:30 - close_connections() - Connessione al database Root chiusa con successo.
+2024-10-27 00:55:32,754 - INFO - certificates_analysis.py:44 - close_connections() - Tutte le connessioni ai database sono state chiuse.
+2024-10-27 00:55:32,755 - INFO - certificates_analysis.py:50 - handle_exit_signal() - Uscita dell'applicazione in corso...

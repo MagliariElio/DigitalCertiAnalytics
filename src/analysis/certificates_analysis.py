@@ -1,32 +1,79 @@
 import json
 import logging
-import os, shutil
+from tqdm.rich import tqdm
+import os, shutil, sys, signal
 import argparse
 from db.database import Database, DatabaseType
 from dao.certificate_dao import CertificateDAO
 from utils.utils import find_next_intermediate_certificate, find_root_certificate, setup_logging
+from utils.plotter_utils import plot_general_certificates_analysis, plot_leaf_certificates_analysis, plot_common_analysis_for_leaf_and_intermediate_certificates
 from utils.graph_plotter import GraphPlotter
-import pandas as pd
 import pyfiglet
 
 # Admin: Anuar Elio Magliari 
 # Politecnico di Torino
 
-def leaf_certificates_analysis(certificates_file, dao: CertificateDAO, database: Database):
+def close_connections():
+    """Funzione per gestire la chiusura delle connessioni ai database."""
+    logging.info("Inizio chiusura delle connessioni ai database...")
+    
+    if 'leaf_database' in globals():
+        leaf_database.close()
+        logging.info("Connessione al database Leaf chiusa con successo.")
+        
+    if 'intermediate_database' in globals():
+        intermediate_database.close()
+        logging.info("Connessione al database Intermediate chiusa con successo.")
+        
+    if 'root_database' in globals():
+        root_database.close()
+        logging.info("Connessione al database Root chiusa con successo.")
+    
+    if 'pbar_leaf' in globals():
+        pbar_leaf.close()
+    
+    if 'pbar_intermediate' in globals():
+        pbar_intermediate.close()
+    
+    if 'pbar_root' in globals():
+        pbar_root.close()
+    
+    if 'plotter' in globals():
+        plotter.close_all_plots()
+        
+    logging.info("Tutte le connessioni ai database sono state chiuse.")
+
+def handle_exit_signal(signal, frame):
+    """Funzione per gestire il segnale SIGINT (Ctrl + C)."""
+    logging.info("Segnale SIGINT (Ctrl + C) ricevuto. Inizio della procedura di chiusura...")
+    close_connections()
+    logging.info("Uscita dell'applicazione in corso...")
+    sys.exit(0)
+
+# Associa il gestore di segnale
+signal.signal(signal.SIGINT, handle_exit_signal)
+
+def leaf_certificates_analysis(certificates_file, dao: CertificateDAO, database: Database, total_lines:int=0):
     """Analizza e inserisce i certificati leaf dal file JSON nel database."""
-    print("\n")
+    global pbar_leaf
+    
     with open(certificates_file, 'r') as certificates_reader:
+        # Inizializza la barra di caricamento
+        tqdm.write("")
+        pbar_leaf = tqdm(total=total_lines, desc="[bold] 🛠️  Elaborazione Certificati[/bold]", unit="cert.", 
+                    colour="cyan", bar_format="{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} • ⚡ {rate_fmt}")
+
         for line_number, row in enumerate(certificates_reader, start=1):
             try:
                 json_row = json.loads(row)
                 status = json_row.get("data", {}).get("tls", {}).get("status", "")
 
-                if(line_number % 100 == 0):
-                    print(f"\rNumero di Certificati processati: {line_number}", end="")
+                # Aggiorna la barra di caricamento
+                pbar_leaf.update(1)
 
                 with database.transaction():
                     if status == "success":
-                        dao.process_insert_certificate(json_row)
+                        dao.process_insert_certificate(json_row, DatabaseType.LEAF)
                     else:
                         dao.insert_error_row(json_row)
 
@@ -34,19 +81,28 @@ def leaf_certificates_analysis(certificates_file, dao: CertificateDAO, database:
                 logging.error(f"Errore nel parsing della riga {line_number}: {row.strip()}")
             except Exception as e:
                 logging.error(f"Errore nell'elaborazione della riga {line_number}: {e}")
+    
+    # Chiusura barra di progresso
+    pbar_leaf.close()
     return
 
-def intermediate_certificates_analysis(certificates_file, dao: CertificateDAO, database: Database):
+def intermediate_certificates_analysis(certificates_file, dao: CertificateDAO, database: Database, total_lines:int=0):
     """Analizza e inserisce i certificati intermediate dal file JSON nel database."""
-    print("\n")
+    global pbar_intermediate
+    
     with open(certificates_file, 'r') as certificates_reader:
+        # Inizializza la barra di caricamento
+        tqdm.write("")
+        pbar_intermediate = tqdm(total=total_lines, desc="[bold] 🛠️  Elaborazione Certificati[/bold]", unit="cert.", 
+                    colour="cyan", bar_format="{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} • ⚡ {rate_fmt}")
+
         for line_number, row in enumerate(certificates_reader, start=1):
             try:
                 json_row = json.loads(row)
                 status = json_row.get("data", {}).get("tls", {}).get("status", "")
 
-                if((line_number) % 100 == 0):
-                    print(f"\rNumero di righe processate: {line_number}", end="")
+                # Aggiorna la barra di caricamento
+                pbar_intermediate.update(1)
 
                 with database.transaction():
                     if status == "success":
@@ -82,30 +138,39 @@ def intermediate_certificates_analysis(certificates_file, dao: CertificateDAO, d
                             server_certificates["chain"] = chain
 
                             # Inizia l'analisi del certificato intermediate
-                            dao.process_insert_certificate(json_row)
+                            dao.process_insert_certificate(json_row, DatabaseType.INTERMEDIATE)
 
             except json.JSONDecodeError:
                 logging.error(f"Errore nel parsing della riga {line_number}: {row.strip()}")
             except Exception as e:
                 logging.error(f"Errore nell'elaborazione della riga {line_number}: {e}")
+    
+    # Chiusura barra di progresso
+    pbar_intermediate.close()
     return
 
-def root_certificates_analysis(certificates_file, dao: CertificateDAO, database: Database):
+def root_certificates_analysis(certificates_file, dao: CertificateDAO, database: Database, total_lines: int=0):
     """Analizza e inserisce i certificati root dal file JSON nel database."""
-    print("\n")
+    global pbar_root
+    
     with open(certificates_file, 'r') as certificates_reader:
+        # Inizializza la barra di caricamento
+        tqdm.write("")
+        pbar_root = tqdm(total=total_lines, desc="[bold] 🛠️  Elaborazione Certificati[/bold]", unit="cert.", 
+                    colour="green", bar_format="{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} • ⚡ {rate_fmt}")
+
         # TODO: da rimuovere
-        # for _ in range(0): # 801000
-        #    next(certificates_reader)
+        # for _ in range(800000): # 800000
+        #   next(certificates_reader)
             
         for line_number, row in enumerate(certificates_reader, start=1):
             try:
                 json_row = json.loads(row)
                 status = json_row.get("data", {}).get("tls", {}).get("status", "")
 
-                if (line_number % 100 == 0):
-                    print(f"\rNumero di Certificati processati: {line_number}", end="")
-                
+                # Aggiorna la barra di caricamento
+                pbar_root.update(1)
+              
                 with database.transaction():
                     if status == "success":
                         handshake_log = json_row.get("data", {}).get("tls", {}).get("result", {}).get("handshake_log", {})
@@ -133,12 +198,15 @@ def root_certificates_analysis(certificates_file, dao: CertificateDAO, database:
                         server_certificates["chain"] = chain
 
                         # Inizia l'analisi del certificato root
-                        dao.process_insert_certificate(json_row)
+                        dao.process_insert_certificate(json_row, DatabaseType.ROOT)
 
             except json.JSONDecodeError:
                 logging.error(f"Errore nel parsing della riga {line_number}: {row.strip()}")
             except Exception as e:
                 logging.error(f"Errore nell'elaborazione della riga {line_number}: {e}")
+    
+    # Chiusura barra di progresso
+    pbar_root.close()
     return
 
 def process_ocsp_check_status_request(dao: CertificateDAO, database: Database):
@@ -182,345 +250,83 @@ def process_insert_sct_logs(log_list_path, dao: CertificateDAO, database: Databa
 
 def plot_leaf_certificates_analysis(dao: CertificateDAO):
     """Genera e salva vari grafici relativi all'analisi dei certificati."""
+    global plotter
+    
+    plots_path = 'analysis/leaf/plots'
     
     plotter = GraphPlotter()
-    plots_path = 'analysis/leaf/plots'
+    plotter.disable_logging()
     
     # Rimuovi la cartella se esiste
     if os.path.exists(plots_path):
         shutil.rmtree(plots_path)
+        logging.info(f"La cartella '{plots_path}' è stata rimossa.")
 
     # Crea la cartella per il plot leaf
     os.makedirs(plots_path)
+    logging.info(f"La cartella '{plots_path}' è stata creata.")
     
-    # Emissione dei Certificati da Parte degli Issuer
-    result = dao.get_issuer_certificate_count()
-    filename = os.path.abspath(f'{plots_path}/issuer_certificates_count.png')
-    data = pd.DataFrame(list(result.items()), columns=['Issuer', 'Certificate Count'])
-    data.set_index('Issuer', inplace=True)
-    plotter.plot_bar_chart(
-        data=data, 
-        x=data.index, 
-        y='Certificate Count', 
-        title='Emissione dei Certificati da Parte degli Issuer', 
-        xlabel='Issuers', 
-        ylabel='Numero di Certificati', 
-        filename=filename
-    )
-
-    # Certificates per Country
-    result = dao.get_certificates_per_country()
-    filename = os.path.abspath(f'{plots_path}/certificates_per_country.png')
-    data = pd.DataFrame(list(result.items()), columns=['Country', 'Certificate Count'])
-    data.set_index('Country', inplace=True)
-    plotter.plot_pie_chart(data, column='Certificate Count', title='Numero di Certificati Emessi in Diversi Paesi', filename=filename)
-    
-
-    # Distribuzione della Durata di Validità
-    result = dao.get_validity_duration_distribution()
-    data = pd.DataFrame(list(result.items()), columns=['Validity Length', 'Certificate Count'])
-    filename = os.path.abspath(f'{plots_path}/validity_duration_distribution.png')
-    data.set_index('Validity Length', inplace=True)
-    plotter.plot_bar_chart(
-        data=data,
-        x=data.index,
-        y='Certificate Count',
-        title='Distribuzione della Durata di Validità', 
-        xlabel='Durata (anni)',
-        ylabel='Numero di Certificati', 
-        filename=filename
-    )
-    
-    # Trend di Scadenza dei Certificati
-    result = dao.get_certificate_expiration_trend()
-    data = pd.DataFrame(list(result.items()), columns=['Month', 'Certificate Count'])
-    filename = os.path.abspath(f'{plots_path}/certificate_expiration_trend.png')
-    data.set_index('Month', inplace=True)
-    plotter.plot_line_chart(
-        data=data, 
-        x=data.index,
-        y='Certificate Count',
-        title='Trend di Scadenza dei Certificati', 
-        xlabel='Mese',
-        ylabel='Numero di Certificati', 
-        filename=filename
-    )
-
-    # Algoritmi di Firma Utilizzati    
-    result = dao.get_signature_algorithm_distribution()
-    filename = os.path.abspath(f'{plots_path}/signature_algorithm_distribution.png')
-    data = pd.DataFrame(list(result.items()), columns=['Signature Algorithm', 'Count'])
-    data.set_index('Signature Algorithm', inplace=True)
-    plotter.plot_bar_chart(
-        data=data, 
-        x=data.index, 
-        y='Count', 
-        title='Algoritmi di Firma Utilizzati', 
-        xlabel='Numero di Certificati', 
-        ylabel='Signature Algorithm', 
-        filename=filename
-    )
-    
-    # Distribuzione degli Algoritmi di Chiave e Lunghezza    
-    result = dao.get_key_algorithm_length_distribution()
-    filename = os.path.abspath(f'{plots_path}/key_algorithm_length_distribution.png')
-    data = pd.DataFrame.from_dict(
-        {alg: dict(lengths) for alg, lengths in result.items()},
-        orient='index'
-    ).fillna(0)  # Sostituisce i NaN con 0
-    data = data.astype(int)  
-    data = data.transpose()
-
-    plotter.plot_stacked_bar_chart(
-        data=data, 
-        title='Distribuzione degli Algoritmi di Chiave e Lunghezza', 
-        xlabel='Key Length',
-        ylabel='Numero di Certificati',
-        filename=filename
-    )
-    
-    # Stato OCSP dei Certificati
-    result = dao.get_ocsp_status_distribution()
-    filename = os.path.abspath(f'{plots_path}/ocsp_status_distribution.png')
-    data = pd.DataFrame(list(result.items()), columns=['OCSP Status', 'Count'])
-    data.set_index('OCSP Status', inplace=True)
-    plotter.plot_pie_chart(data, column='Count', title='Stato OCSP dei Certificati', filename=filename)
-    
-    # Estensioni Critiche vs Non Critiche dell'AIA
-    result = dao.get_count_critical_non_critical_extensions()
-    filename = os.path.abspath(f'{plots_path}/count_critical_non_critical_extensions.png')
-    data = pd.DataFrame(list(result.items()), columns=['Flag', 'Count'])
-    data.set_index('Flag', inplace=True)
-    plotter.plot_pie_chart(data, column='Count', title='Estensioni Critiche vs Non Critiche dell\'AIA', filename=filename)
-    
-    # Certificati Auto-Firmati vs CA-Firmati
-    result = dao.get_self_signed_vs_ca_signed()
-    filename = os.path.abspath(f'{plots_path}/self_signed_vs_ca_signed.png')
-    data = pd.DataFrame(list(result.items()), columns=['Flag', 'Count'])
-    data.set_index('Flag', inplace=True)
-    plotter.plot_pie_chart(data, column='Count', title='Certificati Auto-Firmati vs CA-Firmati', filename=filename)
-    
-    # Livelli di Validazione dei Certificati    
-    result = dao.get_validation_level_distribution()
-    filename = os.path.abspath(f'{plots_path}/validation_level_distribution.png')
-    data = pd.DataFrame(list(result.items()), columns=['Validation', 'Count'])
-    data.set_index('Validation', inplace=True)
-    plotter.plot_bar_chart(
-        data=data, 
-        x=data.index, 
-        y='Count', 
-        title='Distribuzione del Validation Level dei Certificati', 
-        xlabel='Validation Levels', 
-        ylabel='Numero di Certificati', 
-        filename=filename
-    )
-    
-    # Distribuzione delle Versioni dei Certificati    
-    result = dao.get_certificate_version_distribution()
-    filename = os.path.abspath(f'{plots_path}/certificate_version_distribution.png')
-    data = pd.DataFrame(list(result.items()), columns=['Version', 'Count'])
-    data.set_index('Version', inplace=True)
-    plotter.plot_bar_chart(
-        data=data, 
-        x=data.index, 
-        y='Count', 
-        title='Distribuzione delle Versioni dei Certificati', 
-        xlabel='Versions', 
-        ylabel='Numero di Certificati', 
-        filename=filename
-    )
-    
-    # Validità delle Firme dei Certificati
-    result = dao.get_signature_validity_distribution()
-    filename = os.path.abspath(f'{plots_path}/signature_validity_distribution.png')
-    data = pd.DataFrame(list(result.items()), columns=['Signature Validity', 'Count'])
-    data.set_index('Signature Validity', inplace=True)
-    plotter.plot_pie_chart(data, column='Count', title='Validità delle Firme dei Certificati', filename=filename)
-    
-    # Analisi Status Certificati
-    result = dao.get_status_analysis()
-    filename = os.path.abspath(f'{plots_path}/status_analysis.png')
-    data = pd.DataFrame(list(result.items()), columns=['Status', 'Count'])
-    data.set_index('Status', inplace=True)
-    plotter.plot_bar_chart(
-        data=data, 
-        x=data.index, 
-        y='Count', 
-        title='Analisi Status Certificati', 
-        xlabel='Status', 
-        ylabel='Numero di Certificati', 
-        filename=filename
-    )
-    
-    # Utilizzo del Key Usage nelle Estensioni
-    result = dao.get_key_usage_distribution()
-    filename = os.path.abspath(f'{plots_path}/key_usage_distribution.png')
-    data = pd.DataFrame(list(result.items()), columns=['Key Usage', 'Count'])
-    data.set_index('Key Usage', inplace=True)    
-    plotter.plot_dot_plot(
-        data=data, 
-        x='Count',
-        y='Key Usage',
-        title='Utilizzo del Key Usage nelle Estensioni', 
-        xlabel='Numero di Certificati',
-        ylabel='Key Usage Numbers',
-        filename=filename
-    )
-    
-    # Estensioni Critiche vs Non Critiche del Key Usage nelle Estensioni
-    result = dao.get_critical_vs_non_critical_key_usage()
-    filename = os.path.abspath(f'{plots_path}/critical_vs_non_critical_key_usage.png')
-    data = pd.DataFrame(list(result.items()), columns=['Flag', 'Count'])
-    data.set_index('Flag', inplace=True)
-    plotter.plot_bar_chart(
-        data=data, 
-        x=data.index, 
-        y='Count', 
-        title='Estensioni Critiche vs Non Critiche del Key Usage nelle Estensioni', 
-        xlabel='Flag', 
-        ylabel='Numero di Certificati', 
-        filename=filename
-    )
-    
-    # Utilizzo dell'Extended Key Usage nelle Estensioni
-    result = dao.get_extended_key_usage_distribution()
-    filename = os.path.abspath(f'{plots_path}/extended_key_usage_distribution.png')
-    data = pd.DataFrame(list(result.items()), columns=['Extendend Key Usage', 'Count'])
-    data.set_index('Extendend Key Usage', inplace=True)
-    plotter.plot_dot_plot(
-        data=data, 
-        x='Count',
-        y=data.index,
-        title='Utilizzo dell\'Extended Key Usage nelle Estensioni', 
-        xlabel='Numero di Certificati',
-        ylabel='Extendend Key Usage Numbers',
-        filename=filename
-    )
-    
-    # Estensioni Critiche vs Non Critiche dell'Extended Key Usage nelle Estensioni
-    result = dao.get_critical_vs_non_critical_extended_key_usage()
-    filename = os.path.abspath(f'{plots_path}/critical_vs_non_critical_extended_key_usage.png')
-    data = pd.DataFrame(list(result.items()), columns=['Flag', 'Count'])
-    data.set_index('Flag', inplace=True)
-    plotter.plot_bar_chart(
-        data=data, 
-        x=data.index, 
-        y='Count', 
-        title='Estensioni Critiche vs Non Critiche dell\'Extended Key Usage nelle Estensioni', 
-        xlabel='Flag', 
-        ylabel='Numero di Certificati', 
-        filename=filename
-    )
-    
-    # Distribuzione del Basic Constraints nelle Estensioni
-    result = dao.get_basic_constraints_distribution()
-    filename = os.path.abspath(f'{plots_path}/basic_constraints_distribution.png')
-    data = pd.DataFrame(list(result.items()), columns=['Flag', 'Count'])
-    data.set_index('Flag', inplace=True)
-    plotter.plot_bar_chart(
-        data=data, 
-        x=data.index, 
-        y='Count', 
-        title='Estensioni Critiche vs Non Critiche del Key Usage nelle Estensioni', 
-        xlabel='Flag', 
-        ylabel='Numero di Certificati', 
-        filename=filename
-    )
-    
-    # Estensioni Critiche vs Non Critiche del CRL Distribution
-    result = dao.get_critical_vs_non_critical_crl_distribution()
-    filename = os.path.abspath(f'{plots_path}/critical_vs_non_critical_crl_distribution.png')
-    data = pd.DataFrame(list(result.items()), columns=['Flag', 'Count'])
-    data.set_index('Flag', inplace=True)
-    plotter.plot_pie_chart(data, column='Count', title='Estensioni Critiche vs Non Critiche del CRL Distribution', filename=filename)
-    
-    # Trend dei Signed Certificate Timestamps (SCT) per Mese e Anno
-    result = dao.get_signed_certificate_timestamp_trend()
-    data = pd.DataFrame(list(result.items()), columns=['Date', 'Certificate Count'])
-    filename = os.path.abspath(f'{plots_path}/certificate_expiration_trend.png')
-    data.set_index('Date', inplace=True)
-    plotter.plot_line_chart(
-        data=data, 
-        x=data.index,
-        y='Certificate Count',
-        title='Trend dei Signed Certificate Timestamps (SCT) per Mese e Anno', 
-        xlabel='Date',
-        ylabel='Numero di Certificati', 
-        filename=filename
-    )
-    
-    # Numero dei Signed Certificate Timestamps (SCT) per Certificato
-    result = dao.get_sct_count_per_certificate()
-    data = pd.DataFrame(list(result.items()), columns=['SCT Count', 'Certificate Count'])
-    filename = os.path.abspath(f'{plots_path}/sct_count_per_certificate.png')
-    data.set_index('SCT Count', inplace=True)
-    plotter.plot_bar_chart(
-        data=data, 
-        x=data.index,
-        y='Certificate Count',
-        title='Numero dei Signed Certificate Timestamps (SCT) per Certificato', 
-        xlabel='SCT Count',
-        ylabel='Numero di Certificati', 
-        filename=filename
-    )
-    
-    # Top SCT Logs
-    result = dao.get_top_sct_logs()
-    data = pd.DataFrame(list(result.items()), columns=['Log Name', 'Certificate Count'])
-    filename = os.path.abspath(f'{plots_path}/top_sct_logs.png')
-    data.set_index('Log Name', inplace=True)
-    plotter.plot_bar_chart(
-        data=data, 
-        x=data.index,
-        y='Certificate Count',
-        title='Top SCT Logs', 
-        xlabel='Logs Name',
-        ylabel='Numero di Certificati', 
-        filename=filename
-    )
-    
-    # Top SCT Log Operators
-    result = dao.get_top_sct_log_operators()
-    data = pd.DataFrame(list(result.items()), columns=['Log Operator', 'Certificate Count'])
-    filename = os.path.abspath(f'{plots_path}/top_sct_log_operators.png')
-    data.set_index('Log Operator', inplace=True)
-    plotter.plot_pie_chart(data, column='Certificate Count', title='Top SCT Log Operators', filename=filename)
-    
-    # Estensioni Critiche vs Non Critiche delle Subject Alternative Name
-    result = dao.get_critical_vs_non_critical_san_extensions()
-    filename = os.path.abspath(f'{plots_path}/critical_vs_non_critical_san_extensions.png')
-    data = pd.DataFrame(list(result.items()), columns=['Flag', 'Count'])
-    data.set_index('Flag', inplace=True)
-    plotter.plot_bar_chart(
-        data=data, 
-        x=data.index,
-        y='Count',
-        title='Estensioni Critiche vs Non Critiche delle Subject Alternative Name', 
-        xlabel='Flag',
-        ylabel='Numero di Certificati', 
-        filename=filename
-    )
-    
-    # Estensioni Critiche vs Non Critiche del Certificate Policies
-    result = dao.get_critical_vs_non_critical_cp_policies()
-    filename = os.path.abspath(f'{plots_path}/critical_vs_non_critical_cp_policies.png')
-    data = pd.DataFrame(list(result.items()), columns=['Flag', 'Count'])
-    data.set_index('Flag', inplace=True)
-    plotter.plot_bar_chart(
-        data=data, 
-        x=data.index,
-        y='Count',
-        title='Estensioni Critiche vs Non Critiche del Certificate Policies', 
-        xlabel='Flag',
-        ylabel='Numero di Certificati', 
-        filename=filename
-    )
+    # Generazione grafici
+    plot_general_certificates_analysis(dao, plotter, plots_path)
+    plot_leaf_certificates_analysis(dao, plotter, plots_path)
+    plot_common_analysis_for_leaf_and_intermediate_certificates(dao, plotter, plots_path)
     
     return
 
+def plot_intermediate_certificates_analysis(dao: CertificateDAO):
+    """Genera e salva vari grafici relativi all'analisi dei certificati."""
+    global plotter
+    
+    plots_path = 'analysis/intermediate/plots'
+    
+    plotter = GraphPlotter()
+    plotter.disable_logging()
+    
+    # Rimuovi la cartella se esiste
+    if os.path.exists(plots_path):
+        shutil.rmtree(plots_path)
+        logging.info(f"La cartella '{plots_path}' è stata rimossa.")
+
+    # Crea la cartella per il plot intermediate
+    os.makedirs(plots_path)
+    logging.info(f"La cartella '{plots_path}' è stata creata.")
+    
+    # Generazione grafici
+    plot_general_certificates_analysis(dao, plotter, plots_path)
+    plot_common_analysis_for_leaf_and_intermediate_certificates(dao, plotter, plots_path)
+    
+    return
+
+def plot_root_certificates_analysis(dao: CertificateDAO):
+    """Genera e salva vari grafici relativi all'analisi dei certificati."""
+    global plotter
+
+    plots_path = 'analysis/root/plots'
+    
+    plotter = GraphPlotter()
+    plotter.disable_logging()
+    
+    # Rimuovi la cartella se esiste
+    if os.path.exists(plots_path):
+        shutil.rmtree(plots_path)
+        logging.info(f"La cartella '{plots_path}' è stata rimossa.")
+
+    # Crea la cartella per il plot root
+    os.makedirs(plots_path)
+    logging.info(f"La cartella '{plots_path}' è stata creata.")
+    
+    # Generazione grafici
+    plot_general_certificates_analysis(dao, plotter, plots_path)
+        
+    return
+
 def certificates_analysis_main():
+    global leaf_database, intermediate_database, root_database
+    
     # Stampa il logo dell'applicazione
-    print(pyfiglet.figlet_format("    DigitalCertiAnalytics", font="standard", width=100))
+    tqdm.write("\n")
+    tqdm.write(pyfiglet.figlet_format("        DigitalCertiAnalytics", font="standard", width=150))
+    tqdm.write("\n")
 
     # Configura argparse per gestire gli argomenti della riga di comando
     parser = argparse.ArgumentParser(description='Analisi dei certificati.')
@@ -579,10 +385,26 @@ def certificates_analysis_main():
     # File di output di Zgrab2 pronto per l'analisi
     result_json_file = os.path.abspath('../res/certs_polito.json')
     if not os.path.exists(result_json_file):
-        raise FileNotFoundError(
+        logging.error(
             f"Il file '{result_json_file}' non esiste. "
             "Si prega di consultare il README per istruzioni su come generare questo file utilizzando il programma Zgrab2."
         )
+        return
+    
+    # File contenente la lista dei log SCT più utilizzati
+    log_list_file = os.path.abspath('../res/log_list.json')
+    if not os.path.exists(log_list_file):
+        logging.error(
+            f"Il file {log_list_file} non esiste. Puoi scaricarlo direttamente da questo link: "
+            "https://www.gstatic.com/ct/log_list/v3/all_logs_list.json"
+        )
+        return
+    
+    if(args.leaf_analysis or args.intermediate_analysis or args.root_analysis):
+        # total_lines = sum(1 for line in certificates_reader)
+        # certificates_reader.seek(0)  # Reset del puntatore file dopo aver contato le righe
+        
+        total_lines = 10000000
 
     # Analisi Certificati Leaf
     if(args.delete_leaf_db or args.leaf_analysis or args.leaf_ocsp_analysis or args.plot_leaf_results):
@@ -597,15 +419,12 @@ def certificates_analysis_main():
 
         # Inserisce gli SCT Operators e SCT Logs 
         if(args.delete_leaf_db):
-            log_list_file = os.path.abspath('../res/log_list.json')
-            if not os.path.exists(log_list_file):
-                raise FileNotFoundError(f"Il file {log_list_file} non esiste. Scaricare il file.")
             process_insert_sct_logs(log_list_file, leaf_dao, leaf_database)
 
         # Esegui l'analisi dei certificati
         if(args.leaf_analysis):
-            logging.info("Inizio analisi certificati Leaf.")      
-            leaf_certificates_analysis(result_json_file, leaf_dao, leaf_database)
+            logging.info("Inizio analisi certificati [bold]Leaf[/bold].")
+            leaf_certificates_analysis(result_json_file, leaf_dao, leaf_database, total_lines)
             logging.info("Analisi dei certificati Leaf completata con successo.")        
 
         # Esegui l'analisi OCSP dei certificati
@@ -616,7 +435,7 @@ def certificates_analysis_main():
         
         # Esegui la generazione dei grafici per i certificati leaf
         if(args.plot_leaf_results):
-            logging.info("Inizio generazione grafici per certificati Leaf.")        
+            logging.info("Inizio generazione grafici per certificati [bold]Leaf[/bold].")        
             plot_leaf_certificates_analysis(leaf_dao)
             logging.info("Generazione dei grafici per l'analisi dei certificati Leaf completata.")
 
@@ -636,15 +455,12 @@ def certificates_analysis_main():
 
         # Inserisce gli SCT Operators e SCT Logs 
         if(args.delete_intermediate_db):
-            log_list_file = os.path.abspath('../res/log_list.json')
-            if not os.path.exists(log_list_file):
-                raise FileNotFoundError(f"Il file {log_list_file} non esiste. Scaricare il file.")
             process_insert_sct_logs(log_list_file, intermediate_dao, intermediate_database)
 
         # Esegui l'analisi dei certificati
         if(args.intermediate_analysis):
             logging.info("Inizio analisi certificati Intermediate.")      
-            intermediate_certificates_analysis(result_json_file, intermediate_dao, intermediate_database)
+            intermediate_certificates_analysis(result_json_file, intermediate_dao, intermediate_database, total_lines)
             logging.info("Analisi dei certificati Intermediate completata con successo.")
 
         # Esegui l'analisi OCSP dei certificati
@@ -656,8 +472,7 @@ def certificates_analysis_main():
         # Esegui la generazione dei grafici per i certificati Intermediate
         if(args.plot_intermediate_results):
             logging.info("Inizio generazione grafici per certificati Intermediate.")        
-            # TODO: da fare
-            # plot_intermediate_certificates_analysis(intermediate_dao)
+            plot_intermediate_certificates_analysis(intermediate_dao)
             logging.info("Generazione dei grafici per l'analisi dei certificati Intermediate completata.")
 
 
@@ -678,15 +493,12 @@ def certificates_analysis_main():
 
         # Inserisce gli SCT Operators e SCT Logs 
         if(args.delete_root_db):
-            log_list_file = os.path.abspath('../res/log_list.json')
-            if not os.path.exists(log_list_file):
-                raise FileNotFoundError(f"Il file {log_list_file} non esiste. Scaricare il file.")
             process_insert_sct_logs(log_list_file, root_dao, root_database)
 
         # Esegui l'analisi dei certificati
         if(args.root_analysis):
             logging.info("Inizio analisi certificati Root.")      
-            root_certificates_analysis(result_json_file, root_dao, root_database)
+            root_certificates_analysis(result_json_file, root_dao, root_database, total_lines)
             logging.info("Analisi dei certificati Root completata con successo.")        
 
         # Esegui l'analisi OCSP dei certificati
@@ -698,8 +510,7 @@ def certificates_analysis_main():
         # Esegui la generazione dei grafici per i certificati Root
         if(args.plot_root_results):
             logging.info("Inizio generazione grafici per certificati Root.")        
-            # TODO: da fare
-            # plot_root_certificates_analysis(root_dao)
+            plot_root_certificates_analysis(root_dao)
             logging.info("Generazione dei grafici per l'analisi dei certificati Root completata.")
 
         # Chiude la connessione al database e rimuove i dati non necessari

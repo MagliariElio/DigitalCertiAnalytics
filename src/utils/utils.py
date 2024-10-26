@@ -1,13 +1,16 @@
 import logging
-from typing import Optional
+import base64
+import warnings
+import requests
+from typing import Optional, Tuple
+from bean.certificate import Certificate
+from rich.logging import RichHandler
+from urllib.parse import urljoin
+from tqdm.std import TqdmExperimentalWarning
+from tqdm import tqdm
 from cryptography import x509
 from cryptography.hazmat.primitives.asymmetric import padding, ec, rsa
 from cryptography.exceptions import InvalidSignature
-from bean.certificate import Certificate
-import base64
-from urllib.parse import urljoin
-import requests
-from cryptography import x509
 from cryptography.x509 import ocsp
 from cryptography.x509.ocsp import OCSPResponseStatus
 from cryptography.x509.ocsp import OCSPCertStatus
@@ -19,30 +22,48 @@ from cryptography.hazmat.primitives.serialization import pkcs7
 # Politecnico di Torino
 
 class CustomFormatter(logging.Formatter):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        
     def format(self, record):
         original = super().format(record)
         return original
 
 def setup_logging():
     """Configura il logging dell'applicazione."""
-    formatter = CustomFormatter(
-        fmt='%(asctime)s - %(levelname)s - %(filename)s:%(lineno)d - %(funcName)s() - %(message)s'
+    warnings.simplefilter("ignore", TqdmExperimentalWarning)
+    
+    formatter_file = CustomFormatter(
+        fmt='%(asctime)s - %(levelname)s - %(filename)s:%(lineno)d - %(funcName)s() - %(message)s',
+    )
+    
+    formatter_stream = CustomFormatter(
+        fmt='%(message)s',
     )
     
     file_handler = logging.FileHandler("app.log")
-    file_handler.setFormatter(formatter)
+    file_handler.setFormatter(formatter_file)
     
-    stream_handler = logging.StreamHandler()
-    stream_handler.setFormatter(formatter)
+    stream_handler = RichHandler(rich_tracebacks=True)
+    stream_handler.setFormatter(formatter_stream)
 
     logging.basicConfig(
         level=logging.INFO,  # Cambia in DEBUG per più dettagli
+        datefmt="[%X]",
         handlers=[file_handler, stream_handler]
     )
     
-def verify_signature(cert: x509.Certificate, ca_cert: x509.Certificate):
+def verify_signature(cert: Optional[x509.Certificate], ca_cert: Optional[x509.Certificate]):
     """Verifica la firma di un certificato utilizzando il certificato issuer."""
     try:
+        if(cert is None):
+            logging.error("Impossibile verificare la firma: il certificato non è presente")
+            return "Error"
+        
+        if(ca_cert is None):
+            logging.error("Impossibile verificare la firma: il certificato Issuer non è presente")
+            return "Error"
+        
         # Estrae la firma e i dati TBSCertificate
         signature = cert.signature
         tbs_cert_bytes = cert.tbs_certificate_bytes
@@ -96,10 +117,18 @@ def find_raw_cert_issuer(chain, issuer_dn) -> Optional[str]:
 
 def make_ocsp_query(raw, issuer_certificate, alg, ocsp_link):
     """Costruisce e invia una richiesta OCSP per verificare lo stato di un certificato."""
-    digital_certificate = Certificate(raw).get_cert()
+    current_certificate = Certificate(raw).get_cert()
+    
+    if(current_certificate is None):
+        logging.error("Impossibile eseguire la richiesta OCSP: il certificato non è presente")
+        return None
+    
+    if(issuer_certificate is None):
+        logging.error("Impossibile eseguire la richiesta OCSP: il certificato Issuer non è presente")
+        return None
     
     builder = ocsp.OCSPRequestBuilder()
-    builder = builder.add_certificate(digital_certificate, issuer_certificate, alg)
+    builder = builder.add_certificate(current_certificate, issuer_certificate, alg)
     req = builder.build()
     req_path = base64.b64encode(req.public_bytes(serialization.Encoding.DER))
     final_url = urljoin(ocsp_link + '/', req_path.decode('ascii'))
@@ -271,3 +300,52 @@ def find_root_certificate(chain, current_cert) -> Optional[str]:
                 current_cert = next_cert
         else:
             return None
+        
+def count_intermediate_and_root_certificates(chain:list, current_cert: dict) -> Tuple[int, int]:
+    """
+    Conta nella catena passata, il numero di certificati intermedi e indica se è presente il certificato radice.
+    
+    Args:
+        chain (List[Dict]): Lista di certificati nella catena.
+        current_cert (Dict): Il certificato corrente da analizzare.
+
+    Returns:
+        Tuple[int, int] 
+            - Il numero di certificati intermedi trovati.
+            - True se è presente il certificato root nella catena, altrimenti False.
+    """
+    
+    count_intermediate = 0
+
+    # Se la lista è vuota allora non è presente nessun intermediate e root
+    if(len(chain) == 0):
+        return (0, False)
+    
+    while True:
+        # Prende i dati del certificato corrente
+        subject_dn = current_cert.get("parsed", {}).get("subject_dn", "")
+        issuer_dn = current_cert.get("parsed", {}).get("issuer_dn", "")
+        is_self_signed = current_cert.get("parsed", {}).get("signature", {}).get("self_signed", {})
+        
+        # Cerca il certificato successivo nella catena
+        next_cert = next((cert for cert in chain if cert.get("parsed", {}).get("subject_dn", "") == issuer_dn), None)
+        
+        if next_cert:
+            subject_dn = next_cert.get("parsed", {}).get("subject_dn", "")
+            issuer_dn = next_cert.get("parsed", {}).get("issuer_dn", "")
+            is_self_signed = next_cert.get("parsed", {}).get("signature", {}).get("self_signed", {})
+        
+            # Controlla se è un certificato root
+            if is_self_signed and subject_dn == issuer_dn:
+                return (count_intermediate, True)
+            else:
+                # Certificato Intermediate trovato 
+                count_intermediate += 1
+                try:
+                    chain.remove(current_cert)
+                except ValueError:
+                    pass
+                # Continua con la ricerca del root
+                current_cert = next_cert
+        else:
+            return (count_intermediate, False)
