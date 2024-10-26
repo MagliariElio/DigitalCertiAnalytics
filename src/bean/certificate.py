@@ -30,12 +30,16 @@ class Certificate:
         if(raw is None):
             return None
         
-        # Aggiungi le intestazioni PEM
-        pem = self.load_cert_from_string(raw)
-        
-        # Decodifica la stringa PEM e carica il certificato
-        cert_bytes = pem.encode('utf-8')
-        return x509.load_pem_x509_certificate(cert_bytes, default_backend())
+        try:
+            # Aggiungi le intestazioni PEM
+            pem = self.load_cert_from_string(raw)
+            
+            # Decodifica la stringa PEM e carica il certificato
+            cert_bytes = pem.encode('utf-8')
+            return x509.load_pem_x509_certificate(cert_bytes, default_backend())
+        except Exception as e:
+            logging.error(f"Certificato non valido, errore nel parsing: {e}")
+            return None
 
     def is_aia_critical(self, issuer):
         """Controlla se l'AIA è critico, non critico o non trovato."""

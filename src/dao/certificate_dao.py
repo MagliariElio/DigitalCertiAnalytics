@@ -70,7 +70,7 @@ class CertificateDAO:
         subject_key_id = parsed.get("extensions", {}).get("subject_key_id", "")
         subject_alt_name = json.dumps(parsed.get("extensions", {}).get("subject_alt_name", {}))
         subject_alt_name_is_critical = digital_certificate.is_sub_alt_name_critical()
-
+        
         self.cursor.execute("""
             INSERT INTO Subjects (common_name, subject_dn, subject_key_id, subject_alt_name, subject_alt_name_is_critical)
             VALUES (?, ?, ?, ?, ?)

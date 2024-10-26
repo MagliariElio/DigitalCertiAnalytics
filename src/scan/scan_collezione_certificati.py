@@ -199,6 +199,7 @@ def check_chain_certificates(input_file):
 def count_root_cert_chain(input_file):
     out_file = "src/scan/count_root_certs_chain.log"
     count_certs = 0
+    count_leaf_self_signed = 0
     
     with open(input_file, 'r') as reader, open(out_file, 'w+') as writer:
         for line_num, row in enumerate(reader, start=1):
@@ -211,7 +212,11 @@ def count_root_cert_chain(input_file):
                 if status == "success":
                     handshake_log = json_row.get("data", {}).get("tls", {}).get("result", {}).get("handshake_log", {})
                     server_certificates = handshake_log.get("server_certificates", {})
+                    is_leaf_self_signed = server_certificates.get("certificate", {}).get("parsed", {}).get("signature", {}).get("self_signed", {})
                     chain = server_certificates.get("chain", [])
+                    
+                    if(is_leaf_self_signed):
+                        count_leaf_self_signed += 1
                     
                     for cert in chain:
                         is_self_signed = cert.get("parsed", {}).get("signature", {}).get("self_signed", {})
@@ -221,9 +226,9 @@ def count_root_cert_chain(input_file):
                     if(count_self_signed > 1):
                         count_certs += 1
                         domain = json_row.get("domain", "")
+                        writer.write("------------------------------------------------------------------\n")
                         writer.write(f"Il dominio {domain} ha esattamente {count_self_signed} self signed.\n")
                         writer.write(f"Certificato presente alla riga numero {line_num} dell'input file.\n")
-                        writer.write("------------------------------------------------------------------\n")
                        
             except json.JSONDecodeError:
                 print(f"Errore nel parsing della riga: {row}")
@@ -232,9 +237,71 @@ def count_root_cert_chain(input_file):
         original_content = reader.readlines()
 
     with open(out_file, 'w') as writer:
-        writer.write(f"Numero totale di certificati che hanno certificati self signed nella catena: {count_certs}\n\n")
+        writer.write(f"Numero totale di certificati che hanno certificati self signed nella catena: {count_certs}\n")
+        writer.write(f"Numero totale di certificati leaf che sono self signed: {count_leaf_self_signed}\n\n")
         writer.writelines(original_content)
+        writer.write("------------------------------------------------------------------\n")
+    return
 
+def count_certs_chain(input_file):
+    out_file = "src/scan/count_certs_chain.log"
+    no_chain_count = 0
+    chain_with_root_count = 0
+    chain_without_root_count = 0
+    chain_without_intermediate_and_root_count = 0
+    
+    with open(input_file, 'r') as reader:
+        for line_num, row in enumerate(reader, start=1):
+            try:
+                json_row = json.loads(row)
+                
+                status = json_row.get("data", {}).get("tls", {}).get("status", "")
+                
+                if status == "success":
+                    handshake_log = json_row.get("data", {}).get("tls", {}).get("result", {}).get("handshake_log", {})
+                    server_certificates = handshake_log.get("server_certificates", {})
+                    chain: list = server_certificates.get("chain", [])
+                    current_cert = server_certificates.get("certificate")
+                    is_intermediate_found = False   # Rivela se almeno un intermediate è presente nella catena
+                    
+                    if len(chain) > 0:
+                        while True:
+                            subject_dn = current_cert.get("parsed", {}).get("subject_dn", "")
+                            issuer_dn = current_cert.get("parsed", {}).get("issuer_dn", "")
+                            is_self_signed = current_cert.get("parsed", {}).get("signature", {}).get("self_signed", {})
+                            
+                            # Controlla se siamo arrivati al root
+                            if is_self_signed and subject_dn == issuer_dn:
+                                chain_with_root_count += 1
+                                break
+                            
+                            # Cerca il certificato successivo nella catena
+                            next_cert = next((cert for cert in chain if cert.get("parsed", {}).get("subject_dn", "") == issuer_dn), None)
+                            
+                            if next_cert:
+                                is_intermediate_found = True
+                                try:
+                                    chain.remove(current_cert)
+                                except ValueError:
+                                    pass
+                                current_cert = next_cert
+                            else:
+                                if(is_intermediate_found):
+                                    chain_without_root_count += 1
+                                else:
+                                    chain_without_intermediate_and_root_count += 1
+                                break
+                    else:
+                        no_chain_count += 1         
+            except json.JSONDecodeError:
+                print(f"Errore nel parsing della riga: {row}")
+
+    with open(out_file, 'w') as writer:
+        writer.write(f"Numero totale di certificati che hanno almeno un intermediate e un root nella catena: {chain_with_root_count}\n")
+        writer.write(f"Numero totale di certificati che hanno un intermediate ma nessun root nella catena: {chain_without_root_count}\n")
+        writer.write(f"Numero totale di certificati che non hanno nè un intermediate e nè un root nella catena: {chain_without_intermediate_and_root_count}\n")
+        writer.write(f"Numero totale di certificati che non hanno una catena: {no_chain_count}\n")
+        writer.write(f"Totale (deve corrispondere al numero di success): {chain_with_root_count+chain_without_root_count+chain_without_intermediate_and_root_count+no_chain_count}\n")
     return
     
 def main():
@@ -250,7 +317,8 @@ def main():
     # download_json_domain(result_json_file, "worldbank.org", None)
     # download_json_domain(result_json_file, None, 1505)
 
-    count_root_cert_chain(result_json_file)
+    # count_root_cert_chain(result_json_file)
+    count_certs_chain(result_json_file)
 
 if __name__ == "__main__":
     main()

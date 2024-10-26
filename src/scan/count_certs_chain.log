@@ -1,0 +1,5 @@
+Numero totale di certificati che hanno almeno un intermediate e un root nella catena: 371697
+Numero totale di certificati che hanno un intermediate ma nessun root nella catena: 6507964
+Numero totale di certificati che non hanno nè un intermediate e nè un root nella catena: 9484
+Numero totale di certificati che non hanno una catena: 155879
+Totale (deve corrispondere al numero di success): 7045024

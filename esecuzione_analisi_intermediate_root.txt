@@ -3,6 +3,6 @@ Prima Opzione:
 Eseguo l'analisi su tutti i certificati nella catena escludendo i self signed, presumendo che siano intermediate.
 Eseguo l'analisi su tutti i certificati esclusi precedentemente presumendo che siano root (anche se nella catena dovrebbe esserci solo un root e con questo metodo mi potrebbero venire fuori più root)
 
-Seconda Opzione:
+Seconda Opzione (implementata):
 Parto dall'issuer del certificato Leaf e prendendo il certificato dell'intermediate dalla catena risalendo fino a quando non trovo il root. Ma in questo modo è possibile che escluda dei certificati che siano stati messi nella catena senza motivo.
 

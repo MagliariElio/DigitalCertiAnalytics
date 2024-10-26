@@ -136,37 +136,48 @@ cd DigitalCertiAnalytics
 ```
 
 ### 2. Eseguire il programma
-Il programma può essere eseguito tramite il terminale o la riga di comando. Sono disponibili diversi flag che controllano l'esecuzione del programma.
+Il programma può essere eseguito tramite il terminale o la riga di comando, con diverse opzioni per controllare l'esecuzione del programma.
 
-### Opzioni disponibili:
-- `--delete_all_db`: elimina i database esistenti prima di iniziare l'analisi.
-- `--delete_leaf_db`: elimina il database leaf esistente prima di iniziare l'analisi.
-- `--delete_intermediate_db`: elimina il database intermediate esistente prima di iniziare l'analisi.
+#### Opzioni disponibili:
+- `--delete_all_db`: elimina tutti i database esistenti prima di iniziare l'analisi.
+- `--delete_leaf_db`: elimina il database dei certificati leaf prima di iniziare l'analisi.
+- `--delete_intermediate_db`: elimina il database dei certificati intermedi prima di iniziare l'analisi.
+- `--delete_root_db`: elimina il database dei certificati root prima di iniziare l'analisi.
+  
 - `--leaf_analysis`: esegue l'analisi dei certificati leaf.
 - `--leaf_ocsp_analysis`: esegue l'analisi OCSP per i certificati leaf.
-- `--intermediate_analysis`: esegue l'analisi dei certificati intermediate.
-- `--plot_results`: genera e visualizza grafici dai dati analizzati.
+
+- `--intermediate_analysis`: esegue l'analisi dei certificati intermedi.
+- `--intermediate_ocsp_analysis`: esegue l'analisi OCSP per i certificati intermedi.
+
+- `--root_analysis`: esegue l'analisi dei certificati root.
+- `--root_ocsp_analysis`: esegue l'analisi OCSP per i certificati root.
+
+- `--plot_all_results`: genera e visualizza i grafici per tutti i dati analizzati sui certificati.
+- `--plot_leaf_results`: genera e visualizza i grafici per i risultati dell'analisi dei certificati leaf.
+- `--plot_intermediate_results`: genera e visualizza i grafici per i risultati dell'analisi dei certificati intermedi.
+- `--plot_root_results`: genera e visualizza i grafici per i risultati dell'analisi dei certificati root.
 
 #### Esempi di utilizzo:
 
 1. **Eseguire solo l'analisi dei certificati leaf**:
    ```bash
-   python analysis.main -m --leaf_analysis
+   python -m analysis.main --leaf_analysis
    ```
 
-2. **Eliminare il database e analizzare i certificati leaf**:
+2. **Eliminare il database dei certificati intermedi e avviare l'analisi**:
    ```bash
-   python analysis.main -m --delete_leaf_db --leaf_analysis
+   python -m analysis.main --delete_intermediate_db --intermediate_analysis
    ```
 
-3. **Generare e visualizzare i grafici dai dati**:
+3. **Eseguire analisi OCSP per certificati root e generare grafici solo per i certificati root**:
    ```bash
-   python analysis.main -m --plot_results
+   python -m analysis.main --root_ocsp_analysis --plot_root_results
    ```
 
-4. **Eseguire tutte le operazioni (elimina DB, analizza certificati e visualizza grafici)**:
+4. **Eliminare tutti i database, analizzare i certificati leaf e intermedi e visualizzare tutti i grafici**:
    ```bash
-   python analysis.main -m --delete_leaf_db --leaf_analysis --plot_results
+   python -m analysis.main --delete_all_db --leaf_analysis --intermediate_analysis --plot_all_results
    ```
 
 ### 3. Struttura dei File

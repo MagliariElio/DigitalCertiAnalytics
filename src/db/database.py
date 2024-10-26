@@ -11,6 +11,7 @@ from enum import Enum
 class DatabaseType(Enum):
     LEAF = "leaf",
     INTERMEDIATE = "intermediate"
+    ROOT = "root"
 
 class Database:
     def __init__(self, db_path: str, schema_path: str, db_type: DatabaseType):
@@ -46,12 +47,6 @@ class Database:
             schema_sql = f.read()
         cursor = self.conn.cursor()
         cursor.executescript(schema_sql)
-        
-        if(self.db_type == DatabaseType.INTERMEDIATE):
-            cursor.executescript("""
-                DROP TABLE IF EXISTS Errors;
-            """)
-        
         self.conn.commit()
         logging.info("Tabelle create con successo.")
 
@@ -73,9 +68,27 @@ class Database:
                 CREATE INDEX IF NOT EXISTS idx_certificates_validity_end ON Certificates(validity_end);
                 CREATE INDEX IF NOT EXISTS idx_logs_log_id ON Logs(log_id);
             """)
+        elif self.db_type == DatabaseType.ROOT:
+            # Inserisci qui gli indici specifici solo per il database root
+            cursor.executescript("""
+                CREATE INDEX IF NOT EXISTS idx_certificates_validity_start ON Certificates(validity_start);
+                CREATE INDEX IF NOT EXISTS idx_certificates_validity_end ON Certificates(validity_end);
+                CREATE INDEX IF NOT EXISTS idx_logs_log_id ON Logs(log_id);
+            """)
         
         self.conn.commit()
         logging.info("Indici creati con successo.")
+    
+    def cleanup_unused_tables(self):
+        """
+            Elimina le tabelle non necessarie in base al tipo di database.
+        """
+        cursor = self.conn.cursor()
+        
+        if self.db_type in {DatabaseType.INTERMEDIATE, DatabaseType.ROOT}:
+            cursor.executescript("""
+                DROP TABLE IF EXISTS Errors;
+            """)
 
     @contextmanager
     def transaction(self):

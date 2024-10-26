@@ -18,14 +18,37 @@ from cryptography.hazmat.primitives.serialization import pkcs7
 # Admin: Anuar Elio Magliari 
 # Politecnico di Torino
 
-def verify_signature(leaf_cert: x509.Certificate, ca_cert: x509.Certificate):
-    """Verifica la firma di un certificato leaf utilizzando il certificato della CA."""
+class CustomFormatter(logging.Formatter):
+    def format(self, record):
+        original = super().format(record)
+        return original
+
+def setup_logging():
+    """Configura il logging dell'applicazione."""
+    formatter = CustomFormatter(
+        fmt='%(asctime)s - %(levelname)s - %(filename)s:%(lineno)d - %(funcName)s() - %(message)s'
+    )
+    
+    file_handler = logging.FileHandler("app.log")
+    file_handler.setFormatter(formatter)
+    
+    stream_handler = logging.StreamHandler()
+    stream_handler.setFormatter(formatter)
+
+    logging.basicConfig(
+        level=logging.INFO,  # Cambia in DEBUG per più dettagli
+        handlers=[file_handler, stream_handler]
+    )
+    
+def verify_signature(cert: x509.Certificate, ca_cert: x509.Certificate):
+    """Verifica la firma di un certificato utilizzando il certificato issuer."""
     try:
         # Estrae la firma e i dati TBSCertificate
-        signature = leaf_cert.signature
-        tbs_cert_bytes = leaf_cert.tbs_certificate_bytes
+        signature = cert.signature
+        tbs_cert_bytes = cert.tbs_certificate_bytes
         
-        ca_public_key = ca_cert.public_key() # Estrae la chiave pubblica della CA
+        # Estrae la chiave pubblica della CA
+        ca_public_key = ca_cert.public_key()
         
         # Verifica se la chiave è RSA o ECDSA
         if isinstance(ca_public_key, ec.EllipticCurvePublicKey):
@@ -33,7 +56,7 @@ def verify_signature(leaf_cert: x509.Certificate, ca_cert: x509.Certificate):
             ca_public_key.verify(
                 signature,
                 tbs_cert_bytes,
-                ec.ECDSA(leaf_cert.signature_hash_algorithm)
+                ec.ECDSA(cert.signature_hash_algorithm)
             )
         elif isinstance(ca_public_key, rsa.RSAPublicKey):
             # Per chiavi RSA, determinare il padding corretto
@@ -41,7 +64,7 @@ def verify_signature(leaf_cert: x509.Certificate, ca_cert: x509.Certificate):
                 signature,
                 tbs_cert_bytes,
                 padding.PKCS1v15(),
-                leaf_cert.signature_hash_algorithm
+                cert.signature_hash_algorithm
             )
         else:
             return "Unsupported key type"
@@ -69,15 +92,6 @@ def find_raw_cert_issuer(chain, issuer_dn) -> Optional[str]:
         if(subject_dn == issuer_dn):
             raw = issuer.get("raw", "")
             return raw
-    return None
-
-# TODO: forse è da eliminare perchè non è usato più
-def get_issuer_cert_from_chain(chain, issuer_dn):
-    """Cerca e restituisce il certificato raw dell'emittente corrispondente a un Distinguished Name (DN) nella catena di certificati."""
-    for cert in chain:
-        subject_dn = cert.get("parsed", {}).get("subject_dn", "")
-        if(subject_dn == issuer_dn):
-            return cert.get("raw", None)
     return None
 
 def make_ocsp_query(raw, issuer_certificate, alg, ocsp_link):
@@ -193,9 +207,67 @@ def check_ocsp_status(raw, hash_alg, issuer_link, issuer_common_name, ocsp_link,
         return "Not Ok OCSP Response"
     
 def reorder_signature_algorithm(signature_algorithm):
+    """Riorganizza l'algoritmo di firma nel formato 'signing-hash' se è un algoritmo RSA."""
     if 'RSA' in signature_algorithm and '-' in signature_algorithm:
         hash_algorithm, signing_algorithm = signature_algorithm.split('-')
         
         return f"{signing_algorithm}-{hash_algorithm}"
+    return signature_algorithm
+
+def find_next_intermediate_certificate(chain, current_cert) -> Optional[str]:
+    """
+        Trova il prossimo certificato intermedio nella catena partendo dal certificato corrente.
+        Restituisce None se il certificato corrente è un certificato root
+        o se non ci sono certificati intermedi nella catena.
+    """
+    if len(chain) == 0:
+        return None
     
-    return signature_algorithm  
+    # Prende i dati del certificato corrente
+    subject_dn = current_cert.get("parsed", {}).get("subject_dn", "")
+    issuer_dn = current_cert.get("parsed", {}).get("issuer_dn", "")
+    is_self_signed = current_cert.get("parsed", {}).get("signature", {}).get("self_signed", {})
+    
+    # Cerca il certificato successivo nella catena
+    next_cert = next((cert for cert in chain if cert.get("parsed", {}).get("subject_dn", "") == issuer_dn), None)
+    
+    # Controlla se è un certificato root
+    if is_self_signed and subject_dn == issuer_dn:
+        return None
+    
+    return next_cert
+
+def find_root_certificate(chain, current_cert) -> Optional[str]:
+    """
+        Trova il certificato root nella catena partendo dal certificato corrente.
+        Restituisce il certificato root se trovato, altrimenti None.
+    """
+    if len(chain) == 0:
+        return None
+    
+    while True:
+        # Prende i dati del certificato corrente
+        subject_dn = current_cert.get("parsed", {}).get("subject_dn", "")
+        issuer_dn = current_cert.get("parsed", {}).get("issuer_dn", "")
+        is_self_signed = current_cert.get("parsed", {}).get("signature", {}).get("self_signed", {})
+        
+        # Cerca il certificato successivo nella catena
+        next_cert = next((cert for cert in chain if cert.get("parsed", {}).get("subject_dn", "") == issuer_dn), None)
+        
+        if next_cert:
+            subject_dn = next_cert.get("parsed", {}).get("subject_dn", "")
+            issuer_dn = next_cert.get("parsed", {}).get("issuer_dn", "")
+            is_self_signed = next_cert.get("parsed", {}).get("signature", {}).get("self_signed", {})
+        
+            # Controlla se è un certificato root
+            if is_self_signed and subject_dn == issuer_dn:
+                return next_cert
+            else:
+                try:
+                    chain.remove(current_cert)
+                except ValueError:
+                    pass
+                # Continua con la ricerca del root
+                current_cert = next_cert
+        else:
+            return None
