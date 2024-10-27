@@ -105,4 +105,9 @@ class Database:
         """Chiude la connessione al database."""
         if self.conn:
             self.conn.close()
-            logging.info("Connessione al database chiusa.")
+            if(self.db_type == DatabaseType.LEAF):
+                logging.info("Connessione al database Leaf chiusa con successo.")
+            elif(self.db_type == DatabaseType.INTERMEDIATE):
+                logging.info("Connessione al database Intermediate chiusa con successo.")
+            elif(self.db_type == DatabaseType.ROOT):
+                logging.info("Connessione al database Root chiusa con successo.")

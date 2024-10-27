@@ -179,6 +179,10 @@ Il programma può essere eseguito tramite il terminale o la riga di comando, con
    ```bash
    python -m analysis.main --delete_all_db --leaf_analysis --intermediate_analysis --plot_all_results
    ```
+5. **Attivare la modalità verbose per una registrazione dettagliata**:
+   ```bash
+   python -m analysis.main --delete_leaf_db --leaf_analysis -v
+   ```
 
 ### 3. Struttura dei File
 

@@ -1,225 +1,387 @@
-2024-10-27 00:28:04,837 - INFO - certificates_analysis.py:326 - certificates_analysis_main() - Inizio dell'applicazione.
-2024-10-27 00:28:04,845 - INFO - database.py:27 - connect() - Database eliminato con successo: /home/elion-man/TEST_TESI/src/analysis/root/root_certificates.db
-2024-10-27 00:28:04,869 - INFO - database.py:51 - create_tables() - Tabelle create con successo.
-2024-10-27 00:28:04,921 - INFO - database.py:80 - create_indexes() - Indici creati con successo.
-2024-10-27 00:28:05,219 - INFO - certificates_analysis.py:214 - process_insert_sct_logs() - SCT Operators e SCT Logs memorizzati con successo.
-2024-10-27 00:28:05,220 - INFO - certificates_analysis.py:464 - certificates_analysis_main() - Inizio analisi certificati Root.
-2024-10-27 00:28:05,872 - INFO - certificates_analysis.py:36 - handle_exit_signal() - Segnale SIGINT (Ctrl + C) ricevuto. Inizio della procedura di chiusura...
-2024-10-27 00:28:05,874 - INFO - certificates_analysis.py:18 - close_connections() - Inizio chiusura delle connessioni ai database...
-2024-10-27 00:28:05,877 - INFO - database.py:108 - close() - Connessione al database chiusa.
-2024-10-27 00:28:05,879 - INFO - certificates_analysis.py:30 - close_connections() - Connessione al database Root chiusa con successo.
-2024-10-27 00:28:05,881 - INFO - certificates_analysis.py:32 - close_connections() - Tutte le connessioni ai database sono state chiuse.
-2024-10-27 00:28:05,883 - INFO - certificates_analysis.py:38 - handle_exit_signal() - Uscita dell'applicazione in corso...
-2024-10-27 00:29:09,553 - INFO - certificates_analysis.py:331 - certificates_analysis_main() - Inizio dell'applicazione.
-2024-10-27 00:29:09,556 - INFO - database.py:27 - connect() - Database eliminato con successo: /home/elion-man/TEST_TESI/src/analysis/root/root_certificates.db
-2024-10-27 00:29:09,603 - INFO - database.py:51 - create_tables() - Tabelle create con successo.
-2024-10-27 00:29:09,694 - INFO - database.py:80 - create_indexes() - Indici creati con successo.
-2024-10-27 00:29:10,366 - INFO - certificates_analysis.py:219 - process_insert_sct_logs() - SCT Operators e SCT Logs memorizzati con successo.
-2024-10-27 00:29:10,368 - INFO - certificates_analysis.py:469 - certificates_analysis_main() - Inizio analisi certificati Root.
-2024-10-27 00:29:11,102 - INFO - certificates_analysis.py:39 - handle_exit_signal() - Segnale SIGINT (Ctrl + C) ricevuto. Inizio della procedura di chiusura...
-2024-10-27 00:29:11,105 - INFO - certificates_analysis.py:18 - close_connections() - Inizio chiusura delle connessioni ai database...
-2024-10-27 00:29:11,108 - INFO - database.py:108 - close() - Connessione al database chiusa.
-2024-10-27 00:29:11,110 - INFO - certificates_analysis.py:30 - close_connections() - Connessione al database Root chiusa con successo.
-2024-10-27 00:29:11,113 - INFO - certificates_analysis.py:35 - close_connections() - Tutte le connessioni ai database sono state chiuse.
-2024-10-27 00:29:11,114 - INFO - certificates_analysis.py:41 - handle_exit_signal() - Uscita dell'applicazione in corso...
-2024-10-27 00:38:48,133 - INFO - certificates_analysis.py:362 - certificates_analysis_main() - Inizio dell'applicazione.
-2024-10-27 00:38:48,137 - INFO - database.py:27 - connect() - Database eliminato con successo: /home/elion-man/TEST_TESI/src/analysis/root/root_certificates.db
-2024-10-27 00:38:48,143 - INFO - database.py:51 - create_tables() - Tabelle create con successo.
-2024-10-27 00:38:48,153 - INFO - database.py:80 - create_indexes() - Indici creati con successo.
-2024-10-27 00:38:48,211 - INFO - certificates_analysis.py:247 - process_insert_sct_logs() - SCT Operators e SCT Logs memorizzati con successo.
-2024-10-27 00:38:48,212 - INFO - certificates_analysis.py:500 - certificates_analysis_main() - Inizio analisi certificati Root.
-2024-10-27 00:38:48,732 - INFO - certificates_analysis.py:48 - handle_exit_signal() - Segnale SIGINT (Ctrl + C) ricevuto. Inizio della procedura di chiusura...
-2024-10-27 00:38:48,735 - INFO - certificates_analysis.py:18 - close_connections() - Inizio chiusura delle connessioni ai database...
-2024-10-27 00:38:48,738 - INFO - database.py:108 - close() - Connessione al database chiusa.
-2024-10-27 00:38:48,740 - INFO - certificates_analysis.py:30 - close_connections() - Connessione al database Root chiusa con successo.
-2024-10-27 00:38:48,745 - INFO - certificates_analysis.py:44 - close_connections() - Tutte le connessioni ai database sono state chiuse.
-2024-10-27 00:38:48,746 - INFO - certificates_analysis.py:50 - handle_exit_signal() - Uscita dell'applicazione in corso...
-2024-10-27 00:39:12,881 - INFO - certificates_analysis.py:362 - certificates_analysis_main() - Inizio dell'applicazione.
-2024-10-27 00:39:12,886 - INFO - database.py:42 - _initialize_database() - Connessione al database esistente: /home/elion-man/TEST_TESI/src/analysis/root/root_certificates.db
-2024-10-27 00:39:12,887 - INFO - certificates_analysis.py:512 - certificates_analysis_main() - Inizio generazione grafici per certificati Root.
-2024-10-27 00:39:12,893 - INFO - certificates_analysis.py:312 - plot_root_certificates_analysis() - La cartella 'analysis/root/plots' è stata rimossa.
-2024-10-27 00:39:12,896 - INFO - certificates_analysis.py:316 - plot_root_certificates_analysis() - La cartella 'analysis/root/plots' è stata creata.
-2024-10-27 00:39:12,898 - INFO - certificate_dao.py:473 - get_issuer_certificate_count() - Totale issuers trovati: 1
-2024-10-27 00:39:13,312 - ERROR - plotter_utils.py:52 - plot_general_certificates_analysis() - Errore nella generazione di un grafico: float() argument must be a string or a real number, not 'NoneType'
-2024-10-27 00:39:13,313 - INFO - certificates_analysis.py:514 - certificates_analysis_main() - Generazione dei grafici per l'analisi dei certificati Root completata.
-2024-10-27 00:39:13,318 - INFO - database.py:108 - close() - Connessione al database chiusa.
-2024-10-27 00:39:13,320 - INFO - certificates_analysis.py:520 - certificates_analysis_main() - Applicazione terminata correttamente.
-2024-10-27 00:39:37,234 - INFO - certificates_analysis.py:362 - certificates_analysis_main() - Inizio dell'applicazione.
-2024-10-27 00:39:37,237 - INFO - database.py:27 - connect() - Database eliminato con successo: /home/elion-man/TEST_TESI/src/analysis/root/root_certificates.db
-2024-10-27 00:39:37,247 - INFO - database.py:51 - create_tables() - Tabelle create con successo.
-2024-10-27 00:39:37,256 - INFO - database.py:80 - create_indexes() - Indici creati con successo.
-2024-10-27 00:39:37,306 - INFO - certificates_analysis.py:247 - process_insert_sct_logs() - SCT Operators e SCT Logs memorizzati con successo.
-2024-10-27 00:39:37,307 - INFO - certificates_analysis.py:500 - certificates_analysis_main() - Inizio analisi certificati Root.
-2024-10-27 00:39:47,681 - ERROR - certificate.py:41 - get_certificate_from_raw() - Certificato non valido, errore nel parsing: error parsing asn1 value: ParseError { kind: EncodedDefault, location: ["RawCertificate::tbs_cert", "TbsCertificate::extensions", 1, "Extension::critical"] }
-2024-10-27 00:39:47,684 - ERROR - certificate.py:133 - is_sub_alt_name_critical() - Errore imprevisto durante il controllo Sub Alt Name: 'NoneType' object has no attribute 'extensions'
-2024-10-27 00:39:47,686 - ERROR - certificate.py:41 - get_certificate_from_raw() - Certificato non valido, errore nel parsing: error parsing asn1 value: ParseError { kind: EncodedDefault, location: ["RawCertificate::tbs_cert", "TbsCertificate::extensions", 1, "Extension::critical"] }
-2024-10-27 00:39:47,689 - ERROR - utils.py:60 - verify_signature() - Impossibile verificare la firma: il certificato non è presente
-2024-10-27 00:39:47,691 - ERROR - certificate.py:147 - is_ocsp_must_staple() - Errore imprevisto durante il controllo OCSP must stapling: 'NoneType' object has no attribute 'extensions'
-2024-10-27 00:39:47,693 - ERROR - certificate.py:55 - is_aia_critical() - Errore imprevisto durante il controllo AIA (): 'NoneType' object has no attribute 'extensions'
-2024-10-27 00:39:47,696 - ERROR - certificate.py:41 - get_certificate_from_raw() - Certificato non valido, errore nel parsing: error parsing asn1 value: ParseError { kind: EncodedDefault, location: ["RawCertificate::tbs_cert", "TbsCertificate::extensions", 1, "Extension::critical"] }
-2024-10-27 00:39:47,698 - ERROR - certificate.py:91 - is_crl_distr_point_critical() - Errore imprevisto durante il controllo Crl Distr Point: 'NoneType' object has no attribute 'extensions'
-2024-10-27 00:39:47,701 - ERROR - certificate.py:105 - is_key_usage_critical() - Errore imprevisto durante il controllo Key Usage: 'NoneType' object has no attribute 'extensions'
-2024-10-27 00:39:47,703 - ERROR - certificate.py:119 - is_extended_key_usage_critical() - Errore imprevisto durante il controllo Extended Key Usage: 'NoneType' object has no attribute 'extensions'
-2024-10-27 00:39:47,706 - ERROR - certificate.py:77 - get_cp() - Errore imprevisto nel recupero delle CERTIFICATE_POLICIES: 'NoneType' object has no attribute 'extensions'
-2024-10-27 00:40:01,776 - INFO - certificates_analysis.py:48 - handle_exit_signal() - Segnale SIGINT (Ctrl + C) ricevuto. Inizio della procedura di chiusura...
-2024-10-27 00:40:01,778 - INFO - certificates_analysis.py:18 - close_connections() - Inizio chiusura delle connessioni ai database...
-2024-10-27 00:40:01,780 - INFO - database.py:108 - close() - Connessione al database chiusa.
-2024-10-27 00:40:01,787 - INFO - certificates_analysis.py:30 - close_connections() - Connessione al database Root chiusa con successo.
-2024-10-27 00:40:01,790 - INFO - certificates_analysis.py:44 - close_connections() - Tutte le connessioni ai database sono state chiuse.
-2024-10-27 00:40:01,791 - INFO - certificates_analysis.py:50 - handle_exit_signal() - Uscita dell'applicazione in corso...
-2024-10-27 00:40:04,505 - INFO - certificates_analysis.py:362 - certificates_analysis_main() - Inizio dell'applicazione.
-2024-10-27 00:40:04,510 - INFO - database.py:27 - connect() - Database eliminato con successo: /home/elion-man/TEST_TESI/src/analysis/root/root_certificates.db
-2024-10-27 00:40:04,515 - INFO - database.py:51 - create_tables() - Tabelle create con successo.
-2024-10-27 00:40:04,525 - INFO - database.py:80 - create_indexes() - Indici creati con successo.
-2024-10-27 00:40:04,579 - INFO - certificates_analysis.py:247 - process_insert_sct_logs() - SCT Operators e SCT Logs memorizzati con successo.
-2024-10-27 00:40:04,581 - INFO - certificates_analysis.py:500 - certificates_analysis_main() - Inizio analisi certificati Root.
-2024-10-27 00:40:05,761 - INFO - certificates_analysis.py:48 - handle_exit_signal() - Segnale SIGINT (Ctrl + C) ricevuto. Inizio della procedura di chiusura...
-2024-10-27 00:40:05,764 - INFO - certificates_analysis.py:18 - close_connections() - Inizio chiusura delle connessioni ai database...
-2024-10-27 00:40:05,766 - INFO - database.py:108 - close() - Connessione al database chiusa.
-2024-10-27 00:40:05,769 - INFO - certificates_analysis.py:30 - close_connections() - Connessione al database Root chiusa con successo.
-2024-10-27 00:40:05,774 - INFO - certificates_analysis.py:44 - close_connections() - Tutte le connessioni ai database sono state chiuse.
-2024-10-27 00:40:05,775 - INFO - certificates_analysis.py:50 - handle_exit_signal() - Uscita dell'applicazione in corso...
-2024-10-27 00:40:08,333 - INFO - certificates_analysis.py:362 - certificates_analysis_main() - Inizio dell'applicazione.
-2024-10-27 00:40:08,336 - INFO - database.py:27 - connect() - Database eliminato con successo: /home/elion-man/TEST_TESI/src/analysis/root/root_certificates.db
-2024-10-27 00:40:08,341 - INFO - database.py:51 - create_tables() - Tabelle create con successo.
-2024-10-27 00:40:08,350 - INFO - database.py:80 - create_indexes() - Indici creati con successo.
-2024-10-27 00:40:08,408 - INFO - certificates_analysis.py:247 - process_insert_sct_logs() - SCT Operators e SCT Logs memorizzati con successo.
-2024-10-27 00:40:08,409 - INFO - certificates_analysis.py:500 - certificates_analysis_main() - Inizio analisi certificati Root.
-2024-10-27 00:40:08,745 - INFO - certificates_analysis.py:48 - handle_exit_signal() - Segnale SIGINT (Ctrl + C) ricevuto. Inizio della procedura di chiusura...
-2024-10-27 00:40:08,748 - INFO - certificates_analysis.py:18 - close_connections() - Inizio chiusura delle connessioni ai database...
-2024-10-27 00:40:08,750 - INFO - database.py:108 - close() - Connessione al database chiusa.
-2024-10-27 00:40:08,752 - INFO - certificates_analysis.py:30 - close_connections() - Connessione al database Root chiusa con successo.
-2024-10-27 00:40:08,756 - INFO - certificates_analysis.py:44 - close_connections() - Tutte le connessioni ai database sono state chiuse.
-2024-10-27 00:40:08,756 - INFO - certificates_analysis.py:50 - handle_exit_signal() - Uscita dell'applicazione in corso...
-2024-10-27 00:40:24,536 - INFO - certificates_analysis.py:362 - certificates_analysis_main() - Inizio dell'applicazione.
-2024-10-27 00:40:24,539 - INFO - database.py:27 - connect() - Database eliminato con successo: /home/elion-man/TEST_TESI/src/analysis/root/root_certificates.db
-2024-10-27 00:40:24,545 - INFO - database.py:51 - create_tables() - Tabelle create con successo.
-2024-10-27 00:40:24,554 - INFO - database.py:80 - create_indexes() - Indici creati con successo.
-2024-10-27 00:40:24,609 - INFO - certificates_analysis.py:247 - process_insert_sct_logs() - SCT Operators e SCT Logs memorizzati con successo.
-2024-10-27 00:40:24,610 - INFO - certificates_analysis.py:500 - certificates_analysis_main() - Inizio analisi certificati Root.
-2024-10-27 00:41:20,804 - INFO - certificates_analysis.py:48 - handle_exit_signal() - Segnale SIGINT (Ctrl + C) ricevuto. Inizio della procedura di chiusura...
-2024-10-27 00:41:20,808 - INFO - certificates_analysis.py:18 - close_connections() - Inizio chiusura delle connessioni ai database...
-2024-10-27 00:41:20,811 - INFO - database.py:108 - close() - Connessione al database chiusa.
-2024-10-27 00:41:20,813 - INFO - certificates_analysis.py:30 - close_connections() - Connessione al database Root chiusa con successo.
-2024-10-27 00:41:20,817 - INFO - certificates_analysis.py:44 - close_connections() - Tutte le connessioni ai database sono state chiuse.
-2024-10-27 00:41:20,818 - INFO - certificates_analysis.py:50 - handle_exit_signal() - Uscita dell'applicazione in corso...
-2024-10-27 00:41:23,106 - INFO - certificates_analysis.py:362 - certificates_analysis_main() - Inizio dell'applicazione.
-2024-10-27 00:41:23,111 - INFO - database.py:27 - connect() - Database eliminato con successo: /home/elion-man/TEST_TESI/src/analysis/root/root_certificates.db
-2024-10-27 00:41:23,149 - INFO - database.py:51 - create_tables() - Tabelle create con successo.
-2024-10-27 00:41:23,226 - INFO - database.py:80 - create_indexes() - Indici creati con successo.
-2024-10-27 00:41:23,788 - INFO - certificates_analysis.py:247 - process_insert_sct_logs() - SCT Operators e SCT Logs memorizzati con successo.
-2024-10-27 00:41:23,790 - INFO - certificates_analysis.py:500 - certificates_analysis_main() - Inizio analisi certificati Root.
-2024-10-27 00:43:25,267 - INFO - certificates_analysis.py:362 - certificates_analysis_main() - Inizio dell'applicazione.
-2024-10-27 00:43:25,273 - INFO - database.py:27 - connect() - Database eliminato con successo: /home/elion-man/TEST_TESI/src/analysis/root/root_certificates.db
-2024-10-27 00:43:25,286 - INFO - database.py:51 - create_tables() - Tabelle create con successo.
-2024-10-27 00:43:25,302 - INFO - database.py:80 - create_indexes() - Indici creati con successo.
-2024-10-27 00:43:25,359 - INFO - certificates_analysis.py:247 - process_insert_sct_logs() - SCT Operators e SCT Logs memorizzati con successo.
-2024-10-27 00:43:25,361 - INFO - certificates_analysis.py:500 - certificates_analysis_main() - Inizio analisi certificati Root.
-2024-10-27 00:44:26,601 - INFO - certificates_analysis.py:48 - handle_exit_signal() - Segnale SIGINT (Ctrl + C) ricevuto. Inizio della procedura di chiusura...
-2024-10-27 00:44:26,621 - INFO - certificates_analysis.py:18 - close_connections() - Inizio chiusura delle connessioni ai database...
-2024-10-27 00:44:26,623 - INFO - database.py:108 - close() - Connessione al database chiusa.
-2024-10-27 00:44:26,626 - INFO - certificates_analysis.py:30 - close_connections() - Connessione al database Root chiusa con successo.
-2024-10-27 00:44:26,630 - INFO - certificates_analysis.py:44 - close_connections() - Tutte le connessioni ai database sono state chiuse.
-2024-10-27 00:44:26,631 - INFO - certificates_analysis.py:50 - handle_exit_signal() - Uscita dell'applicazione in corso...
-2024-10-27 00:44:29,963 - INFO - certificates_analysis.py:362 - certificates_analysis_main() - Inizio dell'applicazione.
-2024-10-27 00:44:29,969 - INFO - database.py:27 - connect() - Database eliminato con successo: /home/elion-man/TEST_TESI/src/analysis/root/root_certificates.db
-2024-10-27 00:44:30,008 - INFO - database.py:51 - create_tables() - Tabelle create con successo.
-2024-10-27 00:44:30,081 - INFO - database.py:80 - create_indexes() - Indici creati con successo.
-2024-10-27 00:44:30,657 - INFO - certificates_analysis.py:247 - process_insert_sct_logs() - SCT Operators e SCT Logs memorizzati con successo.
-2024-10-27 00:44:30,659 - INFO - certificates_analysis.py:500 - certificates_analysis_main() - Inizio analisi certificati Root.
-2024-10-27 00:48:09,593 - INFO - certificates_analysis.py:48 - handle_exit_signal() - Segnale SIGINT (Ctrl + C) ricevuto. Inizio della procedura di chiusura...
-2024-10-27 00:48:09,597 - INFO - certificates_analysis.py:18 - close_connections() - Inizio chiusura delle connessioni ai database...
-2024-10-27 00:48:09,599 - INFO - database.py:108 - close() - Connessione al database chiusa.
-2024-10-27 00:48:09,601 - INFO - certificates_analysis.py:30 - close_connections() - Connessione al database Root chiusa con successo.
-2024-10-27 00:48:09,605 - INFO - certificates_analysis.py:44 - close_connections() - Tutte le connessioni ai database sono state chiuse.
-2024-10-27 00:48:09,605 - INFO - certificates_analysis.py:50 - handle_exit_signal() - Uscita dell'applicazione in corso...
-2024-10-27 00:48:11,823 - INFO - certificates_analysis.py:362 - certificates_analysis_main() - Inizio dell'applicazione.
-2024-10-27 00:48:11,830 - INFO - database.py:27 - connect() - Database eliminato con successo: /home/elion-man/TEST_TESI/src/analysis/root/root_certificates.db
-2024-10-27 00:48:11,879 - INFO - database.py:51 - create_tables() - Tabelle create con successo.
-2024-10-27 00:48:11,969 - INFO - database.py:80 - create_indexes() - Indici creati con successo.
-2024-10-27 00:48:12,300 - INFO - certificates_analysis.py:247 - process_insert_sct_logs() - SCT Operators e SCT Logs memorizzati con successo.
-2024-10-27 00:48:12,302 - INFO - certificates_analysis.py:500 - certificates_analysis_main() - Inizio analisi certificati Root.
-2024-10-27 00:48:22,660 - INFO - certificates_analysis.py:48 - handle_exit_signal() - Segnale SIGINT (Ctrl + C) ricevuto. Inizio della procedura di chiusura...
-2024-10-27 00:48:22,663 - INFO - certificates_analysis.py:18 - close_connections() - Inizio chiusura delle connessioni ai database...
-2024-10-27 00:48:22,665 - INFO - database.py:108 - close() - Connessione al database chiusa.
-2024-10-27 00:48:22,667 - INFO - certificates_analysis.py:30 - close_connections() - Connessione al database Root chiusa con successo.
-2024-10-27 00:48:22,671 - INFO - certificates_analysis.py:44 - close_connections() - Tutte le connessioni ai database sono state chiuse.
-2024-10-27 00:48:22,672 - INFO - certificates_analysis.py:50 - handle_exit_signal() - Uscita dell'applicazione in corso...
-2024-10-27 00:48:24,874 - INFO - certificates_analysis.py:362 - certificates_analysis_main() - Inizio dell'applicazione.
-2024-10-27 00:48:24,878 - INFO - database.py:27 - connect() - Database eliminato con successo: /home/elion-man/TEST_TESI/src/analysis/root/root_certificates.db
-2024-10-27 00:48:24,901 - INFO - database.py:51 - create_tables() - Tabelle create con successo.
-2024-10-27 00:48:24,944 - INFO - database.py:80 - create_indexes() - Indici creati con successo.
-2024-10-27 00:48:25,252 - INFO - certificates_analysis.py:247 - process_insert_sct_logs() - SCT Operators e SCT Logs memorizzati con successo.
-2024-10-27 00:48:25,254 - INFO - certificates_analysis.py:500 - certificates_analysis_main() - Inizio analisi certificati Root.
-2024-10-27 00:49:07,836 - INFO - certificates_analysis.py:48 - handle_exit_signal() - Segnale SIGINT (Ctrl + C) ricevuto. Inizio della procedura di chiusura...
-2024-10-27 00:49:07,839 - INFO - certificates_analysis.py:18 - close_connections() - Inizio chiusura delle connessioni ai database...
-2024-10-27 00:49:07,841 - INFO - database.py:108 - close() - Connessione al database chiusa.
-2024-10-27 00:49:07,843 - INFO - certificates_analysis.py:30 - close_connections() - Connessione al database Root chiusa con successo.
-2024-10-27 00:49:07,846 - INFO - certificates_analysis.py:44 - close_connections() - Tutte le connessioni ai database sono state chiuse.
-2024-10-27 00:49:07,847 - INFO - certificates_analysis.py:50 - handle_exit_signal() - Uscita dell'applicazione in corso...
-2024-10-27 00:49:10,026 - INFO - certificates_analysis.py:362 - certificates_analysis_main() - Inizio dell'applicazione.
-2024-10-27 00:49:10,031 - INFO - database.py:27 - connect() - Database eliminato con successo: /home/elion-man/TEST_TESI/src/analysis/root/root_certificates.db
-2024-10-27 00:49:10,036 - INFO - database.py:51 - create_tables() - Tabelle create con successo.
-2024-10-27 00:49:10,047 - INFO - database.py:80 - create_indexes() - Indici creati con successo.
-2024-10-27 00:49:10,107 - INFO - certificates_analysis.py:247 - process_insert_sct_logs() - SCT Operators e SCT Logs memorizzati con successo.
-2024-10-27 00:49:10,109 - INFO - certificates_analysis.py:500 - certificates_analysis_main() - Inizio analisi certificati Root.
-2024-10-27 00:52:36,781 - INFO - certificates_analysis.py:48 - handle_exit_signal() - Segnale SIGINT (Ctrl + C) ricevuto. Inizio della procedura di chiusura...
-2024-10-27 00:52:36,785 - INFO - certificates_analysis.py:18 - close_connections() - Inizio chiusura delle connessioni ai database...
-2024-10-27 00:52:36,787 - INFO - database.py:108 - close() - Connessione al database chiusa.
-2024-10-27 00:52:36,789 - INFO - certificates_analysis.py:30 - close_connections() - Connessione al database Root chiusa con successo.
-2024-10-27 00:52:36,793 - INFO - certificates_analysis.py:44 - close_connections() - Tutte le connessioni ai database sono state chiuse.
-2024-10-27 00:52:36,794 - INFO - certificates_analysis.py:50 - handle_exit_signal() - Uscita dell'applicazione in corso...
-2024-10-27 00:52:39,072 - INFO - certificates_analysis.py:371 - certificates_analysis_main() - Inizio dell'applicazione.
-2024-10-27 00:52:39,079 - INFO - database.py:27 - connect() - Database eliminato con successo: /home/elion-man/TEST_TESI/src/analysis/root/root_certificates.db
-2024-10-27 00:52:39,101 - INFO - database.py:51 - create_tables() - Tabelle create con successo.
-2024-10-27 00:52:39,147 - INFO - database.py:80 - create_indexes() - Indici creati con successo.
-2024-10-27 00:52:39,445 - INFO - certificates_analysis.py:256 - process_insert_sct_logs() - SCT Operators e SCT Logs memorizzati con successo.
-2024-10-27 00:52:39,447 - INFO - certificates_analysis.py:509 - certificates_analysis_main() - Inizio analisi certificati Root.
-2024-10-27 00:54:00,399 - INFO - certificates_analysis.py:49 - handle_exit_signal() - Segnale SIGINT (Ctrl + C) ricevuto. Inizio della procedura di chiusura...
-2024-10-27 00:54:00,403 - INFO - certificates_analysis.py:19 - close_connections() - Inizio chiusura delle connessioni ai database...
-2024-10-27 00:54:00,405 - INFO - database.py:108 - close() - Connessione al database chiusa.
-2024-10-27 00:54:00,407 - INFO - certificates_analysis.py:31 - close_connections() - Connessione al database Root chiusa con successo.
-2024-10-27 00:54:00,411 - INFO - certificates_analysis.py:45 - close_connections() - Tutte le connessioni ai database sono state chiuse.
-2024-10-27 00:54:00,411 - INFO - certificates_analysis.py:51 - handle_exit_signal() - Uscita dell'applicazione in corso...
-2024-10-27 00:54:02,979 - INFO - certificates_analysis.py:371 - certificates_analysis_main() - Inizio dell'applicazione.
-2024-10-27 00:54:02,984 - INFO - database.py:27 - connect() - Database eliminato con successo: /home/elion-man/TEST_TESI/src/analysis/root/root_certificates.db
-2024-10-27 00:54:03,016 - INFO - database.py:51 - create_tables() - Tabelle create con successo.
-2024-10-27 00:54:03,062 - INFO - database.py:80 - create_indexes() - Indici creati con successo.
-2024-10-27 00:54:03,360 - INFO - certificates_analysis.py:256 - process_insert_sct_logs() - SCT Operators e SCT Logs memorizzati con successo.
-2024-10-27 00:54:03,361 - INFO - certificates_analysis.py:509 - certificates_analysis_main() - Inizio analisi certificati Root.
-2024-10-27 00:54:33,052 - INFO - certificates_analysis.py:371 - certificates_analysis_main() - Inizio dell'applicazione.
-2024-10-27 00:54:33,055 - INFO - database.py:27 - connect() - Database eliminato con successo: /home/elion-man/TEST_TESI/src/analysis/root/root_certificates.db
-2024-10-27 00:54:33,083 - INFO - database.py:51 - create_tables() - Tabelle create con successo.
-2024-10-27 00:54:33,159 - INFO - database.py:80 - create_indexes() - Indici creati con successo.
-2024-10-27 00:54:33,774 - INFO - certificates_analysis.py:256 - process_insert_sct_logs() - SCT Operators e SCT Logs memorizzati con successo.
-2024-10-27 00:54:33,776 - INFO - certificates_analysis.py:509 - certificates_analysis_main() - Inizio analisi certificati Root.
-2024-10-27 00:54:49,711 - INFO - certificates_analysis.py:49 - handle_exit_signal() - Segnale SIGINT (Ctrl + C) ricevuto. Inizio della procedura di chiusura...
-2024-10-27 00:54:49,713 - INFO - certificates_analysis.py:19 - close_connections() - Inizio chiusura delle connessioni ai database...
-2024-10-27 00:54:49,715 - INFO - database.py:108 - close() - Connessione al database chiusa.
-2024-10-27 00:54:49,716 - INFO - certificates_analysis.py:31 - close_connections() - Connessione al database Root chiusa con successo.
-2024-10-27 00:54:49,717 - INFO - certificates_analysis.py:45 - close_connections() - Tutte le connessioni ai database sono state chiuse.
-2024-10-27 00:54:49,718 - INFO - certificates_analysis.py:51 - handle_exit_signal() - Uscita dell'applicazione in corso...
-2024-10-27 00:54:52,543 - INFO - certificates_analysis.py:371 - certificates_analysis_main() - Inizio dell'applicazione.
-2024-10-27 00:54:52,547 - INFO - database.py:27 - connect() - Database eliminato con successo: /home/elion-man/TEST_TESI/src/analysis/root/root_certificates.db
-2024-10-27 00:54:52,592 - INFO - database.py:51 - create_tables() - Tabelle create con successo.
-2024-10-27 00:54:52,669 - INFO - database.py:80 - create_indexes() - Indici creati con successo.
-2024-10-27 00:54:53,186 - INFO - certificates_analysis.py:256 - process_insert_sct_logs() - SCT Operators e SCT Logs memorizzati con successo.
-2024-10-27 00:54:53,188 - INFO - certificates_analysis.py:509 - certificates_analysis_main() - Inizio analisi certificati Root.
-2024-10-27 00:55:11,776 - INFO - certificates_analysis.py:49 - handle_exit_signal() - Segnale SIGINT (Ctrl + C) ricevuto. Inizio della procedura di chiusura...
-2024-10-27 00:55:11,780 - INFO - certificates_analysis.py:19 - close_connections() - Inizio chiusura delle connessioni ai database...
-2024-10-27 00:55:11,781 - INFO - database.py:108 - close() - Connessione al database chiusa.
-2024-10-27 00:55:11,784 - INFO - certificates_analysis.py:31 - close_connections() - Connessione al database Root chiusa con successo.
-2024-10-27 00:55:11,785 - INFO - certificates_analysis.py:45 - close_connections() - Tutte le connessioni ai database sono state chiuse.
-2024-10-27 00:55:11,786 - INFO - certificates_analysis.py:51 - handle_exit_signal() - Uscita dell'applicazione in corso...
-2024-10-27 00:55:13,825 - INFO - certificates_analysis.py:362 - certificates_analysis_main() - Inizio dell'applicazione.
-2024-10-27 00:55:13,830 - INFO - database.py:27 - connect() - Database eliminato con successo: /home/elion-man/TEST_TESI/src/analysis/root/root_certificates.db
-2024-10-27 00:55:13,841 - INFO - database.py:51 - create_tables() - Tabelle create con successo.
-2024-10-27 00:55:13,854 - INFO - database.py:80 - create_indexes() - Indici creati con successo.
-2024-10-27 00:55:13,910 - INFO - certificates_analysis.py:247 - process_insert_sct_logs() - SCT Operators e SCT Logs memorizzati con successo.
-2024-10-27 00:55:13,911 - INFO - certificates_analysis.py:500 - certificates_analysis_main() - Inizio analisi certificati Root.
-2024-10-27 00:55:32,738 - INFO - certificates_analysis.py:48 - handle_exit_signal() - Segnale SIGINT (Ctrl + C) ricevuto. Inizio della procedura di chiusura...
-2024-10-27 00:55:32,744 - INFO - certificates_analysis.py:18 - close_connections() - Inizio chiusura delle connessioni ai database...
-2024-10-27 00:55:32,747 - INFO - database.py:108 - close() - Connessione al database chiusa.
-2024-10-27 00:55:32,750 - INFO - certificates_analysis.py:30 - close_connections() - Connessione al database Root chiusa con successo.
-2024-10-27 00:55:32,754 - INFO - certificates_analysis.py:44 - close_connections() - Tutte le connessioni ai database sono state chiuse.
-2024-10-27 00:55:32,755 - INFO - certificates_analysis.py:50 - handle_exit_signal() - Uscita dell'applicazione in corso...
+2024-10-27 02:53:56,421 - INFO - certificates_analysis.py:367 - certificates_analysis_main() - Inizio dell'applicazione.
+2024-10-27 02:53:56,424 - INFO - database.py:42 - _initialize_database() - Connessione al database esistente: /home/elion-man/TEST_TESI/src/analysis/leaf/leaf_certificates.db
+2024-10-27 02:53:56,425 - INFO - certificates_analysis.py:443 - certificates_analysis_main() - Inizio generazione grafici per certificati Leaf.
+2024-10-27 02:53:56,427 - INFO - certificates_analysis.py:261 - plot_leaf_certificates() - La cartella 'analysis/leaf/plots' è stata rimossa.
+2024-10-27 02:53:56,428 - INFO - certificates_analysis.py:265 - plot_leaf_certificates() - La cartella 'analysis/leaf/plots' è stata creata.
+2024-10-27 02:53:56,432 - DEBUG - certificate_dao.py:469 - get_issuer_certificate_count() - Issuer per certificato ottenute: 20
+2024-10-27 02:53:56,433 - INFO - certificate_dao.py:473 - get_issuer_certificate_count() - Totale issuers trovati: 20
+2024-10-27 02:53:57,301 - INFO - graph_plotter.py:47 - plot_bar_chart() - Grafico 'Emissione dei Certificati da Parte degli Issuer' generato con successo e salvato in /home/elion-man/TEST_TESI/src/analysis/leaf/plots/issuer_certificates_count.png.
+2024-10-27 02:53:57,313 - DEBUG - certificate_dao.py:736 - get_certificate_version_distribution() - Risultati ottenuti: 1
+2024-10-27 02:53:57,314 - INFO - certificate_dao.py:740 - get_certificate_version_distribution() - Totale trovati: 1
+2024-10-27 02:53:57,695 - INFO - graph_plotter.py:47 - plot_bar_chart() - Grafico 'Distribuzione delle Versioni dei Certificati' generato con successo e salvato in /home/elion-man/TEST_TESI/src/analysis/leaf/plots/certificate_version_distribution.png.
+2024-10-27 02:53:57,707 - DEBUG - certificate_dao.py:668 - get_count_critical_non_critical_extensions() - Risultati ottenuti: 1
+2024-10-27 02:53:57,708 - INFO - certificate_dao.py:672 - get_count_critical_non_critical_extensions() - Totale trovati: 1
+2024-10-27 02:53:57,982 - INFO - graph_plotter.py:67 - plot_pie_chart() - Grafico 'Estensioni Critiche vs Non Critiche dell'AIA' generato con successo e salvato in /home/elion-man/TEST_TESI/src/analysis/leaf/plots/count_critical_non_critical_extensions.png.
+2024-10-27 02:53:57,995 - DEBUG - certificate_dao.py:506 - get_certificates_per_country() - Risultati ottenuti: 7
+2024-10-27 02:53:57,996 - INFO - certificate_dao.py:510 - get_certificates_per_country() - Totale trovati: 7
+2024-10-27 02:53:58,320 - INFO - graph_plotter.py:67 - plot_pie_chart() - Grafico 'Numero di Certificati Emessi in Diversi Paesi' generato con successo e salvato in /home/elion-man/TEST_TESI/src/analysis/leaf/plots/certificates_per_country.png.
+2024-10-27 02:53:58,331 - DEBUG - certificate_dao.py:529 - get_validity_duration_distribution() - Risultati ottenuti: 69
+2024-10-27 02:53:58,332 - INFO - certificate_dao.py:541 - get_validity_duration_distribution() - Totale trovati: 2
+2024-10-27 02:53:58,753 - INFO - graph_plotter.py:47 - plot_bar_chart() - Grafico 'Distribuzione della Durata di Validità' generato con successo e salvato in /home/elion-man/TEST_TESI/src/analysis/leaf/plots/validity_duration_distribution.png.
+2024-10-27 02:53:58,765 - DEBUG - certificate_dao.py:561 - get_certificate_expiration_trend() - Risultati ottenuti: 8
+2024-10-27 02:53:58,766 - INFO - certificate_dao.py:565 - get_certificate_expiration_trend() - Totale trovati: 8
+2024-10-27 02:53:59,237 - INFO - graph_plotter.py:123 - plot_line_chart() - Grafico 'Trend di Scadenza dei Certificati' generato con successo e salvato in /home/elion-man/TEST_TESI/src/analysis/leaf/plots/certificate_expiration_trend.png.
+2024-10-27 02:53:59,250 - DEBUG - certificate_dao.py:584 - get_signature_algorithm_distribution() - Risultati ottenuti: 4
+2024-10-27 02:53:59,251 - INFO - certificate_dao.py:588 - get_signature_algorithm_distribution() - Totale trovati: 4
+2024-10-27 02:53:59,668 - INFO - graph_plotter.py:47 - plot_bar_chart() - Grafico 'Algoritmi di Firma Utilizzati' generato con successo e salvato in /home/elion-man/TEST_TESI/src/analysis/leaf/plots/signature_algorithm_distribution.png.
+2024-10-27 02:53:59,680 - DEBUG - certificate_dao.py:646 - get_ocsp_status_distribution() - Risultati ottenuti: 1
+2024-10-27 02:53:59,682 - INFO - certificate_dao.py:650 - get_ocsp_status_distribution() - Totale trovati: 1
+2024-10-27 02:53:59,947 - INFO - graph_plotter.py:67 - plot_pie_chart() - Grafico 'Stato OCSP dei Certificati' generato con successo e salvato in /home/elion-man/TEST_TESI/src/analysis/leaf/plots/ocsp_status_distribution.png.
+2024-10-27 02:53:59,958 - DEBUG - certificate_dao.py:762 - get_signature_validity_distribution() - Risultati ottenuti: 1
+2024-10-27 02:53:59,959 - INFO - certificate_dao.py:766 - get_signature_validity_distribution() - Totale trovati: 1
+2024-10-27 02:54:00,219 - INFO - graph_plotter.py:67 - plot_pie_chart() - Grafico 'Validità delle Firme dei Certificati' generato con successo e salvato in /home/elion-man/TEST_TESI/src/analysis/leaf/plots/signature_validity_distribution.png.
+2024-10-27 02:54:00,230 - DEBUG - certificate_dao.py:786 - get_status_analysis() - Risultati ottenuti: 2
+2024-10-27 02:54:00,231 - INFO - certificate_dao.py:790 - get_status_analysis() - Totale trovati: 2
+2024-10-27 02:54:00,637 - INFO - graph_plotter.py:47 - plot_bar_chart() - Grafico 'Analisi Status Certificati' generato con successo e salvato in /home/elion-man/TEST_TESI/src/analysis/leaf/plots/status_analysis.png.
+2024-10-27 02:54:00,655 - DEBUG - certificate_dao.py:808 - get_key_usage_distribution() - Risultati ottenuti: 3
+2024-10-27 02:54:00,656 - INFO - certificate_dao.py:816 - get_key_usage_distribution() - Totale trovati: 3
+2024-10-27 02:54:01,533 - INFO - graph_plotter.py:228 - plot_dot_plot() - Grafico 'Utilizzo del Key Usage nelle Estensioni' generato con successo e salvato in /home/elion-man/TEST_TESI/src/analysis/leaf/plots/key_usage_distribution.png.
+2024-10-27 02:54:01,544 - DEBUG - certificate_dao.py:834 - get_critical_vs_non_critical_key_usage() - Risultati ottenuti: 1
+2024-10-27 02:54:01,545 - INFO - certificate_dao.py:838 - get_critical_vs_non_critical_key_usage() - Totale trovati: 1
+2024-10-27 02:54:01,958 - INFO - graph_plotter.py:47 - plot_bar_chart() - Grafico 'Estensioni Critiche vs Non Critiche del Key Usage nelle Estensioni' generato con successo e salvato in /home/elion-man/TEST_TESI/src/analysis/leaf/plots/critical_vs_non_critical_key_usage.png.
+2024-10-27 02:54:01,969 - DEBUG - certificate_dao.py:856 - get_extended_key_usage_distribution() - Risultati ottenuti: 2
+2024-10-27 02:54:01,970 - INFO - certificate_dao.py:863 - get_extended_key_usage_distribution() - Totale trovati: 2
+2024-10-27 02:54:02,805 - INFO - graph_plotter.py:228 - plot_dot_plot() - Grafico 'Utilizzo dell'Extended Key Usage nelle Estensioni' generato con successo e salvato in /home/elion-man/TEST_TESI/src/analysis/leaf/plots/extended_key_usage_distribution.png.
+2024-10-27 02:54:02,815 - DEBUG - certificate_dao.py:881 - get_critical_vs_non_critical_extended_key_usage() - Risultati ottenuti: 1
+2024-10-27 02:54:02,816 - INFO - certificate_dao.py:885 - get_critical_vs_non_critical_extended_key_usage() - Totale trovati: 1
+2024-10-27 02:54:03,228 - INFO - graph_plotter.py:47 - plot_bar_chart() - Grafico 'Estensioni Critiche vs Non Critiche dell'Extended Key Usage nelle Estensioni' generato con successo e salvato in /home/elion-man/TEST_TESI/src/analysis/leaf/plots/critical_vs_non_critical_extended_key_usage.png.
+2024-10-27 02:54:03,245 - DEBUG - certificate_dao.py:950 - get_signed_certificate_timestamp_trend() - Risultati ottenuti: 12
+2024-10-27 02:54:03,247 - INFO - certificate_dao.py:954 - get_signed_certificate_timestamp_trend() - Totale trovati: 12
+2024-10-27 02:54:03,849 - INFO - graph_plotter.py:123 - plot_line_chart() - Grafico 'Trend dei Signed Certificate Timestamps (SCT) per Mese e Anno' generato con successo e salvato in /home/elion-man/TEST_TESI/src/analysis/leaf/plots/certificate_expiration_trend.png.
+2024-10-27 02:54:03,860 - DEBUG - certificate_dao.py:976 - get_sct_count_per_certificate() - Risultati ottenuti: 3
+2024-10-27 02:54:03,861 - INFO - certificate_dao.py:980 - get_sct_count_per_certificate() - Totale trovati: 3
+2024-10-27 02:54:04,280 - INFO - graph_plotter.py:47 - plot_bar_chart() - Grafico 'Numero dei Signed Certificate Timestamps (SCT) per Certificato' generato con successo e salvato in /home/elion-man/TEST_TESI/src/analysis/leaf/plots/sct_count_per_certificate.png.
+2024-10-27 02:54:04,293 - DEBUG - certificate_dao.py:1042 - get_critical_vs_non_critical_san_extensions() - Risultati ottenuti: 1
+2024-10-27 02:54:04,294 - INFO - certificate_dao.py:1046 - get_critical_vs_non_critical_san_extensions() - Totale trovati: 1
+2024-10-27 02:54:04,717 - INFO - graph_plotter.py:47 - plot_bar_chart() - Grafico 'Estensioni Critiche vs Non Critiche delle Subject Alternative Name' generato con successo e salvato in /home/elion-man/TEST_TESI/src/analysis/leaf/plots/critical_vs_non_critical_san_extensions.png.
+2024-10-27 02:54:04,728 - DEBUG - certificate_dao.py:1064 - get_critical_vs_non_critical_cp_policies() - Risultati ottenuti: 1
+2024-10-27 02:54:04,729 - INFO - certificate_dao.py:1068 - get_critical_vs_non_critical_cp_policies() - Totale trovati: 1
+2024-10-27 02:54:05,117 - INFO - graph_plotter.py:47 - plot_bar_chart() - Grafico 'Estensioni Critiche vs Non Critiche del Certificate Policies' generato con successo e salvato in /home/elion-man/TEST_TESI/src/analysis/leaf/plots/critical_vs_non_critical_cp_policies.png.
+2024-10-27 02:54:05,129 - DEBUG - certificate_dao.py:617 - get_key_algorithm_length_distribution() - Risultati ottenuti: 3
+2024-10-27 02:54:05,130 - INFO - certificate_dao.py:629 - get_key_algorithm_length_distribution() - Totale trovati: 2
+2024-10-27 02:54:05,488 - INFO - graph_plotter.py:190 - plot_stacked_bar_chart() - Grafico 'Distribuzione degli Algoritmi di Chiave e Lunghezza' generato con successo e salvato in /home/elion-man/TEST_TESI/src/analysis/leaf/plots/key_algorithm_length_distribution.png.
+2024-10-27 02:54:05,499 - DEBUG - certificate_dao.py:694 - get_self_signed_vs_ca_signed() - Risultati ottenuti: 1
+2024-10-27 02:54:05,500 - INFO - certificate_dao.py:698 - get_self_signed_vs_ca_signed() - Totale trovati: 1
+2024-10-27 02:54:05,763 - INFO - graph_plotter.py:67 - plot_pie_chart() - Grafico 'Certificati Auto-Firmati vs CA-Firmati' generato con successo e salvato in /home/elion-man/TEST_TESI/src/analysis/leaf/plots/self_signed_vs_ca_signed.png.
+2024-10-27 02:54:05,779 - DEBUG - certificate_dao.py:715 - get_validation_level_distribution() - Risultati ottenuti: 3
+2024-10-27 02:54:05,781 - INFO - certificate_dao.py:719 - get_validation_level_distribution() - Totale trovati: 3
+2024-10-27 02:54:06,188 - INFO - graph_plotter.py:47 - plot_bar_chart() - Grafico 'Distribuzione del Validation Level dei Certificati' generato con successo e salvato in /home/elion-man/TEST_TESI/src/analysis/leaf/plots/validation_level_distribution.png.
+2024-10-27 02:54:06,199 - DEBUG - certificate_dao.py:903 - get_basic_constraints_distribution() - Risultati ottenuti: 2
+2024-10-27 02:54:06,200 - INFO - certificate_dao.py:907 - get_basic_constraints_distribution() - Totale trovati: 2
+2024-10-27 02:54:06,616 - INFO - graph_plotter.py:47 - plot_bar_chart() - Grafico 'Estensioni Critiche vs Non Critiche del Key Usage nelle Estensioni' generato con successo e salvato in /home/elion-man/TEST_TESI/src/analysis/leaf/plots/basic_constraints_distribution.png.
+2024-10-27 02:54:06,626 - DEBUG - certificate_dao.py:925 - get_critical_vs_non_critical_crl_distribution() - Risultati ottenuti: 2
+2024-10-27 02:54:06,627 - INFO - certificate_dao.py:929 - get_critical_vs_non_critical_crl_distribution() - Totale trovati: 2
+2024-10-27 02:54:06,896 - INFO - graph_plotter.py:67 - plot_pie_chart() - Grafico 'Estensioni Critiche vs Non Critiche del CRL Distribution' generato con successo e salvato in /home/elion-man/TEST_TESI/src/analysis/leaf/plots/critical_vs_non_critical_crl_distribution.png.
+2024-10-27 02:54:06,906 - DEBUG - certificate_dao.py:998 - get_top_sct_logs() - Risultati ottenuti: 17
+2024-10-27 02:54:06,907 - INFO - certificate_dao.py:1002 - get_top_sct_logs() - Totale trovati: 17
+2024-10-27 02:54:07,513 - INFO - graph_plotter.py:47 - plot_bar_chart() - Grafico 'Top SCT Logs' generato con successo e salvato in /home/elion-man/TEST_TESI/src/analysis/leaf/plots/top_sct_logs.png.
+2024-10-27 02:54:07,528 - DEBUG - certificate_dao.py:1020 - get_top_sct_log_operators() - Risultati ottenuti: 5
+2024-10-27 02:54:07,529 - INFO - certificate_dao.py:1024 - get_top_sct_log_operators() - Totale trovati: 5
+2024-10-27 02:54:07,821 - INFO - graph_plotter.py:67 - plot_pie_chart() - Grafico 'Top SCT Log Operators' generato con successo e salvato in /home/elion-man/TEST_TESI/src/analysis/leaf/plots/top_sct_log_operators.png.
+2024-10-27 02:54:07,832 - INFO - certificates_analysis.py:445 - certificates_analysis_main() - Generazione dei grafici per l'analisi dei certificati Leaf completata.
+2024-10-27 02:54:07,834 - INFO - database.py:109 - close() - Connessione al database Leaf chiusa con successo.
+2024-10-27 02:54:07,835 - INFO - certificates_analysis.py:525 - certificates_analysis_main() - Applicazione terminata correttamente.
+2024-10-27 02:55:06,207 - INFO - certificates_analysis.py:367 - certificates_analysis_main() - Inizio dell'applicazione.
+2024-10-27 02:55:06,210 - INFO - database.py:42 - _initialize_database() - Connessione al database esistente: /home/elion-man/TEST_TESI/src/analysis/leaf/leaf_certificates.db
+2024-10-27 02:55:06,211 - INFO - certificates_analysis.py:443 - certificates_analysis_main() - Inizio generazione grafici per certificati Leaf.
+2024-10-27 02:55:06,213 - INFO - certificates_analysis.py:261 - plot_leaf_certificates() - La cartella 'analysis/leaf/plots' è stata rimossa.
+2024-10-27 02:55:06,214 - INFO - certificates_analysis.py:265 - plot_leaf_certificates() - La cartella 'analysis/leaf/plots' è stata creata.
+2024-10-27 02:55:06,218 - DEBUG - certificate_dao.py:469 - get_issuer_certificate_count() - Issuer per certificato ottenute: 20
+2024-10-27 02:55:06,220 - INFO - certificate_dao.py:473 - get_issuer_certificate_count() - Totale issuers trovati: 20
+2024-10-27 02:55:07,046 - INFO - graph_plotter.py:47 - plot_bar_chart() - Grafico 'Emissione dei Certificati da Parte degli Issuer' generato con successo e salvato in /home/elion-man/TEST_TESI/src/analysis/leaf/plots/issuer_certificates_count.png.
+2024-10-27 02:55:07,058 - DEBUG - certificate_dao.py:736 - get_certificate_version_distribution() - Risultati ottenuti: 1
+2024-10-27 02:55:07,059 - INFO - certificate_dao.py:740 - get_certificate_version_distribution() - Totale trovati: 1
+2024-10-27 02:55:07,434 - INFO - graph_plotter.py:47 - plot_bar_chart() - Grafico 'Distribuzione delle Versioni dei Certificati' generato con successo e salvato in /home/elion-man/TEST_TESI/src/analysis/leaf/plots/certificate_version_distribution.png.
+2024-10-27 02:55:07,448 - DEBUG - certificate_dao.py:668 - get_count_critical_non_critical_extensions() - Risultati ottenuti: 1
+2024-10-27 02:55:07,449 - INFO - certificate_dao.py:672 - get_count_critical_non_critical_extensions() - Totale trovati: 1
+2024-10-27 02:55:07,702 - INFO - graph_plotter.py:67 - plot_pie_chart() - Grafico 'Estensioni Critiche vs Non Critiche dell'AIA' generato con successo e salvato in /home/elion-man/TEST_TESI/src/analysis/leaf/plots/count_critical_non_critical_extensions.png.
+2024-10-27 02:55:07,716 - DEBUG - certificate_dao.py:506 - get_certificates_per_country() - Risultati ottenuti: 7
+2024-10-27 02:55:07,717 - INFO - certificate_dao.py:510 - get_certificates_per_country() - Totale trovati: 7
+2024-10-27 02:55:07,897 - INFO - certificates_analysis.py:46 - handle_exit_signal() - Segnale SIGINT (Ctrl + C) ricevuto. Inizio della procedura di chiusura...
+2024-10-27 02:55:07,899 - INFO - certificates_analysis.py:19 - close_connections() - Inizio chiusura delle connessioni ai database...
+2024-10-27 02:55:07,901 - INFO - database.py:109 - close() - Connessione al database Leaf chiusa con successo.
+2024-10-27 02:55:07,903 - INFO - graph_plotter.py:10 - close_all_plots() - Chiusura di tutti i grafici aperti...
+2024-10-27 02:55:07,918 - INFO - certificates_analysis.py:42 - close_connections() - Tutte le connessioni ai database sono state chiuse.
+2024-10-27 02:55:07,919 - INFO - certificates_analysis.py:48 - handle_exit_signal() - Uscita dell'applicazione in corso...
+2024-10-27 02:55:47,672 - INFO - certificates_analysis.py:367 - certificates_analysis_main() - Inizio dell'applicazione.
+2024-10-27 02:55:47,675 - INFO - database.py:42 - _initialize_database() - Connessione al database esistente: /home/elion-man/TEST_TESI/src/analysis/leaf/leaf_certificates.db
+2024-10-27 02:55:47,676 - INFO - certificates_analysis.py:443 - certificates_analysis_main() - Inizio generazione grafici per certificati Leaf.
+2024-10-27 02:55:47,678 - INFO - certificates_analysis.py:261 - plot_leaf_certificates() - La cartella 'analysis/leaf/plots' è stata rimossa.
+2024-10-27 02:55:47,679 - INFO - certificates_analysis.py:265 - plot_leaf_certificates() - La cartella 'analysis/leaf/plots' è stata creata.
+2024-10-27 02:55:47,683 - DEBUG - certificate_dao.py:469 - get_issuer_certificate_count() - Issuer per certificato ottenute: 20
+2024-10-27 02:55:47,684 - INFO - certificate_dao.py:473 - get_issuer_certificate_count() - Totale issuers trovati: 20
+2024-10-27 02:55:48,511 - INFO - graph_plotter.py:47 - plot_bar_chart() - Grafico 'Emissione dei Certificati da Parte degli Issuer' generato con successo e salvato in /home/elion-man/TEST_TESI/src/analysis/leaf/plots/issuer_certificates_count.png.
+2024-10-27 02:55:48,524 - DEBUG - certificate_dao.py:736 - get_certificate_version_distribution() - Risultati ottenuti: 1
+2024-10-27 02:55:48,525 - INFO - certificate_dao.py:740 - get_certificate_version_distribution() - Totale trovati: 1
+2024-10-27 02:55:48,901 - INFO - graph_plotter.py:47 - plot_bar_chart() - Grafico 'Distribuzione delle Versioni dei Certificati' generato con successo e salvato in /home/elion-man/TEST_TESI/src/analysis/leaf/plots/certificate_version_distribution.png.
+2024-10-27 02:55:48,915 - DEBUG - certificate_dao.py:668 - get_count_critical_non_critical_extensions() - Risultati ottenuti: 1
+2024-10-27 02:55:48,916 - INFO - certificate_dao.py:672 - get_count_critical_non_critical_extensions() - Totale trovati: 1
+2024-10-27 02:55:49,171 - INFO - graph_plotter.py:67 - plot_pie_chart() - Grafico 'Estensioni Critiche vs Non Critiche dell'AIA' generato con successo e salvato in /home/elion-man/TEST_TESI/src/analysis/leaf/plots/count_critical_non_critical_extensions.png.
+2024-10-27 02:55:49,185 - DEBUG - certificate_dao.py:506 - get_certificates_per_country() - Risultati ottenuti: 7
+2024-10-27 02:55:49,186 - INFO - certificate_dao.py:510 - get_certificates_per_country() - Totale trovati: 7
+2024-10-27 02:55:49,425 - INFO - certificates_analysis.py:46 - handle_exit_signal() - Segnale SIGINT (Ctrl + C) ricevuto. Inizio della procedura di chiusura...
+2024-10-27 02:55:49,427 - INFO - certificates_analysis.py:19 - close_connections() - Inizio chiusura delle connessioni ai database...
+2024-10-27 02:55:49,429 - INFO - database.py:109 - close() - Connessione al database Leaf chiusa con successo.
+2024-10-27 02:55:49,430 - INFO - graph_plotter.py:10 - close_all_plots() - Chiusura di tutti i grafici aperti...
+2024-10-27 02:55:49,444 - INFO - certificates_analysis.py:42 - close_connections() - Tutte le connessioni ai database sono state chiuse.
+2024-10-27 02:55:49,445 - INFO - certificates_analysis.py:48 - handle_exit_signal() - Uscita dell'applicazione in corso...
+2024-10-27 02:56:08,316 - INFO - certificates_analysis.py:367 - certificates_analysis_main() - Inizio dell'applicazione.
+2024-10-27 02:56:08,320 - INFO - database.py:42 - _initialize_database() - Connessione al database esistente: /home/elion-man/TEST_TESI/src/analysis/leaf/leaf_certificates.db
+2024-10-27 02:56:08,321 - INFO - certificates_analysis.py:443 - certificates_analysis_main() - Inizio generazione grafici per certificati Leaf.
+2024-10-27 02:56:08,323 - INFO - certificates_analysis.py:261 - plot_leaf_certificates() - La cartella 'analysis/leaf/plots' è stata rimossa.
+2024-10-27 02:56:08,324 - INFO - certificates_analysis.py:265 - plot_leaf_certificates() - La cartella 'analysis/leaf/plots' è stata creata.
+2024-10-27 02:56:08,327 - DEBUG - certificate_dao.py:469 - get_issuer_certificate_count() - Issuer per certificato ottenute: 20
+2024-10-27 02:56:08,328 - INFO - certificate_dao.py:473 - get_issuer_certificate_count() - Totale issuers trovati: 20
+2024-10-27 02:56:09,150 - INFO - graph_plotter.py:47 - plot_bar_chart() - Grafico 'Emissione dei Certificati da Parte degli Issuer' generato con successo e salvato in /home/elion-man/TEST_TESI/src/analysis/leaf/plots/issuer_certificates_count.png.
+2024-10-27 02:56:09,162 - DEBUG - certificate_dao.py:736 - get_certificate_version_distribution() - Risultati ottenuti: 1
+2024-10-27 02:56:09,163 - INFO - certificate_dao.py:740 - get_certificate_version_distribution() - Totale trovati: 1
+2024-10-27 02:56:09,540 - INFO - graph_plotter.py:47 - plot_bar_chart() - Grafico 'Distribuzione delle Versioni dei Certificati' generato con successo e salvato in /home/elion-man/TEST_TESI/src/analysis/leaf/plots/certificate_version_distribution.png.
+2024-10-27 02:56:09,554 - DEBUG - certificate_dao.py:668 - get_count_critical_non_critical_extensions() - Risultati ottenuti: 1
+2024-10-27 02:56:09,555 - INFO - certificate_dao.py:672 - get_count_critical_non_critical_extensions() - Totale trovati: 1
+2024-10-27 02:56:09,812 - INFO - graph_plotter.py:67 - plot_pie_chart() - Grafico 'Estensioni Critiche vs Non Critiche dell'AIA' generato con successo e salvato in /home/elion-man/TEST_TESI/src/analysis/leaf/plots/count_critical_non_critical_extensions.png.
+2024-10-27 02:56:09,826 - DEBUG - certificate_dao.py:506 - get_certificates_per_country() - Risultati ottenuti: 7
+2024-10-27 02:56:09,827 - INFO - certificate_dao.py:510 - get_certificates_per_country() - Totale trovati: 7
+2024-10-27 02:56:10,124 - INFO - graph_plotter.py:67 - plot_pie_chart() - Grafico 'Numero di Certificati Emessi in Diversi Paesi' generato con successo e salvato in /home/elion-man/TEST_TESI/src/analysis/leaf/plots/certificates_per_country.png.
+2024-10-27 02:56:10,134 - DEBUG - certificate_dao.py:529 - get_validity_duration_distribution() - Risultati ottenuti: 69
+2024-10-27 02:56:10,135 - INFO - certificate_dao.py:541 - get_validity_duration_distribution() - Totale trovati: 2
+2024-10-27 02:56:10,504 - INFO - graph_plotter.py:47 - plot_bar_chart() - Grafico 'Distribuzione della Durata di Validità' generato con successo e salvato in /home/elion-man/TEST_TESI/src/analysis/leaf/plots/validity_duration_distribution.png.
+2024-10-27 02:56:10,515 - DEBUG - certificate_dao.py:561 - get_certificate_expiration_trend() - Risultati ottenuti: 8
+2024-10-27 02:56:10,517 - INFO - certificate_dao.py:565 - get_certificate_expiration_trend() - Totale trovati: 8
+2024-10-27 02:56:10,983 - INFO - graph_plotter.py:123 - plot_line_chart() - Grafico 'Trend di Scadenza dei Certificati' generato con successo e salvato in /home/elion-man/TEST_TESI/src/analysis/leaf/plots/certificate_expiration_trend.png.
+2024-10-27 02:56:10,996 - DEBUG - certificate_dao.py:584 - get_signature_algorithm_distribution() - Risultati ottenuti: 4
+2024-10-27 02:56:10,997 - INFO - certificate_dao.py:588 - get_signature_algorithm_distribution() - Totale trovati: 4
+2024-10-27 02:56:11,408 - INFO - graph_plotter.py:47 - plot_bar_chart() - Grafico 'Algoritmi di Firma Utilizzati' generato con successo e salvato in /home/elion-man/TEST_TESI/src/analysis/leaf/plots/signature_algorithm_distribution.png.
+2024-10-27 02:56:11,419 - DEBUG - certificate_dao.py:646 - get_ocsp_status_distribution() - Risultati ottenuti: 1
+2024-10-27 02:56:11,420 - INFO - certificate_dao.py:650 - get_ocsp_status_distribution() - Totale trovati: 1
+2024-10-27 02:56:11,728 - INFO - graph_plotter.py:67 - plot_pie_chart() - Grafico 'Stato OCSP dei Certificati' generato con successo e salvato in /home/elion-man/TEST_TESI/src/analysis/leaf/plots/ocsp_status_distribution.png.
+2024-10-27 02:56:11,738 - DEBUG - certificate_dao.py:762 - get_signature_validity_distribution() - Risultati ottenuti: 1
+2024-10-27 02:56:11,739 - INFO - certificate_dao.py:766 - get_signature_validity_distribution() - Totale trovati: 1
+2024-10-27 02:56:12,006 - INFO - graph_plotter.py:67 - plot_pie_chart() - Grafico 'Validità delle Firme dei Certificati' generato con successo e salvato in /home/elion-man/TEST_TESI/src/analysis/leaf/plots/signature_validity_distribution.png.
+2024-10-27 02:56:12,016 - DEBUG - certificate_dao.py:786 - get_status_analysis() - Risultati ottenuti: 2
+2024-10-27 02:56:12,018 - INFO - certificate_dao.py:790 - get_status_analysis() - Totale trovati: 2
+2024-10-27 02:56:12,416 - INFO - graph_plotter.py:47 - plot_bar_chart() - Grafico 'Analisi Status Certificati' generato con successo e salvato in /home/elion-man/TEST_TESI/src/analysis/leaf/plots/status_analysis.png.
+2024-10-27 02:56:12,429 - DEBUG - certificate_dao.py:808 - get_key_usage_distribution() - Risultati ottenuti: 3
+2024-10-27 02:56:12,430 - INFO - certificate_dao.py:816 - get_key_usage_distribution() - Totale trovati: 3
+2024-10-27 02:56:13,305 - INFO - graph_plotter.py:228 - plot_dot_plot() - Grafico 'Utilizzo del Key Usage nelle Estensioni' generato con successo e salvato in /home/elion-man/TEST_TESI/src/analysis/leaf/plots/key_usage_distribution.png.
+2024-10-27 02:56:13,316 - DEBUG - certificate_dao.py:834 - get_critical_vs_non_critical_key_usage() - Risultati ottenuti: 1
+2024-10-27 02:56:13,317 - INFO - certificate_dao.py:838 - get_critical_vs_non_critical_key_usage() - Totale trovati: 1
+2024-10-27 02:56:13,713 - INFO - graph_plotter.py:47 - plot_bar_chart() - Grafico 'Estensioni Critiche vs Non Critiche del Key Usage nelle Estensioni' generato con successo e salvato in /home/elion-man/TEST_TESI/src/analysis/leaf/plots/critical_vs_non_critical_key_usage.png.
+2024-10-27 02:56:13,725 - DEBUG - certificate_dao.py:856 - get_extended_key_usage_distribution() - Risultati ottenuti: 2
+2024-10-27 02:56:13,726 - INFO - certificate_dao.py:863 - get_extended_key_usage_distribution() - Totale trovati: 2
+2024-10-27 02:56:14,545 - INFO - graph_plotter.py:228 - plot_dot_plot() - Grafico 'Utilizzo dell'Extended Key Usage nelle Estensioni' generato con successo e salvato in /home/elion-man/TEST_TESI/src/analysis/leaf/plots/extended_key_usage_distribution.png.
+2024-10-27 02:56:14,555 - DEBUG - certificate_dao.py:881 - get_critical_vs_non_critical_extended_key_usage() - Risultati ottenuti: 1
+2024-10-27 02:56:14,556 - INFO - certificate_dao.py:885 - get_critical_vs_non_critical_extended_key_usage() - Totale trovati: 1
+2024-10-27 02:56:14,963 - INFO - graph_plotter.py:47 - plot_bar_chart() - Grafico 'Estensioni Critiche vs Non Critiche dell'Extended Key Usage nelle Estensioni' generato con successo e salvato in /home/elion-man/TEST_TESI/src/analysis/leaf/plots/critical_vs_non_critical_extended_key_usage.png.
+2024-10-27 02:56:14,974 - DEBUG - certificate_dao.py:950 - get_signed_certificate_timestamp_trend() - Risultati ottenuti: 12
+2024-10-27 02:56:14,976 - INFO - certificate_dao.py:954 - get_signed_certificate_timestamp_trend() - Totale trovati: 12
+2024-10-27 02:56:15,450 - INFO - graph_plotter.py:123 - plot_line_chart() - Grafico 'Trend dei Signed Certificate Timestamps (SCT) per Mese e Anno' generato con successo e salvato in /home/elion-man/TEST_TESI/src/analysis/leaf/plots/certificate_expiration_trend.png.
+2024-10-27 02:56:15,462 - DEBUG - certificate_dao.py:976 - get_sct_count_per_certificate() - Risultati ottenuti: 3
+2024-10-27 02:56:15,463 - INFO - certificate_dao.py:980 - get_sct_count_per_certificate() - Totale trovati: 3
+2024-10-27 02:56:15,897 - INFO - graph_plotter.py:47 - plot_bar_chart() - Grafico 'Numero dei Signed Certificate Timestamps (SCT) per Certificato' generato con successo e salvato in /home/elion-man/TEST_TESI/src/analysis/leaf/plots/sct_count_per_certificate.png.
+2024-10-27 02:56:15,909 - DEBUG - certificate_dao.py:1042 - get_critical_vs_non_critical_san_extensions() - Risultati ottenuti: 1
+2024-10-27 02:56:15,910 - INFO - certificate_dao.py:1046 - get_critical_vs_non_critical_san_extensions() - Totale trovati: 1
+2024-10-27 02:56:16,310 - INFO - graph_plotter.py:47 - plot_bar_chart() - Grafico 'Estensioni Critiche vs Non Critiche delle Subject Alternative Name' generato con successo e salvato in /home/elion-man/TEST_TESI/src/analysis/leaf/plots/critical_vs_non_critical_san_extensions.png.
+2024-10-27 02:56:16,320 - DEBUG - certificate_dao.py:1064 - get_critical_vs_non_critical_cp_policies() - Risultati ottenuti: 1
+2024-10-27 02:56:16,321 - INFO - certificate_dao.py:1068 - get_critical_vs_non_critical_cp_policies() - Totale trovati: 1
+2024-10-27 02:56:16,735 - INFO - graph_plotter.py:47 - plot_bar_chart() - Grafico 'Estensioni Critiche vs Non Critiche del Certificate Policies' generato con successo e salvato in /home/elion-man/TEST_TESI/src/analysis/leaf/plots/critical_vs_non_critical_cp_policies.png.
+2024-10-27 02:56:16,746 - DEBUG - certificate_dao.py:617 - get_key_algorithm_length_distribution() - Risultati ottenuti: 3
+2024-10-27 02:56:16,747 - INFO - certificate_dao.py:629 - get_key_algorithm_length_distribution() - Totale trovati: 2
+2024-10-27 02:56:17,078 - INFO - graph_plotter.py:190 - plot_stacked_bar_chart() - Grafico 'Distribuzione degli Algoritmi di Chiave e Lunghezza' generato con successo e salvato in /home/elion-man/TEST_TESI/src/analysis/leaf/plots/key_algorithm_length_distribution.png.
+2024-10-27 02:56:17,088 - DEBUG - certificate_dao.py:694 - get_self_signed_vs_ca_signed() - Risultati ottenuti: 1
+2024-10-27 02:56:17,089 - INFO - certificate_dao.py:698 - get_self_signed_vs_ca_signed() - Totale trovati: 1
+2024-10-27 02:56:17,346 - INFO - graph_plotter.py:67 - plot_pie_chart() - Grafico 'Certificati Auto-Firmati vs CA-Firmati' generato con successo e salvato in /home/elion-man/TEST_TESI/src/analysis/leaf/plots/self_signed_vs_ca_signed.png.
+2024-10-27 02:56:17,361 - DEBUG - certificate_dao.py:715 - get_validation_level_distribution() - Risultati ottenuti: 3
+2024-10-27 02:56:17,362 - INFO - certificate_dao.py:719 - get_validation_level_distribution() - Totale trovati: 3
+2024-10-27 02:56:17,769 - INFO - graph_plotter.py:47 - plot_bar_chart() - Grafico 'Distribuzione del Validation Level dei Certificati' generato con successo e salvato in /home/elion-man/TEST_TESI/src/analysis/leaf/plots/validation_level_distribution.png.
+2024-10-27 02:56:17,780 - DEBUG - certificate_dao.py:903 - get_basic_constraints_distribution() - Risultati ottenuti: 2
+2024-10-27 02:56:17,781 - INFO - certificate_dao.py:907 - get_basic_constraints_distribution() - Totale trovati: 2
+2024-10-27 02:56:18,193 - INFO - graph_plotter.py:47 - plot_bar_chart() - Grafico 'Estensioni Critiche vs Non Critiche del Key Usage nelle Estensioni' generato con successo e salvato in /home/elion-man/TEST_TESI/src/analysis/leaf/plots/basic_constraints_distribution.png.
+2024-10-27 02:56:18,205 - DEBUG - certificate_dao.py:925 - get_critical_vs_non_critical_crl_distribution() - Risultati ottenuti: 2
+2024-10-27 02:56:18,206 - INFO - certificate_dao.py:929 - get_critical_vs_non_critical_crl_distribution() - Totale trovati: 2
+2024-10-27 02:56:18,497 - INFO - graph_plotter.py:67 - plot_pie_chart() - Grafico 'Estensioni Critiche vs Non Critiche del CRL Distribution' generato con successo e salvato in /home/elion-man/TEST_TESI/src/analysis/leaf/plots/critical_vs_non_critical_crl_distribution.png.
+2024-10-27 02:56:18,508 - DEBUG - certificate_dao.py:998 - get_top_sct_logs() - Risultati ottenuti: 17
+2024-10-27 02:56:18,509 - INFO - certificate_dao.py:1002 - get_top_sct_logs() - Totale trovati: 17
+2024-10-27 02:56:19,120 - INFO - graph_plotter.py:47 - plot_bar_chart() - Grafico 'Top SCT Logs' generato con successo e salvato in /home/elion-man/TEST_TESI/src/analysis/leaf/plots/top_sct_logs.png.
+2024-10-27 02:56:19,136 - DEBUG - certificate_dao.py:1020 - get_top_sct_log_operators() - Risultati ottenuti: 5
+2024-10-27 02:56:19,137 - INFO - certificate_dao.py:1024 - get_top_sct_log_operators() - Totale trovati: 5
+2024-10-27 02:56:19,449 - INFO - graph_plotter.py:67 - plot_pie_chart() - Grafico 'Top SCT Log Operators' generato con successo e salvato in /home/elion-man/TEST_TESI/src/analysis/leaf/plots/top_sct_log_operators.png.
+2024-10-27 02:56:19,459 - INFO - certificates_analysis.py:445 - certificates_analysis_main() - Generazione dei grafici per l'analisi dei certificati Leaf completata.
+2024-10-27 02:56:19,460 - INFO - database.py:109 - close() - Connessione al database Leaf chiusa con successo.
+2024-10-27 02:56:19,461 - INFO - certificates_analysis.py:525 - certificates_analysis_main() - Applicazione terminata correttamente.
+2024-10-27 02:56:20,805 - INFO - certificates_analysis.py:367 - certificates_analysis_main() - Inizio dell'applicazione.
+2024-10-27 02:56:20,809 - INFO - database.py:42 - _initialize_database() - Connessione al database esistente: /home/elion-man/TEST_TESI/src/analysis/leaf/leaf_certificates.db
+2024-10-27 02:56:20,811 - INFO - certificates_analysis.py:443 - certificates_analysis_main() - Inizio generazione grafici per certificati Leaf.
+2024-10-27 02:56:20,814 - INFO - certificates_analysis.py:261 - plot_leaf_certificates() - La cartella 'analysis/leaf/plots' è stata rimossa.
+2024-10-27 02:56:20,815 - INFO - certificates_analysis.py:265 - plot_leaf_certificates() - La cartella 'analysis/leaf/plots' è stata creata.
+2024-10-27 02:56:20,818 - DEBUG - certificate_dao.py:469 - get_issuer_certificate_count() - Issuer per certificato ottenute: 20
+2024-10-27 02:56:20,819 - INFO - certificate_dao.py:473 - get_issuer_certificate_count() - Totale issuers trovati: 20
+2024-10-27 02:56:21,652 - INFO - graph_plotter.py:47 - plot_bar_chart() - Grafico 'Emissione dei Certificati da Parte degli Issuer' generato con successo e salvato in /home/elion-man/TEST_TESI/src/analysis/leaf/plots/issuer_certificates_count.png.
+2024-10-27 02:56:21,666 - DEBUG - certificate_dao.py:736 - get_certificate_version_distribution() - Risultati ottenuti: 1
+2024-10-27 02:56:21,667 - INFO - certificate_dao.py:740 - get_certificate_version_distribution() - Totale trovati: 1
+2024-10-27 02:56:22,042 - INFO - graph_plotter.py:47 - plot_bar_chart() - Grafico 'Distribuzione delle Versioni dei Certificati' generato con successo e salvato in /home/elion-man/TEST_TESI/src/analysis/leaf/plots/certificate_version_distribution.png.
+2024-10-27 02:56:22,056 - DEBUG - certificate_dao.py:668 - get_count_critical_non_critical_extensions() - Risultati ottenuti: 1
+2024-10-27 02:56:22,057 - INFO - certificate_dao.py:672 - get_count_critical_non_critical_extensions() - Totale trovati: 1
+2024-10-27 02:56:22,313 - INFO - graph_plotter.py:67 - plot_pie_chart() - Grafico 'Estensioni Critiche vs Non Critiche dell'AIA' generato con successo e salvato in /home/elion-man/TEST_TESI/src/analysis/leaf/plots/count_critical_non_critical_extensions.png.
+2024-10-27 02:56:22,327 - DEBUG - certificate_dao.py:506 - get_certificates_per_country() - Risultati ottenuti: 7
+2024-10-27 02:56:22,328 - INFO - certificate_dao.py:510 - get_certificates_per_country() - Totale trovati: 7
+2024-10-27 02:56:22,607 - INFO - graph_plotter.py:67 - plot_pie_chart() - Grafico 'Numero di Certificati Emessi in Diversi Paesi' generato con successo e salvato in /home/elion-man/TEST_TESI/src/analysis/leaf/plots/certificates_per_country.png.
+2024-10-27 02:56:22,620 - DEBUG - certificate_dao.py:529 - get_validity_duration_distribution() - Risultati ottenuti: 69
+2024-10-27 02:56:22,622 - INFO - certificate_dao.py:541 - get_validity_duration_distribution() - Totale trovati: 2
+2024-10-27 02:56:22,987 - INFO - graph_plotter.py:47 - plot_bar_chart() - Grafico 'Distribuzione della Durata di Validità' generato con successo e salvato in /home/elion-man/TEST_TESI/src/analysis/leaf/plots/validity_duration_distribution.png.
+2024-10-27 02:56:23,002 - DEBUG - certificate_dao.py:561 - get_certificate_expiration_trend() - Risultati ottenuti: 8
+2024-10-27 02:56:23,003 - INFO - certificate_dao.py:565 - get_certificate_expiration_trend() - Totale trovati: 8
+2024-10-27 02:56:23,471 - INFO - graph_plotter.py:123 - plot_line_chart() - Grafico 'Trend di Scadenza dei Certificati' generato con successo e salvato in /home/elion-man/TEST_TESI/src/analysis/leaf/plots/certificate_expiration_trend.png.
+2024-10-27 02:56:23,486 - DEBUG - certificate_dao.py:584 - get_signature_algorithm_distribution() - Risultati ottenuti: 4
+2024-10-27 02:56:23,487 - INFO - certificate_dao.py:588 - get_signature_algorithm_distribution() - Totale trovati: 4
+2024-10-27 02:56:23,886 - INFO - graph_plotter.py:47 - plot_bar_chart() - Grafico 'Algoritmi di Firma Utilizzati' generato con successo e salvato in /home/elion-man/TEST_TESI/src/analysis/leaf/plots/signature_algorithm_distribution.png.
+2024-10-27 02:56:23,901 - DEBUG - certificate_dao.py:646 - get_ocsp_status_distribution() - Risultati ottenuti: 1
+2024-10-27 02:56:23,902 - INFO - certificate_dao.py:650 - get_ocsp_status_distribution() - Totale trovati: 1
+2024-10-27 02:56:24,157 - INFO - graph_plotter.py:67 - plot_pie_chart() - Grafico 'Stato OCSP dei Certificati' generato con successo e salvato in /home/elion-man/TEST_TESI/src/analysis/leaf/plots/ocsp_status_distribution.png.
+2024-10-27 02:56:24,170 - DEBUG - certificate_dao.py:762 - get_signature_validity_distribution() - Risultati ottenuti: 1
+2024-10-27 02:56:24,171 - INFO - certificate_dao.py:766 - get_signature_validity_distribution() - Totale trovati: 1
+2024-10-27 02:56:24,426 - INFO - graph_plotter.py:67 - plot_pie_chart() - Grafico 'Validità delle Firme dei Certificati' generato con successo e salvato in /home/elion-man/TEST_TESI/src/analysis/leaf/plots/signature_validity_distribution.png.
+2024-10-27 02:56:24,439 - DEBUG - certificate_dao.py:786 - get_status_analysis() - Risultati ottenuti: 2
+2024-10-27 02:56:24,440 - INFO - certificate_dao.py:790 - get_status_analysis() - Totale trovati: 2
+2024-10-27 02:56:24,745 - INFO - certificates_analysis.py:46 - handle_exit_signal() - Segnale SIGINT (Ctrl + C) ricevuto. Inizio della procedura di chiusura...
+2024-10-27 02:56:24,746 - INFO - certificates_analysis.py:19 - close_connections() - Inizio chiusura delle connessioni ai database...
+2024-10-27 02:56:24,747 - INFO - database.py:109 - close() - Connessione al database Leaf chiusa con successo.
+2024-10-27 02:56:24,748 - INFO - graph_plotter.py:10 - close_all_plots() - Chiusura di tutti i grafici aperti...
+2024-10-27 02:56:24,763 - INFO - certificates_analysis.py:42 - close_connections() - Tutte le connessioni ai database sono state chiuse.
+2024-10-27 02:56:24,764 - INFO - certificates_analysis.py:48 - handle_exit_signal() - Uscita dell'applicazione in corso...
+2024-10-27 02:56:33,032 - INFO - certificates_analysis.py:367 - certificates_analysis_main() - Inizio dell'applicazione.
+2024-10-27 02:56:33,035 - INFO - database.py:42 - _initialize_database() - Connessione al database esistente: /home/elion-man/TEST_TESI/src/analysis/leaf/leaf_certificates.db
+2024-10-27 02:56:33,036 - INFO - certificates_analysis.py:443 - certificates_analysis_main() - Inizio generazione grafici per certificati Leaf.
+2024-10-27 02:56:33,038 - INFO - certificates_analysis.py:261 - plot_leaf_certificates() - La cartella 'analysis/leaf/plots' è stata rimossa.
+2024-10-27 02:56:33,039 - INFO - certificates_analysis.py:265 - plot_leaf_certificates() - La cartella 'analysis/leaf/plots' è stata creata.
+2024-10-27 02:56:33,042 - DEBUG - certificate_dao.py:469 - get_issuer_certificate_count() - Issuer per certificato ottenute: 20
+2024-10-27 02:56:33,043 - INFO - certificate_dao.py:473 - get_issuer_certificate_count() - Totale issuers trovati: 20
+2024-10-27 02:56:33,866 - INFO - graph_plotter.py:47 - plot_bar_chart() - Grafico 'Emissione dei Certificati da Parte degli Issuer' generato con successo e salvato in /home/elion-man/TEST_TESI/src/analysis/leaf/plots/issuer_certificates_count.png.
+2024-10-27 02:56:33,879 - DEBUG - certificate_dao.py:736 - get_certificate_version_distribution() - Risultati ottenuti: 1
+2024-10-27 02:56:33,881 - INFO - certificate_dao.py:740 - get_certificate_version_distribution() - Totale trovati: 1
+2024-10-27 02:56:34,259 - INFO - graph_plotter.py:47 - plot_bar_chart() - Grafico 'Distribuzione delle Versioni dei Certificati' generato con successo e salvato in /home/elion-man/TEST_TESI/src/analysis/leaf/plots/certificate_version_distribution.png.
+2024-10-27 02:56:34,273 - DEBUG - certificate_dao.py:668 - get_count_critical_non_critical_extensions() - Risultati ottenuti: 1
+2024-10-27 02:56:34,274 - INFO - certificate_dao.py:672 - get_count_critical_non_critical_extensions() - Totale trovati: 1
+2024-10-27 02:56:34,534 - INFO - graph_plotter.py:67 - plot_pie_chart() - Grafico 'Estensioni Critiche vs Non Critiche dell'AIA' generato con successo e salvato in /home/elion-man/TEST_TESI/src/analysis/leaf/plots/count_critical_non_critical_extensions.png.
+2024-10-27 02:56:34,547 - DEBUG - certificate_dao.py:506 - get_certificates_per_country() - Risultati ottenuti: 7
+2024-10-27 02:56:34,548 - INFO - certificate_dao.py:510 - get_certificates_per_country() - Totale trovati: 7
+2024-10-27 02:56:34,845 - INFO - graph_plotter.py:67 - plot_pie_chart() - Grafico 'Numero di Certificati Emessi in Diversi Paesi' generato con successo e salvato in /home/elion-man/TEST_TESI/src/analysis/leaf/plots/certificates_per_country.png.
+2024-10-27 02:56:34,858 - DEBUG - certificate_dao.py:529 - get_validity_duration_distribution() - Risultati ottenuti: 69
+2024-10-27 02:56:34,859 - INFO - certificate_dao.py:541 - get_validity_duration_distribution() - Totale trovati: 2
+2024-10-27 02:56:35,252 - INFO - graph_plotter.py:47 - plot_bar_chart() - Grafico 'Distribuzione della Durata di Validità' generato con successo e salvato in /home/elion-man/TEST_TESI/src/analysis/leaf/plots/validity_duration_distribution.png.
+2024-10-27 02:56:35,264 - DEBUG - certificate_dao.py:561 - get_certificate_expiration_trend() - Risultati ottenuti: 8
+2024-10-27 02:56:35,265 - INFO - certificate_dao.py:565 - get_certificate_expiration_trend() - Totale trovati: 8
+2024-10-27 02:56:35,745 - INFO - graph_plotter.py:123 - plot_line_chart() - Grafico 'Trend di Scadenza dei Certificati' generato con successo e salvato in /home/elion-man/TEST_TESI/src/analysis/leaf/plots/certificate_expiration_trend.png.
+2024-10-27 02:56:35,759 - DEBUG - certificate_dao.py:584 - get_signature_algorithm_distribution() - Risultati ottenuti: 4
+2024-10-27 02:56:35,760 - INFO - certificate_dao.py:588 - get_signature_algorithm_distribution() - Totale trovati: 4
+2024-10-27 02:56:36,162 - INFO - graph_plotter.py:47 - plot_bar_chart() - Grafico 'Algoritmi di Firma Utilizzati' generato con successo e salvato in /home/elion-man/TEST_TESI/src/analysis/leaf/plots/signature_algorithm_distribution.png.
+2024-10-27 02:56:36,174 - DEBUG - certificate_dao.py:646 - get_ocsp_status_distribution() - Risultati ottenuti: 1
+2024-10-27 02:56:36,176 - INFO - certificate_dao.py:650 - get_ocsp_status_distribution() - Totale trovati: 1
+2024-10-27 02:56:36,428 - INFO - graph_plotter.py:67 - plot_pie_chart() - Grafico 'Stato OCSP dei Certificati' generato con successo e salvato in /home/elion-man/TEST_TESI/src/analysis/leaf/plots/ocsp_status_distribution.png.
+2024-10-27 02:56:36,441 - DEBUG - certificate_dao.py:762 - get_signature_validity_distribution() - Risultati ottenuti: 1
+2024-10-27 02:56:36,443 - INFO - certificate_dao.py:766 - get_signature_validity_distribution() - Totale trovati: 1
+2024-10-27 02:56:36,696 - INFO - graph_plotter.py:67 - plot_pie_chart() - Grafico 'Validità delle Firme dei Certificati' generato con successo e salvato in /home/elion-man/TEST_TESI/src/analysis/leaf/plots/signature_validity_distribution.png.
+2024-10-27 02:56:36,710 - DEBUG - certificate_dao.py:786 - get_status_analysis() - Risultati ottenuti: 2
+2024-10-27 02:56:36,711 - INFO - certificate_dao.py:790 - get_status_analysis() - Totale trovati: 2
+2024-10-27 02:56:37,109 - INFO - graph_plotter.py:47 - plot_bar_chart() - Grafico 'Analisi Status Certificati' generato con successo e salvato in /home/elion-man/TEST_TESI/src/analysis/leaf/plots/status_analysis.png.
+2024-10-27 02:56:37,125 - DEBUG - certificate_dao.py:808 - get_key_usage_distribution() - Risultati ottenuti: 3
+2024-10-27 02:56:37,126 - INFO - certificate_dao.py:816 - get_key_usage_distribution() - Totale trovati: 3
+2024-10-27 02:56:37,996 - INFO - graph_plotter.py:228 - plot_dot_plot() - Grafico 'Utilizzo del Key Usage nelle Estensioni' generato con successo e salvato in /home/elion-man/TEST_TESI/src/analysis/leaf/plots/key_usage_distribution.png.
+2024-10-27 02:56:38,010 - DEBUG - certificate_dao.py:834 - get_critical_vs_non_critical_key_usage() - Risultati ottenuti: 1
+2024-10-27 02:56:38,012 - INFO - certificate_dao.py:838 - get_critical_vs_non_critical_key_usage() - Totale trovati: 1
+2024-10-27 02:56:38,397 - INFO - graph_plotter.py:47 - plot_bar_chart() - Grafico 'Estensioni Critiche vs Non Critiche del Key Usage nelle Estensioni' generato con successo e salvato in /home/elion-man/TEST_TESI/src/analysis/leaf/plots/critical_vs_non_critical_key_usage.png.
+2024-10-27 02:56:38,411 - DEBUG - certificate_dao.py:856 - get_extended_key_usage_distribution() - Risultati ottenuti: 2
+2024-10-27 02:56:38,412 - INFO - certificate_dao.py:863 - get_extended_key_usage_distribution() - Totale trovati: 2
+2024-10-27 02:56:39,208 - INFO - graph_plotter.py:228 - plot_dot_plot() - Grafico 'Utilizzo dell'Extended Key Usage nelle Estensioni' generato con successo e salvato in /home/elion-man/TEST_TESI/src/analysis/leaf/plots/extended_key_usage_distribution.png.
+2024-10-27 02:56:39,222 - DEBUG - certificate_dao.py:881 - get_critical_vs_non_critical_extended_key_usage() - Risultati ottenuti: 1
+2024-10-27 02:56:39,223 - INFO - certificate_dao.py:885 - get_critical_vs_non_critical_extended_key_usage() - Totale trovati: 1
+2024-10-27 02:56:39,612 - INFO - graph_plotter.py:47 - plot_bar_chart() - Grafico 'Estensioni Critiche vs Non Critiche dell'Extended Key Usage nelle Estensioni' generato con successo e salvato in /home/elion-man/TEST_TESI/src/analysis/leaf/plots/critical_vs_non_critical_extended_key_usage.png.
+2024-10-27 02:56:39,626 - DEBUG - certificate_dao.py:950 - get_signed_certificate_timestamp_trend() - Risultati ottenuti: 12
+2024-10-27 02:56:39,628 - INFO - certificate_dao.py:954 - get_signed_certificate_timestamp_trend() - Totale trovati: 12
+2024-10-27 02:56:40,079 - INFO - graph_plotter.py:123 - plot_line_chart() - Grafico 'Trend dei Signed Certificate Timestamps (SCT) per Mese e Anno' generato con successo e salvato in /home/elion-man/TEST_TESI/src/analysis/leaf/plots/certificate_expiration_trend.png.
+2024-10-27 02:56:40,094 - DEBUG - certificate_dao.py:976 - get_sct_count_per_certificate() - Risultati ottenuti: 3
+2024-10-27 02:56:40,095 - INFO - certificate_dao.py:980 - get_sct_count_per_certificate() - Totale trovati: 3
+2024-10-27 02:56:40,491 - INFO - graph_plotter.py:47 - plot_bar_chart() - Grafico 'Numero dei Signed Certificate Timestamps (SCT) per Certificato' generato con successo e salvato in /home/elion-man/TEST_TESI/src/analysis/leaf/plots/sct_count_per_certificate.png.
+2024-10-27 02:56:40,506 - DEBUG - certificate_dao.py:1042 - get_critical_vs_non_critical_san_extensions() - Risultati ottenuti: 1
+2024-10-27 02:56:40,507 - INFO - certificate_dao.py:1046 - get_critical_vs_non_critical_san_extensions() - Totale trovati: 1
+2024-10-27 02:56:40,895 - INFO - graph_plotter.py:47 - plot_bar_chart() - Grafico 'Estensioni Critiche vs Non Critiche delle Subject Alternative Name' generato con successo e salvato in /home/elion-man/TEST_TESI/src/analysis/leaf/plots/critical_vs_non_critical_san_extensions.png.
+2024-10-27 02:56:40,909 - DEBUG - certificate_dao.py:1064 - get_critical_vs_non_critical_cp_policies() - Risultati ottenuti: 1
+2024-10-27 02:56:40,911 - INFO - certificate_dao.py:1068 - get_critical_vs_non_critical_cp_policies() - Totale trovati: 1
+2024-10-27 02:56:41,295 - INFO - graph_plotter.py:47 - plot_bar_chart() - Grafico 'Estensioni Critiche vs Non Critiche del Certificate Policies' generato con successo e salvato in /home/elion-man/TEST_TESI/src/analysis/leaf/plots/critical_vs_non_critical_cp_policies.png.
+2024-10-27 02:56:41,310 - DEBUG - certificate_dao.py:617 - get_key_algorithm_length_distribution() - Risultati ottenuti: 3
+2024-10-27 02:56:41,311 - INFO - certificate_dao.py:629 - get_key_algorithm_length_distribution() - Totale trovati: 2
+2024-10-27 02:56:41,641 - INFO - graph_plotter.py:190 - plot_stacked_bar_chart() - Grafico 'Distribuzione degli Algoritmi di Chiave e Lunghezza' generato con successo e salvato in /home/elion-man/TEST_TESI/src/analysis/leaf/plots/key_algorithm_length_distribution.png.
+2024-10-27 02:56:41,656 - DEBUG - certificate_dao.py:694 - get_self_signed_vs_ca_signed() - Risultati ottenuti: 1
+2024-10-27 02:56:41,657 - INFO - certificate_dao.py:698 - get_self_signed_vs_ca_signed() - Totale trovati: 1
+2024-10-27 02:56:41,909 - INFO - graph_plotter.py:67 - plot_pie_chart() - Grafico 'Certificati Auto-Firmati vs CA-Firmati' generato con successo e salvato in /home/elion-man/TEST_TESI/src/analysis/leaf/plots/self_signed_vs_ca_signed.png.
+2024-10-27 02:56:41,923 - DEBUG - certificate_dao.py:715 - get_validation_level_distribution() - Risultati ottenuti: 3
+2024-10-27 02:56:41,925 - INFO - certificate_dao.py:719 - get_validation_level_distribution() - Totale trovati: 3
+2024-10-27 02:56:42,312 - INFO - graph_plotter.py:47 - plot_bar_chart() - Grafico 'Distribuzione del Validation Level dei Certificati' generato con successo e salvato in /home/elion-man/TEST_TESI/src/analysis/leaf/plots/validation_level_distribution.png.
+2024-10-27 02:56:42,327 - DEBUG - certificate_dao.py:903 - get_basic_constraints_distribution() - Risultati ottenuti: 2
+2024-10-27 02:56:42,328 - INFO - certificate_dao.py:907 - get_basic_constraints_distribution() - Totale trovati: 2
+2024-10-27 02:56:42,460 - INFO - certificates_analysis.py:46 - handle_exit_signal() - Segnale SIGINT (Ctrl + C) ricevuto. Inizio della procedura di chiusura...
+2024-10-27 02:56:42,463 - INFO - certificates_analysis.py:19 - close_connections() - Inizio chiusura delle connessioni ai database...
+2024-10-27 02:56:42,465 - INFO - database.py:109 - close() - Connessione al database Leaf chiusa con successo.
+2024-10-27 02:56:42,467 - INFO - graph_plotter.py:10 - close_all_plots() - Chiusura di tutti i grafici aperti...
+2024-10-27 02:56:42,478 - INFO - certificates_analysis.py:42 - close_connections() - Tutte le connessioni ai database sono state chiuse.
+2024-10-27 02:56:42,480 - INFO - certificates_analysis.py:48 - handle_exit_signal() - Uscita dell'applicazione in corso...
+2024-10-27 02:56:45,153 - INFO - certificates_analysis.py:367 - certificates_analysis_main() - Inizio dell'applicazione.
+2024-10-27 02:56:45,157 - INFO - database.py:42 - _initialize_database() - Connessione al database esistente: /home/elion-man/TEST_TESI/src/analysis/leaf/leaf_certificates.db
+2024-10-27 02:56:45,158 - INFO - certificates_analysis.py:443 - certificates_analysis_main() - Inizio generazione grafici per certificati Leaf.
+2024-10-27 02:56:45,160 - INFO - certificates_analysis.py:261 - plot_leaf_certificates() - La cartella 'analysis/leaf/plots' è stata rimossa.
+2024-10-27 02:56:45,161 - INFO - certificates_analysis.py:265 - plot_leaf_certificates() - La cartella 'analysis/leaf/plots' è stata creata.
+2024-10-27 02:56:45,164 - DEBUG - certificate_dao.py:469 - get_issuer_certificate_count() - Issuer per certificato ottenute: 20
+2024-10-27 02:56:45,165 - INFO - certificate_dao.py:473 - get_issuer_certificate_count() - Totale issuers trovati: 20
+2024-10-27 02:56:46,000 - INFO - graph_plotter.py:47 - plot_bar_chart() - Grafico 'Emissione dei Certificati da Parte degli Issuer' generato con successo e salvato in /home/elion-man/TEST_TESI/src/analysis/leaf/plots/issuer_certificates_count.png.
+2024-10-27 02:56:46,014 - DEBUG - certificate_dao.py:736 - get_certificate_version_distribution() - Risultati ottenuti: 1
+2024-10-27 02:56:46,015 - INFO - certificate_dao.py:740 - get_certificate_version_distribution() - Totale trovati: 1
+2024-10-27 02:56:46,412 - INFO - graph_plotter.py:47 - plot_bar_chart() - Grafico 'Distribuzione delle Versioni dei Certificati' generato con successo e salvato in /home/elion-man/TEST_TESI/src/analysis/leaf/plots/certificate_version_distribution.png.
+2024-10-27 02:56:46,425 - DEBUG - certificate_dao.py:668 - get_count_critical_non_critical_extensions() - Risultati ottenuti: 1
+2024-10-27 02:56:46,426 - INFO - certificate_dao.py:672 - get_count_critical_non_critical_extensions() - Totale trovati: 1
+2024-10-27 02:56:46,686 - INFO - graph_plotter.py:67 - plot_pie_chart() - Grafico 'Estensioni Critiche vs Non Critiche dell'AIA' generato con successo e salvato in /home/elion-man/TEST_TESI/src/analysis/leaf/plots/count_critical_non_critical_extensions.png.
+2024-10-27 02:56:46,700 - DEBUG - certificate_dao.py:506 - get_certificates_per_country() - Risultati ottenuti: 7
+2024-10-27 02:56:46,701 - INFO - certificate_dao.py:510 - get_certificates_per_country() - Totale trovati: 7
+2024-10-27 02:56:46,998 - INFO - graph_plotter.py:67 - plot_pie_chart() - Grafico 'Numero di Certificati Emessi in Diversi Paesi' generato con successo e salvato in /home/elion-man/TEST_TESI/src/analysis/leaf/plots/certificates_per_country.png.
+2024-10-27 02:56:47,011 - DEBUG - certificate_dao.py:529 - get_validity_duration_distribution() - Risultati ottenuti: 69
+2024-10-27 02:56:47,013 - INFO - certificate_dao.py:541 - get_validity_duration_distribution() - Totale trovati: 2
+2024-10-27 02:56:47,378 - INFO - graph_plotter.py:47 - plot_bar_chart() - Grafico 'Distribuzione della Durata di Validità' generato con successo e salvato in /home/elion-man/TEST_TESI/src/analysis/leaf/plots/validity_duration_distribution.png.
+2024-10-27 02:56:47,391 - DEBUG - certificate_dao.py:561 - get_certificate_expiration_trend() - Risultati ottenuti: 8
+2024-10-27 02:56:47,393 - INFO - certificate_dao.py:565 - get_certificate_expiration_trend() - Totale trovati: 8
+2024-10-27 02:56:47,857 - INFO - graph_plotter.py:123 - plot_line_chart() - Grafico 'Trend di Scadenza dei Certificati' generato con successo e salvato in /home/elion-man/TEST_TESI/src/analysis/leaf/plots/certificate_expiration_trend.png.
+2024-10-27 02:56:47,869 - DEBUG - certificate_dao.py:584 - get_signature_algorithm_distribution() - Risultati ottenuti: 4
+2024-10-27 02:56:47,870 - INFO - certificate_dao.py:588 - get_signature_algorithm_distribution() - Totale trovati: 4
+2024-10-27 02:56:48,269 - INFO - graph_plotter.py:47 - plot_bar_chart() - Grafico 'Algoritmi di Firma Utilizzati' generato con successo e salvato in /home/elion-man/TEST_TESI/src/analysis/leaf/plots/signature_algorithm_distribution.png.
+2024-10-27 02:56:48,282 - DEBUG - certificate_dao.py:646 - get_ocsp_status_distribution() - Risultati ottenuti: 1
+2024-10-27 02:56:48,284 - INFO - certificate_dao.py:650 - get_ocsp_status_distribution() - Totale trovati: 1
+2024-10-27 02:56:48,538 - INFO - graph_plotter.py:67 - plot_pie_chart() - Grafico 'Stato OCSP dei Certificati' generato con successo e salvato in /home/elion-man/TEST_TESI/src/analysis/leaf/plots/ocsp_status_distribution.png.
+2024-10-27 02:56:48,552 - DEBUG - certificate_dao.py:762 - get_signature_validity_distribution() - Risultati ottenuti: 1
+2024-10-27 02:56:48,553 - INFO - certificate_dao.py:766 - get_signature_validity_distribution() - Totale trovati: 1
+2024-10-27 02:56:48,805 - INFO - graph_plotter.py:67 - plot_pie_chart() - Grafico 'Validità delle Firme dei Certificati' generato con successo e salvato in /home/elion-man/TEST_TESI/src/analysis/leaf/plots/signature_validity_distribution.png.
+2024-10-27 02:56:48,819 - DEBUG - certificate_dao.py:786 - get_status_analysis() - Risultati ottenuti: 2
+2024-10-27 02:56:48,820 - INFO - certificate_dao.py:790 - get_status_analysis() - Totale trovati: 2
+2024-10-27 02:56:49,218 - INFO - graph_plotter.py:47 - plot_bar_chart() - Grafico 'Analisi Status Certificati' generato con successo e salvato in /home/elion-man/TEST_TESI/src/analysis/leaf/plots/status_analysis.png.
+2024-10-27 02:56:49,234 - DEBUG - certificate_dao.py:808 - get_key_usage_distribution() - Risultati ottenuti: 3
+2024-10-27 02:56:49,235 - INFO - certificate_dao.py:816 - get_key_usage_distribution() - Totale trovati: 3
+2024-10-27 02:56:50,110 - INFO - graph_plotter.py:228 - plot_dot_plot() - Grafico 'Utilizzo del Key Usage nelle Estensioni' generato con successo e salvato in /home/elion-man/TEST_TESI/src/analysis/leaf/plots/key_usage_distribution.png.
+2024-10-27 02:56:50,123 - DEBUG - certificate_dao.py:834 - get_critical_vs_non_critical_key_usage() - Risultati ottenuti: 1
+2024-10-27 02:56:50,125 - INFO - certificate_dao.py:838 - get_critical_vs_non_critical_key_usage() - Totale trovati: 1
+2024-10-27 02:56:50,502 - INFO - graph_plotter.py:47 - plot_bar_chart() - Grafico 'Estensioni Critiche vs Non Critiche del Key Usage nelle Estensioni' generato con successo e salvato in /home/elion-man/TEST_TESI/src/analysis/leaf/plots/critical_vs_non_critical_key_usage.png.
+2024-10-27 02:56:50,516 - DEBUG - certificate_dao.py:856 - get_extended_key_usage_distribution() - Risultati ottenuti: 2
+2024-10-27 02:56:50,517 - INFO - certificate_dao.py:863 - get_extended_key_usage_distribution() - Totale trovati: 2
+2024-10-27 02:56:51,239 - INFO - certificates_analysis.py:46 - handle_exit_signal() - Segnale SIGINT (Ctrl + C) ricevuto. Inizio della procedura di chiusura...
+2024-10-27 02:56:51,240 - INFO - certificates_analysis.py:19 - close_connections() - Inizio chiusura delle connessioni ai database...
+2024-10-27 02:56:51,241 - INFO - database.py:109 - close() - Connessione al database Leaf chiusa con successo.
+2024-10-27 02:56:51,242 - INFO - graph_plotter.py:10 - close_all_plots() - Chiusura di tutti i grafici aperti...
+2024-10-27 02:56:51,255 - INFO - certificates_analysis.py:42 - close_connections() - Tutte le connessioni ai database sono state chiuse.
+2024-10-27 02:56:51,257 - INFO - certificates_analysis.py:48 - handle_exit_signal() - Uscita dell'applicazione in corso...
+2024-10-27 02:57:29,115 - INFO - certificates_analysis.py:367 - certificates_analysis_main() - Inizio dell'applicazione.
+2024-10-27 02:57:29,118 - INFO - database.py:42 - _initialize_database() - Connessione al database esistente: /home/elion-man/TEST_TESI/src/analysis/leaf/leaf_certificates.db
+2024-10-27 02:57:29,119 - INFO - certificates_analysis.py:443 - certificates_analysis_main() - Inizio generazione grafici per certificati Leaf.
+2024-10-27 02:57:29,122 - INFO - certificates_analysis.py:261 - plot_leaf_certificates() - La cartella 'analysis/leaf/plots' è stata rimossa.
+2024-10-27 02:57:29,123 - INFO - certificates_analysis.py:265 - plot_leaf_certificates() - La cartella 'analysis/leaf/plots' è stata creata.
+2024-10-27 02:57:29,126 - INFO - certificate_dao.py:473 - get_issuer_certificate_count() - Totale issuers trovati: 20
+2024-10-27 02:57:29,781 - INFO - certificates_analysis.py:46 - handle_exit_signal() - Segnale SIGINT (Ctrl + C) ricevuto. Inizio della procedura di chiusura...
+2024-10-27 02:57:29,782 - INFO - certificates_analysis.py:19 - close_connections() - Inizio chiusura delle connessioni ai database...
+2024-10-27 02:57:29,784 - INFO - database.py:109 - close() - Connessione al database Leaf chiusa con successo.
+2024-10-27 02:57:29,786 - INFO - graph_plotter.py:10 - close_all_plots() - Chiusura di tutti i grafici aperti...
+2024-10-27 02:57:29,800 - INFO - certificates_analysis.py:42 - close_connections() - Tutte le connessioni ai database sono state chiuse.
+2024-10-27 02:57:29,801 - INFO - certificates_analysis.py:48 - handle_exit_signal() - Uscita dell'applicazione in corso...

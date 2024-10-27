@@ -7,14 +7,18 @@ import seaborn as sns
 class GraphPlotter:
     def close_all_plots(self):
         """Chiude tutte le figure aperte."""
-        logging.info("Chiusura di tutte le figure aperte...")
+        logging.info("Chiusura di tutti i grafici aperti...")
         plt.close('all')
         return
         
-    def disable_logging(self):
+    def disable_logging(self, is_verbose:bool):
+        """Disabilita il logging dettagliato per alcune librerie se la modalità verbose è disattivata."""
+        logging.getLogger('PIL.PngImagePlugin').setLevel(logging.ERROR)
         logging.getLogger('matplotlib').setLevel(logging.ERROR)
-        logging.getLogger('seaborn').setLevel(logging.ERROR)
         warnings.filterwarnings("ignore", category=FutureWarning)
+        if(not is_verbose):
+            logging.getLogger('seaborn').setLevel(logging.ERROR)
+        return
 
     def plot_bar_chart(self, data, x, y, title, xlabel, ylabel, filename):
         """Crea un grafico a barre ottimizzato per la visualizzazione dei dati."""

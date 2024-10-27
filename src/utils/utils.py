@@ -7,7 +7,6 @@ from bean.certificate import Certificate
 from rich.logging import RichHandler
 from urllib.parse import urljoin
 from tqdm.std import TqdmExperimentalWarning
-from tqdm import tqdm
 from cryptography import x509
 from cryptography.hazmat.primitives.asymmetric import padding, ec, rsa
 from cryptography.exceptions import InvalidSignature
@@ -29,7 +28,7 @@ class CustomFormatter(logging.Formatter):
         original = super().format(record)
         return original
 
-def setup_logging():
+def setup_logging(is_verbose: bool):
     """Configura il logging dell'applicazione."""
     warnings.simplefilter("ignore", TqdmExperimentalWarning)
     
@@ -47,12 +46,17 @@ def setup_logging():
     stream_handler = RichHandler(rich_tracebacks=True)
     stream_handler.setFormatter(formatter_stream)
 
+    level = logging.INFO
+    if(is_verbose):
+        level = logging.DEBUG
+
     logging.basicConfig(
-        level=logging.INFO,  # Cambia in DEBUG per più dettagli
+        level=level,
         datefmt="[%X]",
         handlers=[file_handler, stream_handler]
     )
-    
+    return
+
 def verify_signature(cert: Optional[x509.Certificate], ca_cert: Optional[x509.Certificate]):
     """Verifica la firma di un certificato utilizzando il certificato issuer."""
     try:

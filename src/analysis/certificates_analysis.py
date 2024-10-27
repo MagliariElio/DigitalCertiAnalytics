@@ -3,6 +3,7 @@ import logging
 from tqdm.rich import tqdm
 import os, shutil, sys, signal
 import argparse
+from rich.console import Console
 from db.database import Database, DatabaseType
 from dao.certificate_dao import CertificateDAO
 from utils.utils import find_next_intermediate_certificate, find_root_certificate, setup_logging
@@ -19,15 +20,12 @@ def close_connections():
     
     if 'leaf_database' in globals():
         leaf_database.close()
-        logging.info("Connessione al database Leaf chiusa con successo.")
         
     if 'intermediate_database' in globals():
         intermediate_database.close()
-        logging.info("Connessione al database Intermediate chiusa con successo.")
         
     if 'root_database' in globals():
         root_database.close()
-        logging.info("Connessione al database Root chiusa con successo.")
     
     if 'pbar_leaf' in globals():
         pbar_leaf.close()
@@ -60,8 +58,8 @@ def leaf_certificates_analysis(certificates_file, dao: CertificateDAO, database:
     with open(certificates_file, 'r') as certificates_reader:
         # Inizializza la barra di caricamento
         tqdm.write("")
-        pbar_leaf = tqdm(total=total_lines, desc="[bold] 🛠️  Elaborazione Certificati[/bold]", unit="cert.", 
-                    colour="cyan", bar_format="{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} • ⚡ {rate_fmt}")
+        pbar_leaf = tqdm(total=total_lines, desc=" 🔍  [magenta bold]Elaborazione Certificati[/magenta bold]", unit="cert.", 
+                    colour="magenta", bar_format="{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} • ⚡ {rate_fmt}")
 
         for line_number, row in enumerate(certificates_reader, start=1):
             try:
@@ -93,8 +91,8 @@ def intermediate_certificates_analysis(certificates_file, dao: CertificateDAO, d
     with open(certificates_file, 'r') as certificates_reader:
         # Inizializza la barra di caricamento
         tqdm.write("")
-        pbar_intermediate = tqdm(total=total_lines, desc="[bold] 🛠️  Elaborazione Certificati[/bold]", unit="cert.", 
-                    colour="cyan", bar_format="{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} • ⚡ {rate_fmt}")
+        pbar_intermediate = tqdm(total=total_lines, desc=" 📜  [green bold]Elaborazione Certificati[/green bold]", unit="cert.", 
+                    colour="green", bar_format="{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} • ⚡ {rate_fmt}")
 
         for line_number, row in enumerate(certificates_reader, start=1):
             try:
@@ -156,8 +154,8 @@ def root_certificates_analysis(certificates_file, dao: CertificateDAO, database:
     with open(certificates_file, 'r') as certificates_reader:
         # Inizializza la barra di caricamento
         tqdm.write("")
-        pbar_root = tqdm(total=total_lines, desc="[bold] 🛠️  Elaborazione Certificati[/bold]", unit="cert.", 
-                    colour="green", bar_format="{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} • ⚡ {rate_fmt}")
+        pbar_root = tqdm(total=total_lines, desc=" 🛠️  [blue bold]Elaborazione Certificati[/blue bold]", unit="cert.", 
+                    colour="blue", bar_format="{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} • ⚡ {rate_fmt}")
 
         # TODO: da rimuovere
         # for _ in range(800000): # 800000
@@ -248,14 +246,14 @@ def process_insert_sct_logs(log_list_path, dao: CertificateDAO, database: Databa
 
     return
 
-def plot_leaf_certificates_analysis(dao: CertificateDAO):
+def plot_leaf_certificates(dao: CertificateDAO, is_verbose: bool):
     """Genera e salva vari grafici relativi all'analisi dei certificati."""
     global plotter
     
     plots_path = 'analysis/leaf/plots'
     
     plotter = GraphPlotter()
-    plotter.disable_logging()
+    plotter.disable_logging(is_verbose)
     
     # Rimuovi la cartella se esiste
     if os.path.exists(plots_path):
@@ -273,14 +271,14 @@ def plot_leaf_certificates_analysis(dao: CertificateDAO):
     
     return
 
-def plot_intermediate_certificates_analysis(dao: CertificateDAO):
+def plot_intermediate_certificates(dao: CertificateDAO, is_verbose: bool):
     """Genera e salva vari grafici relativi all'analisi dei certificati."""
     global plotter
     
     plots_path = 'analysis/intermediate/plots'
     
     plotter = GraphPlotter()
-    plotter.disable_logging()
+    plotter.disable_logging(is_verbose)
     
     # Rimuovi la cartella se esiste
     if os.path.exists(plots_path):
@@ -297,14 +295,14 @@ def plot_intermediate_certificates_analysis(dao: CertificateDAO):
     
     return
 
-def plot_root_certificates_analysis(dao: CertificateDAO):
+def plot_root_certificates(dao: CertificateDAO, is_verbose: bool):
     """Genera e salva vari grafici relativi all'analisi dei certificati."""
     global plotter
 
     plots_path = 'analysis/root/plots'
     
     plotter = GraphPlotter()
-    plotter.disable_logging()
+    plotter.disable_logging(is_verbose)
     
     # Rimuovi la cartella se esiste
     if os.path.exists(plots_path):
@@ -322,6 +320,10 @@ def plot_root_certificates_analysis(dao: CertificateDAO):
 
 def certificates_analysis_main():
     global leaf_database, intermediate_database, root_database
+    
+    # Pulisce la console
+    console = Console()
+    console.clear()
     
     # Stampa il logo dell'applicazione
     tqdm.write("\n")
@@ -353,12 +355,15 @@ def certificates_analysis_main():
                     help='Genera e visualizza i grafici per i risultati dell\'analisi dei certificati intermedi.')
     parser.add_argument('--plot_root_results', action='store_true', 
                     help='Genera e visualizza i grafici per i risultati dell\'analisi dei certificati root.')
+    parser.add_argument('-v', '--verbose', action='store_true', 
+                    help='Attiva la modalità verbose per una registrazione dettagliata.')
+
 
     # Estrai gli argomenti dalla riga di comando
     args = parser.parse_args()
     
     # Setup del logger
-    setup_logging()
+    setup_logging(args.verbose)
     logging.info("Inizio dell'applicazione.")
 
     # Imposta le cancellazioni dei database    
@@ -404,7 +409,7 @@ def certificates_analysis_main():
         # total_lines = sum(1 for line in certificates_reader)
         # certificates_reader.seek(0)  # Reset del puntatore file dopo aver contato le righe
         
-        total_lines = 10000000
+        total_lines = 10000000  # TODO: da rimuovere i commenti precedenti
 
     # Analisi Certificati Leaf
     if(args.delete_leaf_db or args.leaf_analysis or args.leaf_ocsp_analysis or args.plot_leaf_results):
@@ -423,7 +428,7 @@ def certificates_analysis_main():
 
         # Esegui l'analisi dei certificati
         if(args.leaf_analysis):
-            logging.info("Inizio analisi certificati [bold]Leaf[/bold].")
+            logging.info("Inizio analisi certificati Leaf.")
             leaf_certificates_analysis(result_json_file, leaf_dao, leaf_database, total_lines)
             logging.info("Analisi dei certificati Leaf completata con successo.")        
 
@@ -435,8 +440,8 @@ def certificates_analysis_main():
         
         # Esegui la generazione dei grafici per i certificati leaf
         if(args.plot_leaf_results):
-            logging.info("Inizio generazione grafici per certificati [bold]Leaf[/bold].")        
-            plot_leaf_certificates_analysis(leaf_dao)
+            logging.info("Inizio generazione grafici per certificati Leaf.")        
+            plot_leaf_certificates(leaf_dao, args.verbose)
             logging.info("Generazione dei grafici per l'analisi dei certificati Leaf completata.")
 
         # Chiude la connessione al database
@@ -472,7 +477,7 @@ def certificates_analysis_main():
         # Esegui la generazione dei grafici per i certificati Intermediate
         if(args.plot_intermediate_results):
             logging.info("Inizio generazione grafici per certificati Intermediate.")        
-            plot_intermediate_certificates_analysis(intermediate_dao)
+            plot_intermediate_certificates(intermediate_dao, args.verbose)
             logging.info("Generazione dei grafici per l'analisi dei certificati Intermediate completata.")
 
 
@@ -510,7 +515,7 @@ def certificates_analysis_main():
         # Esegui la generazione dei grafici per i certificati Root
         if(args.plot_root_results):
             logging.info("Inizio generazione grafici per certificati Root.")        
-            plot_root_certificates_analysis(root_dao)
+            plot_root_certificates(root_dao, args.verbose)
             logging.info("Generazione dei grafici per l'analisi dei certificati Root completata.")
 
         # Chiude la connessione al database e rimuove i dati non necessari

@@ -126,7 +126,7 @@ DROP TABLE IF EXISTS `Errors`;
 
 CREATE TABLE Errors (
     error_id INTEGER PRIMARY KEY AUTOINCREMENT,    
-    domain VARCHAR UNIQUE,
+    domain VARCHAR,
     status VARCHAR,
     protocol VARCHAR,
     timestamp TIMESTAMP,
