@@ -1,12 +1,13 @@
 import json
+from rich.progress import Progress, SpinnerColumn, TextColumn
 import logging
+import argparse
 from tqdm.rich import tqdm
 import os, shutil, sys, signal
-import argparse
 from rich.console import Console
 from db.database import Database, DatabaseType
 from dao.certificate_dao import CertificateDAO
-from utils.utils import find_next_intermediate_certificate, find_root_certificate, setup_logging
+from utils.utils import find_next_intermediate_certificate, find_root_certificate, setup_logging, ArgparseFormatter
 from utils.plotter_utils import plot_general_certificates_analysis, plot_leaf_certificates_analysis, plot_common_analysis_for_leaf_and_intermediate_certificates
 from utils.graph_plotter import GraphPlotter
 import pyfiglet
@@ -45,7 +46,7 @@ def handle_exit_signal(signal, frame):
     """Funzione per gestire il segnale SIGINT (Ctrl + C)."""
     logging.info("Segnale SIGINT (Ctrl + C) ricevuto. Inizio della procedura di chiusura...")
     close_connections()
-    logging.info("Uscita dell'applicazione in corso...")
+    logging.info("Uscita dell'applicazione in corso...\n")
     sys.exit(0)
 
 # Associa il gestore di segnale
@@ -71,7 +72,7 @@ def leaf_certificates_analysis(certificates_file, dao: CertificateDAO, database:
 
                 with database.transaction():
                     if status == "success":
-                        dao.process_insert_certificate(json_row, DatabaseType.LEAF)
+                        dao.process_insert_certificate(json_row, database.db_type)
                     else:
                         dao.insert_error_row(json_row)
 
@@ -136,7 +137,7 @@ def intermediate_certificates_analysis(certificates_file, dao: CertificateDAO, d
                             server_certificates["chain"] = chain
 
                             # Inizia l'analisi del certificato intermediate
-                            dao.process_insert_certificate(json_row, DatabaseType.INTERMEDIATE)
+                            dao.process_insert_certificate(json_row, database.db_type)
 
             except json.JSONDecodeError:
                 logging.error(f"Errore nel parsing della riga {line_number}: {row.strip()}")
@@ -196,7 +197,7 @@ def root_certificates_analysis(certificates_file, dao: CertificateDAO, database:
                         server_certificates["chain"] = chain
 
                         # Inizia l'analisi del certificato root
-                        dao.process_insert_certificate(json_row, DatabaseType.ROOT)
+                        dao.process_insert_certificate(json_row, database.db_type)
 
             except json.JSONDecodeError:
                 logging.error(f"Errore nel parsing della riga {line_number}: {row.strip()}")
@@ -317,7 +318,7 @@ def plot_root_certificates(dao: CertificateDAO, is_verbose: bool):
     plot_general_certificates_analysis(dao, plotter, plots_path)
         
     return
-
+ 
 def certificates_analysis_main():
     global leaf_database, intermediate_database, root_database
     
@@ -331,21 +332,29 @@ def certificates_analysis_main():
     tqdm.write("\n")
 
     # Configura argparse per gestire gli argomenti della riga di comando
-    parser = argparse.ArgumentParser(description='Analisi dei certificati.')
+    parser = argparse.ArgumentParser(
+        prog='python -m analysis.main',
+        description='Strumento per l\'analisi dei certificati digitali.',
+        epilog='Utilizza le opzioni disponibili per eseguire diverse analisi sui certificati e generare report visivi. Usa -v per attivare la modalità verbose per ulteriori dettagli.',
+        add_help=False,
+        formatter_class=ArgparseFormatter
+    )
     
+    parser.add_argument('-h', '--help', action='help', default=argparse.SUPPRESS, help='Mostra le opzioni disponibili per l\'analisi dei certificati digitali e la generazione di grafici.\n\n')
+
     parser.add_argument('--delete_all_db', action='store_true', help='Se presenti, elimina tutti i database prima di iniziare.')
     parser.add_argument('--delete_leaf_db', action='store_true', help='Se presente, elimina il database leaf prima di iniziare.')
     parser.add_argument('--delete_intermediate_db', action='store_true', help='Se presente, elimina il database intermediate prima di iniziare.')
-    parser.add_argument('--delete_root_db', action='store_true', help='Se presente, elimina il database root prima di iniziare.')
+    parser.add_argument('--delete_root_db', action='store_true', help='Se presente, elimina il database root prima di iniziare.\n\n')
     
-    parser.add_argument('--leaf_analysis', action='store_true', help='Analizza i certificati leaf.')
-    parser.add_argument('--leaf_ocsp_analysis', action='store_true', help='Esegue l\'analisi OCSP per i certificati leaf.')
+    parser.add_argument('--leaf_analysis', action='store_true', help='Rimuove il database esistente e analizza i certificati leaf nel file JSON generato da zgrab2.')
+    parser.add_argument('--leaf_ocsp_analysis', action='store_true', help='Esegue l\'analisi OCSP per i certificati leaf presenti nel database.\n\n')
     
-    parser.add_argument('--intermediate_analysis', action='store_true', help='Analizza i certificati intermediate.')
-    parser.add_argument('--intermediate_ocsp_analysis', action='store_true', help='Esegue l\'analisi OCSP per i certificati intermediate.')
+    parser.add_argument('--intermediate_analysis', action='store_true', help='Rimuove il database esistente e analizza ed analizza i certificati intermediate nel file JSON generato da zgrab2.')
+    parser.add_argument('--intermediate_ocsp_analysis', action='store_true', help='Esegue l\'analisi OCSP per i certificati intermediate presenti nel database.\n\n')
     
-    parser.add_argument('--root_analysis', action='store_true', help='Analizza i certificati root.')
-    parser.add_argument('--root_ocsp_analysis', action='store_true', help='Esegue l\'analisi OCSP per i certificati root.')
+    parser.add_argument('--root_analysis', action='store_true', help='Rimuove il database esistente e analizza i certificati root nel file JSON generato da zgrab2.')
+    parser.add_argument('--root_ocsp_analysis', action='store_true', help='Esegue l\'analisi OCSP per i certificati root presenti nel database.\n\n')
     
     parser.add_argument('--plot_all_results', action='store_true', 
                     help='Genera e visualizza i grafici per tutti i dati analizzati sui certificati.')
@@ -354,7 +363,7 @@ def certificates_analysis_main():
     parser.add_argument('--plot_intermediate_results', action='store_true', 
                     help='Genera e visualizza i grafici per i risultati dell\'analisi dei certificati intermedi.')
     parser.add_argument('--plot_root_results', action='store_true', 
-                    help='Genera e visualizza i grafici per i risultati dell\'analisi dei certificati root.')
+                    help='Genera e visualizza i grafici per i risultati dell\'analisi dei certificati root.\n\n')
     parser.add_argument('-v', '--verbose', action='store_true', 
                     help='Attiva la modalità verbose per una registrazione dettagliata.')
 
@@ -367,14 +376,14 @@ def certificates_analysis_main():
     logging.info("Inizio dell'applicazione.")
 
     # Imposta le cancellazioni dei database    
-    args.delete_leaf_db = args.delete_leaf_db or args.delete_all_db
-    args.delete_intermediate_db = args.delete_intermediate_db or args.delete_all_db
-    args.delete_root_db = args.delete_root_db or args.delete_all_db
+    args.delete_leaf_db =         args.delete_leaf_db         or args.leaf_analysis         or args.delete_all_db
+    args.delete_intermediate_db = args.delete_intermediate_db or args.intermediate_analysis or args.delete_all_db
+    args.delete_root_db =         args.delete_root_db         or args.root_analysis         or args.delete_all_db
     
     # Imposta il plot dei risutalti    
-    args.plot_leaf_results = args.plot_leaf_results or args.plot_all_results
+    args.plot_leaf_results = args.plot_leaf_results                 or args.plot_all_results
     args.plot_intermediate_results = args.plot_intermediate_results or args.plot_all_results
-    args.plot_root_results = args.plot_root_results or args.plot_all_results
+    args.plot_root_results = args.plot_root_results                 or args.plot_all_results
     
     # Funzione lambda per creare una cartella se non esiste
     create_directory = lambda path: os.makedirs(path) if not os.path.exists(path) else None
@@ -406,10 +415,27 @@ def certificates_analysis_main():
         return
     
     if(args.leaf_analysis or args.intermediate_analysis or args.root_analysis):
-        # total_lines = sum(1 for line in certificates_reader)
-        # certificates_reader.seek(0)  # Reset del puntatore file dopo aver contato le righe
-        
-        total_lines = 10000000  # TODO: da rimuovere i commenti precedenti
+        logging.info("Inizio il conteggio delle righe del file JSON contenente i certificati.")
+
+        console = Console()
+        total_lines = 0
+
+        tqdm.write(" ")
+        with open(result_json_file, 'r') as certificates_reader:
+            with Progress(
+                TextColumn(19*" "),
+                SpinnerColumn("dots", style="cyan"),
+                TextColumn("⚙️  Conteggio dei Certificati in Corso... {task.description}"),
+                console=console
+            ) as progress:
+                task = progress.add_task(description=f"[bold]{total_lines:,.0f}[/bold] certificati letti", total=None)
+                for _ in certificates_reader:
+                    total_lines += 1
+                    progress.update(task, description=f"[bold]{total_lines:,.0f}[/bold] certificati letti")
+
+        logging.info(f"Conteggio completo: {total_lines} certificati letti.")
+
+        # total_lines = 10000000  # TODO: da rimuovere i commenti precedenti
 
     # Analisi Certificati Leaf
     if(args.delete_leaf_db or args.leaf_analysis or args.leaf_ocsp_analysis or args.plot_leaf_results):
@@ -522,5 +548,5 @@ def certificates_analysis_main():
         root_database.cleanup_unused_tables()
         root_database.close()
     
-    logging.info("Applicazione terminata correttamente.")
+    logging.info("Applicazione terminata correttamente.\n")
 

@@ -2,6 +2,7 @@ import logging
 import base64
 import warnings
 import requests
+import argparse
 from typing import Optional, Tuple
 from bean.certificate import Certificate
 from rich.logging import RichHandler
@@ -19,6 +20,19 @@ from cryptography.hazmat.primitives.serialization import pkcs7
 
 # Admin: Anuar Elio Magliari 
 # Politecnico di Torino
+
+class ArgparseFormatter(argparse.RawTextHelpFormatter):
+    def __init__(self, *args, padding=1, **kwargs):
+        super().__init__(*args, max_help_position=40, **kwargs)
+        self.padding = padding
+
+    def _format_action(self, action):
+        result = super()._format_action(action)
+        return ' ' * self.padding + result
+
+    def format_help(self):
+        help_text = super().format_help()
+        return ' ' * self.padding + help_text.replace('\n', '\n' + ' ' * self.padding)
 
 class CustomFormatter(logging.Formatter):
     def __init__(self, *args, **kwargs):

@@ -1,5 +1,6 @@
 import json
 import logging
+import tqdm
 from typing import Optional
 from datetime import datetime
 from bean.certificate import Certificate
@@ -287,7 +288,29 @@ class CertificateDAO:
 
     def check_ocsp_status_for_certificates(self, batch_size=1000):
         """Controlla lo stato OCSP per ciascun certificato nel database e aggiorna il relativo stato."""
+        global pbar_ocsp_check
+        
         try:
+            # Conta il numero di certificati per la barra di progresso
+            self.cursor.execute("""
+                    SELECT COUNT(c.certificate_id)
+                    FROM Certificates AS c 
+                    INNER JOIN Issuers AS i ON c.issuer_id = i.issuer_id
+                    WHERE c.ocsp_check = 'No Request Done'
+                """)
+                
+            total_lines = self.cursor.fetchone()
+
+            # Controlla il conteggio
+            if total_lines[0] == 0:
+                logging.info("Nessun certificato da analizzare è presente nel database.")
+                return
+        
+            # Inizializza la barra di caricamento
+            tqdm.write("")
+            pbar_ocsp_check = tqdm(total=total_lines, desc=" 🕵️‍♂️  [blue bold]Elaborazione Certificati[/blue bold]", unit="cert.", 
+                        colour="blue", bar_format="{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} • ⚡ {rate_fmt}")
+
             certificate_counts = 0
             while True:
                 self.cursor.execute("""
@@ -357,12 +380,18 @@ class CertificateDAO:
                 
                 # Incremento del numero di certificati processati
                 certificate_counts += batch_size
-                print(f"\rNumero di Certificati processati: {certificate_counts}", end="")
+                
+                # Aggiorna la barra di caricamento
+                pbar_ocsp_check.update(certificate_counts)
                 
         except json.JSONDecodeError as json_err:
             logging.error(f"Errore nella deserializzazione del JSON: {json_err}")
         except Exception as e:
             logging.error(f"Errore generale durante il controllo dello stato OCSP: {e}")
+        
+        # Chiusura barra di progresso
+        pbar_ocsp_check.close()
+        return
     
     def insert_sct_log_operator(self, operator):
         """Inserisce un operatore SCT nel database."""
