@@ -108,15 +108,6 @@ def intermediate_certificates_analysis(certificates_file, dao: CertificateDAO, d
                 # Aggiorna la barra di caricamento
                 pbar_intermediate.update(1)
                 
-                
-                # TODO: da rimuovere
-                if(line_number == 1000):
-                    pbar_intermediate.close()
-                    return
-                
-                
-                
-
                 with database.transaction():
                     if status == "success":
                         handshake_log = json_row.get("data", {}).get("tls", {}).get("result", {}).get("handshake_log", {})
@@ -184,14 +175,6 @@ def root_certificates_analysis(certificates_file, dao: CertificateDAO, database:
                 # Aggiorna la barra di caricamento
                 pbar_root.update(1)
                 
-                # TODO: da rimuovere
-                if(line_number == 100):
-                    pbar_root.close()
-                    return
-                
-                
-                
-              
                 with database.transaction():
                     if status == "success":
                         handshake_log = json_row.get("data", {}).get("tls", {}).get("result", {}).get("handshake_log", {})
