@@ -12,6 +12,7 @@ def plot_general_certificates_analysis(dao: CertificateDAO, plotter:GraphPlotter
 
     try:
         # Emissione dei Certificati da Parte degli Issuer
+        logging.info("Generazione grafico 'Emissione dei Certificati da Parte degli Issuer'")
         result = dao.get_issuer_certificate_count()
         filename = os.path.abspath(f'{plots_path}/issuer_certificates_count.png')
         data = pd.DataFrame(list(result.items()), columns=['Issuer', 'Certificate Count'])
@@ -27,6 +28,7 @@ def plot_general_certificates_analysis(dao: CertificateDAO, plotter:GraphPlotter
         )
         
         # Distribuzione delle Versioni dei Certificati    
+        logging.info("Generazione grafico 'Distribuzione delle Versioni dei Certificati'")
         result = dao.get_certificate_version_distribution()
         filename = os.path.abspath(f'{plots_path}/certificate_version_distribution.png')
         data = pd.DataFrame(list(result.items()), columns=['Version', 'Count'])
@@ -42,6 +44,7 @@ def plot_general_certificates_analysis(dao: CertificateDAO, plotter:GraphPlotter
         )
         
         # Estensioni Critiche vs Non Critiche dell'AIA
+        logging.info("Generazione grafico 'Estensioni Critiche vs Non Critiche dell'AIA'")
         result = dao.get_count_critical_non_critical_extensions()
         filename = os.path.abspath(f'{plots_path}/count_critical_non_critical_extensions.png')
         data = pd.DataFrame(list(result.items()), columns=['Flag', 'Count'])
@@ -58,6 +61,7 @@ def plot_leaf_certificates_analysis(dao: CertificateDAO, plotter:GraphPlotter, p
     
     try:
         # Certificates per Country
+        logging.info("Generazione grafico 'Certificates per Country'")
         result = dao.get_certificates_per_country()
         filename = os.path.abspath(f'{plots_path}/certificates_per_country.png')
         data = pd.DataFrame(list(result.items()), columns=['Country', 'Certificate Count'])
@@ -66,6 +70,7 @@ def plot_leaf_certificates_analysis(dao: CertificateDAO, plotter:GraphPlotter, p
         
 
         # Distribuzione della Durata di Validità
+        logging.info("Generazione grafico 'Distribuzione della Durata di Validità'")
         result = dao.get_validity_duration_distribution()
         data = pd.DataFrame(list(result.items()), columns=['Validity Length', 'Certificate Count'])
         filename = os.path.abspath(f'{plots_path}/validity_duration_distribution.png')
@@ -81,6 +86,7 @@ def plot_leaf_certificates_analysis(dao: CertificateDAO, plotter:GraphPlotter, p
         )
         
         # Trend di Scadenza dei Certificati
+        logging.info("Generazione grafico 'Trend di Scadenza dei Certificati'")
         result = dao.get_certificate_expiration_trend()
         data = pd.DataFrame(list(result.items()), columns=['Month', 'Certificate Count'])
         filename = os.path.abspath(f'{plots_path}/certificate_expiration_trend.png')
@@ -96,6 +102,7 @@ def plot_leaf_certificates_analysis(dao: CertificateDAO, plotter:GraphPlotter, p
         )
 
         # Algoritmi di Firma Utilizzati    
+        logging.info("Generazione grafico 'Algoritmi di Firma Utilizzati'")
         result = dao.get_signature_algorithm_distribution()
         filename = os.path.abspath(f'{plots_path}/signature_algorithm_distribution.png')
         data = pd.DataFrame(list(result.items()), columns=['Signature Algorithm', 'Count'])
@@ -111,6 +118,7 @@ def plot_leaf_certificates_analysis(dao: CertificateDAO, plotter:GraphPlotter, p
         )
         
         # Stato OCSP dei Certificati
+        logging.info("Generazione grafico 'Stato OCSP dei Certificati'")
         result = dao.get_ocsp_status_distribution()
         filename = os.path.abspath(f'{plots_path}/ocsp_status_distribution.png')
         data = pd.DataFrame(list(result.items()), columns=['OCSP Status', 'Count'])
@@ -118,6 +126,7 @@ def plot_leaf_certificates_analysis(dao: CertificateDAO, plotter:GraphPlotter, p
         plotter.plot_pie_chart(data, column='Count', title='Stato OCSP dei Certificati', filename=filename)
         
         # Validità delle Firme dei Certificati
+        logging.info("Generazione grafico 'Validità delle Firme dei Certificati'")
         result = dao.get_signature_validity_distribution()
         filename = os.path.abspath(f'{plots_path}/signature_validity_distribution.png')
         data = pd.DataFrame(list(result.items()), columns=['Signature Validity', 'Count'])
@@ -125,6 +134,7 @@ def plot_leaf_certificates_analysis(dao: CertificateDAO, plotter:GraphPlotter, p
         plotter.plot_pie_chart(data, column='Count', title='Validità delle Firme dei Certificati', filename=filename)
         
         # Analisi Status Certificati
+        logging.info("Generazione grafico 'Analisi Status Certificati'")
         result = dao.get_status_analysis()
         filename = os.path.abspath(f'{plots_path}/status_analysis.png')
         data = pd.DataFrame(list(result.items()), columns=['Status', 'Count'])
@@ -140,6 +150,7 @@ def plot_leaf_certificates_analysis(dao: CertificateDAO, plotter:GraphPlotter, p
         )
         
         # Utilizzo del Key Usage nelle Estensioni
+        logging.info("Generazione grafico 'Utilizzo del Key Usage nelle Estensioni'")
         result = dao.get_key_usage_distribution()
         filename = os.path.abspath(f'{plots_path}/key_usage_distribution.png')
         data = pd.DataFrame(list(result.items()), columns=['Key Usage', 'Count'])
@@ -155,6 +166,7 @@ def plot_leaf_certificates_analysis(dao: CertificateDAO, plotter:GraphPlotter, p
         )
         
         # Estensioni Critiche vs Non Critiche del Key Usage nelle Estensioni
+        logging.info("Generazione grafico 'Estensioni Critiche vs Non Critiche del Key Usage nelle Estensioni'")
         result = dao.get_critical_vs_non_critical_key_usage()
         filename = os.path.abspath(f'{plots_path}/critical_vs_non_critical_key_usage.png')
         data = pd.DataFrame(list(result.items()), columns=['Flag', 'Count'])
@@ -170,6 +182,7 @@ def plot_leaf_certificates_analysis(dao: CertificateDAO, plotter:GraphPlotter, p
         )
         
         # Utilizzo dell'Extended Key Usage nelle Estensioni
+        logging.info("Generazione grafico 'Utilizzo dell'Extended Key Usage nelle Estensioni'")
         result = dao.get_extended_key_usage_distribution()
         filename = os.path.abspath(f'{plots_path}/extended_key_usage_distribution.png')
         data = pd.DataFrame(list(result.items()), columns=['Extendend Key Usage', 'Count'])
@@ -185,6 +198,7 @@ def plot_leaf_certificates_analysis(dao: CertificateDAO, plotter:GraphPlotter, p
         )
         
         # Estensioni Critiche vs Non Critiche dell'Extended Key Usage nelle Estensioni
+        logging.info("Generazione grafico 'Estensioni Critiche vs Non Critiche dell'Extended Key Usage nelle Estensioni'")
         result = dao.get_critical_vs_non_critical_extended_key_usage()
         filename = os.path.abspath(f'{plots_path}/critical_vs_non_critical_extended_key_usage.png')
         data = pd.DataFrame(list(result.items()), columns=['Flag', 'Count'])
@@ -200,6 +214,7 @@ def plot_leaf_certificates_analysis(dao: CertificateDAO, plotter:GraphPlotter, p
         )
         
         # Trend dei Signed Certificate Timestamps (SCT) per Mese e Anno
+        logging.info("Generazione grafico 'Trend dei Signed Certificate Timestamps (SCT) per Mese e Anno'")
         result = dao.get_signed_certificate_timestamp_trend()
         data = pd.DataFrame(list(result.items()), columns=['Date', 'Certificate Count'])
         filename = os.path.abspath(f'{plots_path}/certificate_expiration_trend.png')
@@ -215,6 +230,7 @@ def plot_leaf_certificates_analysis(dao: CertificateDAO, plotter:GraphPlotter, p
         )
         
         # Numero dei Signed Certificate Timestamps (SCT) per Certificato
+        logging.info("Generazione grafico 'Numero dei Signed Certificate Timestamps (SCT) per Certificato'")
         result = dao.get_sct_count_per_certificate()
         data = pd.DataFrame(list(result.items()), columns=['SCT Count', 'Certificate Count'])
         filename = os.path.abspath(f'{plots_path}/sct_count_per_certificate.png')
@@ -230,6 +246,7 @@ def plot_leaf_certificates_analysis(dao: CertificateDAO, plotter:GraphPlotter, p
         )
          
         # Estensioni Critiche vs Non Critiche delle Subject Alternative Name
+        logging.info("Generazione grafico 'Estensioni Critiche vs Non Critiche delle Subject Alternative Name'")
         result = dao.get_critical_vs_non_critical_san_extensions()
         filename = os.path.abspath(f'{plots_path}/critical_vs_non_critical_san_extensions.png')
         data = pd.DataFrame(list(result.items()), columns=['Flag', 'Count'])
@@ -245,6 +262,7 @@ def plot_leaf_certificates_analysis(dao: CertificateDAO, plotter:GraphPlotter, p
         )
         
         # Estensioni Critiche vs Non Critiche del Certificate Policies
+        logging.info("Generazione grafico 'Estensioni Critiche vs Non Critiche del Certificate Policies'")
         result = dao.get_critical_vs_non_critical_cp_policies()
         filename = os.path.abspath(f'{plots_path}/critical_vs_non_critical_cp_policies.png')
         data = pd.DataFrame(list(result.items()), columns=['Flag', 'Count'])
@@ -267,7 +285,8 @@ def plot_common_analysis_for_leaf_and_intermediate_certificates(dao: Certificate
     """Genera e salva grafici comuni per l'analisi dei certificati leaf e intermediate."""
     try:
     
-        # Distribuzione degli Algoritmi di Chiave e Lunghezza    
+        # Distribuzione degli Algoritmi di Chiave e Lunghezza
+        logging.info("Generazione grafico 'Distribuzione degli Algoritmi di Chiave e Lunghezza'")
         result = dao.get_key_algorithm_length_distribution()
         filename = os.path.abspath(f'{plots_path}/key_algorithm_length_distribution.png')
         data = pd.DataFrame.from_dict(
@@ -286,6 +305,7 @@ def plot_common_analysis_for_leaf_and_intermediate_certificates(dao: Certificate
         )
         
         # Certificati Auto-Firmati vs CA-Firmati
+        logging.info("Generazione grafico 'Certificati Auto-Firmati vs CA-Firmati'")
         result = dao.get_self_signed_vs_ca_signed()
         filename = os.path.abspath(f'{plots_path}/self_signed_vs_ca_signed.png')
         data = pd.DataFrame(list(result.items()), columns=['Flag', 'Count'])
@@ -293,6 +313,7 @@ def plot_common_analysis_for_leaf_and_intermediate_certificates(dao: Certificate
         plotter.plot_pie_chart(data, column='Count', title='Certificati Auto-Firmati vs CA-Firmati', filename=filename)
             
         # Livelli di Validazione dei Certificati    
+        logging.info("Generazione grafico 'Livelli di Validazione dei Certificati'")
         result = dao.get_validation_level_distribution()
         filename = os.path.abspath(f'{plots_path}/validation_level_distribution.png')
         data = pd.DataFrame(list(result.items()), columns=['Validation', 'Count'])
@@ -308,6 +329,7 @@ def plot_common_analysis_for_leaf_and_intermediate_certificates(dao: Certificate
         )
         
         # Distribuzione del Basic Constraints nelle Estensioni
+        logging.info("Generazione grafico 'Distribuzione del Basic Constraints nelle Estensioni'")
         result = dao.get_basic_constraints_distribution()
         filename = os.path.abspath(f'{plots_path}/basic_constraints_distribution.png')
         data = pd.DataFrame(list(result.items()), columns=['Flag', 'Count'])
@@ -323,6 +345,7 @@ def plot_common_analysis_for_leaf_and_intermediate_certificates(dao: Certificate
         )
         
         # Estensioni Critiche vs Non Critiche del CRL Distribution
+        logging.info("Generazione grafico 'Estensioni Critiche vs Non Critiche del CRL Distribution'")
         result = dao.get_critical_vs_non_critical_crl_distribution()
         filename = os.path.abspath(f'{plots_path}/critical_vs_non_critical_crl_distribution.png')
         data = pd.DataFrame(list(result.items()), columns=['Flag', 'Count'])
@@ -345,6 +368,7 @@ def plot_common_analysis_for_leaf_and_intermediate_certificates(dao: Certificate
         )
         
         # Top SCT Log Operators
+        logging.info("Generazione grafico 'Top SCT Log Operators'")
         result = dao.get_top_sct_log_operators()
         data = pd.DataFrame(list(result.items()), columns=['Log Operator', 'Certificate Count'])
         filename = os.path.abspath(f'{plots_path}/top_sct_log_operators.png')

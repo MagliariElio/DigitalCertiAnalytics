@@ -1,6 +1,6 @@
 vedere il comportamento dei domini con 0 SCT, quindi con certificati con 0 SCT
 
-99% signature non valida perchè? Da fare manualmente
+V - 99% signature non valida perchè? Da fare manualmente
 
 V - siti più utilizzati europei o nazionali.
 

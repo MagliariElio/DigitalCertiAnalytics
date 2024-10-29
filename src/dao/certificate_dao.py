@@ -497,11 +497,11 @@ class CertificateDAO:
             
             results = self.cursor.fetchall()
 
-            logging.debug(f"Issuer per certificato ottenute: {len(results)}")
+            logging.debug(f"Risultati ottenuti: {len(results)}")
 
             issuer_count_dict = {row[0]: row[1] for row in results}
             
-            logging.info(f"Totale issuers trovati: {len(issuer_count_dict)}")
+            logging.debug(f"Totale trovati: {len(issuer_count_dict)}")
             return issuer_count_dict
         except Exception as e:
             logging.error("Errore: %s", str(e))
@@ -538,7 +538,7 @@ class CertificateDAO:
 
             count_dict = {row[0]: row[1] for row in results}
 
-            logging.info(f"Totale trovati: {len(count_dict)}")
+            logging.debug(f"Totale trovati: {len(count_dict)}")
             return count_dict
         except Exception as e:
             logging.error("Errore: %s", str(e))
@@ -569,7 +569,7 @@ class CertificateDAO:
                 else:
                     count_dict[year] = value
                     
-            logging.info(f"Totale trovati: {len(count_dict)}")
+            logging.debug(f"Totale trovati: {len(count_dict)}")
             return count_dict
         except Exception as e:
             logging.error("Errore: %s", str(e))
@@ -593,7 +593,7 @@ class CertificateDAO:
 
             count_dict = {row[0]: row[1] for row in results}
 
-            logging.info(f"Totale trovati: {len(count_dict)}")
+            logging.debug(f"Totale trovati: {len(count_dict)}")
             return count_dict
         except Exception as e:
             logging.error("Errore: %s", str(e))
@@ -616,7 +616,7 @@ class CertificateDAO:
 
             count_dict = {row[0]: row[1] for row in results}
 
-            logging.info(f"Totale trovati: {len(count_dict)}")
+            logging.debug(f"Totale trovati: {len(count_dict)}")
             return count_dict
         except Exception as e:
             logging.error("Errore: %s", str(e))
@@ -657,7 +657,7 @@ class CertificateDAO:
                     count_dict[algorithm] = {}
                 count_dict[algorithm][length] = count
             
-            logging.info(f"Totale trovati: {len(count_dict)}")
+            logging.debug(f"Totale trovati: {len(count_dict)}")
             return count_dict
         except Exception as e:
             logging.error("Errore: %s", str(e))
@@ -678,7 +678,7 @@ class CertificateDAO:
 
             count_dict = {row[0]: row[1] for row in results}
 
-            logging.info(f"Totale trovati: {len(count_dict)}")
+            logging.debug(f"Totale trovati: {len(count_dict)}")
             return count_dict
         except Exception as e:
             logging.error("Errore: %s", str(e))
@@ -700,7 +700,7 @@ class CertificateDAO:
 
             count_dict = {row[0]: row[1] for row in results}
 
-            logging.info(f"Totale trovati: {len(count_dict)}")
+            logging.debug(f"Totale trovati: {len(count_dict)}")
             return count_dict
         except Exception as e:
             logging.error("Errore: %s", str(e))
@@ -726,7 +726,7 @@ class CertificateDAO:
 
             count_dict = {row[0]: row[1] for row in results}
 
-            logging.info(f"Totale trovati: {len(count_dict)}")
+            logging.debug(f"Totale trovati: {len(count_dict)}")
             return count_dict
         except Exception as e:
             logging.error("Errore: %s", str(e))
@@ -747,7 +747,7 @@ class CertificateDAO:
 
             count_dict = {row[0]: row[1] for row in results}
 
-            logging.info(f"Totale trovati: {len(count_dict)}")
+            logging.debug(f"Totale trovati: {len(count_dict)}")
             return count_dict
         except Exception as e:
             logging.error("Errore: %s", str(e))
@@ -768,7 +768,7 @@ class CertificateDAO:
 
             count_dict = {row[0]: row[1] for row in results}
 
-            logging.info(f"Totale trovati: {len(count_dict)}")
+            logging.debug(f"Totale trovati: {len(count_dict)}")
             return count_dict
         except Exception as e:
             logging.error("Errore: %s", str(e))
@@ -794,7 +794,7 @@ class CertificateDAO:
 
             count_dict = {row[0]: row[1] for row in results}
 
-            logging.info(f"Totale trovati: {len(count_dict)}")
+            logging.debug(f"Totale trovati: {len(count_dict)}")
             return count_dict
         except Exception as e:
             logging.error("Errore: %s", str(e))
@@ -818,7 +818,7 @@ class CertificateDAO:
 
             count_dict = {row[0]: row[1] for row in results}
 
-            logging.info(f"Totale trovati: {len(count_dict)}")
+            logging.debug(f"Totale trovati: {len(count_dict)}")
             return count_dict
         except Exception as e:
             logging.error("Errore: %s", str(e))
@@ -844,7 +844,7 @@ class CertificateDAO:
                 key_usage.pop('value', None)
                 count_dict[json.dumps(", ".join(key_usage.keys()))] = row[1]
 
-            logging.info(f"Totale trovati: {len(count_dict)}")
+            logging.debug(f"Totale trovati: {len(count_dict)}")
             return count_dict
         except Exception as e:
             logging.error("Errore: %s", str(e))
@@ -866,7 +866,7 @@ class CertificateDAO:
 
             count_dict = {row[0]: row[1] for row in results}
 
-            logging.info(f"Totale trovati: {len(count_dict)}")
+            logging.debug(f"Totale trovati: {len(count_dict)}")
             return count_dict
         except Exception as e:
             logging.error("Errore: %s", str(e))
@@ -891,7 +891,7 @@ class CertificateDAO:
                 key_usage = json.loads(row[0])
                 count_dict[json.dumps(", ".join(key_usage.keys()))] = row[1]
 
-            logging.info(f"Totale trovati: {len(count_dict)}")
+            logging.debug(f"Totale trovati: {len(count_dict)}")
             return count_dict
         except Exception as e:
             logging.error("Errore: %s", str(e))
@@ -913,7 +913,7 @@ class CertificateDAO:
 
             count_dict = {row[0]: row[1] for row in results}
 
-            logging.info(f"Totale trovati: {len(count_dict)}")
+            logging.debug(f"Totale trovati: {len(count_dict)}")
             return count_dict
         except Exception as e:
             logging.error("Errore: %s", str(e))
@@ -935,7 +935,7 @@ class CertificateDAO:
 
             count_dict = {row[0]: row[1] for row in results}
 
-            logging.info(f"Totale trovati: {len(count_dict)}")
+            logging.debug(f"Totale trovati: {len(count_dict)}")
             return count_dict
         except Exception as e:
             logging.error("Errore: %s", str(e))
@@ -957,7 +957,7 @@ class CertificateDAO:
 
             count_dict = {row[0]: row[1] for row in results}
 
-            logging.info(f"Totale trovati: {len(count_dict)}")
+            logging.debug(f"Totale trovati: {len(count_dict)}")
             return count_dict
         except Exception as e:
             logging.error("Errore: %s", str(e))
@@ -982,7 +982,7 @@ class CertificateDAO:
 
             count_dict = {row[0]: row[1] for row in results}
 
-            logging.info(f"Totale trovati: {len(count_dict)}")
+            logging.debug(f"Totale trovati: {len(count_dict)}")
             return count_dict
         except Exception as e:
             logging.error("Errore: %s", str(e))
@@ -1008,7 +1008,7 @@ class CertificateDAO:
 
             count_dict = {row[0]: row[1] for row in results}
 
-            logging.info(f"Totale trovati: {len(count_dict)}")
+            logging.debug(f"Totale trovati: {len(count_dict)}")
             return count_dict
         except Exception as e:
             logging.error("Errore: %s", str(e))
@@ -1030,7 +1030,7 @@ class CertificateDAO:
 
             count_dict = {row[0]: row[1] for row in results}
 
-            logging.info(f"Totale trovati: {len(count_dict)}")
+            logging.debug(f"Totale trovati: {len(count_dict)}")
             return count_dict
         except Exception as e:
             logging.error("Errore: %s", str(e))
@@ -1052,7 +1052,7 @@ class CertificateDAO:
 
             count_dict = {row[0]: row[1] for row in results}
 
-            logging.info(f"Totale trovati: {len(count_dict)}")
+            logging.debug(f"Totale trovati: {len(count_dict)}")
             return count_dict
         except Exception as e:
             logging.error("Errore: %s", str(e))
@@ -1074,7 +1074,7 @@ class CertificateDAO:
 
             count_dict = {row[0]: row[1] for row in results}
 
-            logging.info(f"Totale trovati: {len(count_dict)}")
+            logging.debug(f"Totale trovati: {len(count_dict)}")
             return count_dict
         except Exception as e:
             logging.error("Errore: %s", str(e))
@@ -1096,7 +1096,7 @@ class CertificateDAO:
 
             count_dict = {row[0]: row[1] for row in results}
 
-            logging.info(f"Totale trovati: {len(count_dict)}")
+            logging.debug(f"Totale trovati: {len(count_dict)}")
             return count_dict
         except Exception as e:
             logging.error("Errore: %s", str(e))
@@ -1113,7 +1113,7 @@ class CertificateDAO:
 
             count_dict = {row[0]: row[1] for row in results}
 
-            logging.info(f"Totale trovati: {len(count_dict)}")
+            logging.debug(f"Totale trovati: {len(count_dict)}")
             return count_dict
         except Exception as e:
             logging.error("Errore: %s", str(e))

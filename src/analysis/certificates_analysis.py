@@ -446,10 +446,26 @@ def certificates_analysis_main():
         
         total_lines = 10000000  # TODO: da rimuovere i commenti precedenti
 
+
     # Analisi Certificati Leaf
-    if(args.delete_leaf_db or args.leaf_analysis or args.leaf_ocsp_analysis or args.plot_leaf_results):
+    db_leaf_path = os.path.abspath(f'{leaf_path}/leaf_certificates.db')
+    if(args.delete_leaf_db and not (args.leaf_analysis or args.leaf_ocsp_analysis or args.plot_leaf_results)):
+        if os.path.exists(db_leaf_path):
+            os.remove(db_leaf_path)
+            logging.info("Database '%s' eliminato con successo.", db_leaf_path)
+            
+    elif(args.delete_leaf_db or args.leaf_analysis or args.leaf_ocsp_analysis or args.plot_leaf_results):
+        if((args.leaf_ocsp_analysis or args.plot_leaf_results) and (not os.path.exists(db_leaf_path))):
+            logging.error(
+                "Il database leaf non è stato trovato nel percorso '%s'. "
+                "Per eseguire l'analisi OCSP o visualizzare i risultati, "
+                "è necessario eseguire prima l'analisi dei certificati dal file JSON per creare il database. "
+                "In alternativa, assicurati di posizionare il database nel percorso corretto.",
+                db_leaf_path
+            )
+            return
+        
         # Inizializza la connessione al database leaf
-        db_leaf_path = os.path.abspath(f'{leaf_path}/leaf_certificates.db')
         schema_leaf_db_path = os.path.abspath('db/schema_db.sql')
         leaf_database = Database(db_path=db_leaf_path, schema_path=schema_leaf_db_path, db_type=DatabaseType.LEAF)
         leaf_database.connect(delete_database=args.delete_leaf_db)
@@ -482,9 +498,24 @@ def certificates_analysis_main():
         leaf_database.close()
     
     # Analisi Certificati Intermediate
-    if(args.delete_intermediate_db or args.intermediate_analysis or args.intermediate_ocsp_analysis or args.plot_intermediate_results):
+    db_intermediate_path = os.path.abspath(f'{intermediate_path}/intermediate_certificates.db')
+    if(args.delete_intermediate_db and not (args.intermediate_analysis or args.intermediate_ocsp_analysis or args.plot_intermediate_results)):
+        if os.path.exists(db_intermediate_path):
+            os.remove(db_intermediate_path)
+            logging.info("Database '%s' eliminato con successo.", db_intermediate_path)
+
+    elif(args.delete_intermediate_db or args.intermediate_analysis or args.intermediate_ocsp_analysis or args.plot_intermediate_results):
+        if((args.intermediate_ocsp_analysis or args.plot_intermediate_results) and (not os.path.exists(db_intermediate_path))):
+            logging.error(
+                "Il database intermedio non è stato trovato nel percorso '%s'. "
+                "Per eseguire l'analisi OCSP o visualizzare i risultati, "
+                "è necessario eseguire prima l'analisi dei certificati dal file JSON per creare il database. "
+                "In alternativa, assicurati di posizionare il database nel percorso corretto.",
+                db_intermediate_path
+            )
+            return
+        
         # Inizializza la connessione al database intermediate
-        db_intermediate_path = os.path.abspath(f'{intermediate_path}/intermediate_certificates.db')
         schema_intermediate_db_path = os.path.abspath('db/schema_db.sql')
         intermediate_database = Database(db_path=db_intermediate_path, schema_path=schema_intermediate_db_path, db_type=DatabaseType.INTERMEDIATE)
         intermediate_database.connect(delete_database=args.delete_intermediate_db)
@@ -519,9 +550,24 @@ def certificates_analysis_main():
         intermediate_database.close()
     
     # Analisi Certificati Root
-    if(args.delete_root_db or args.root_analysis or args.root_ocsp_analysis or args.plot_root_results):
+    db_root_path = os.path.abspath(f'{root_path}/root_certificates.db')
+    if(args.delete_root_db and not (args.root_analysis or args.root_ocsp_analysis or args.plot_root_results)):
+        if os.path.exists(db_root_path):
+            os.remove(db_root_path)
+            logging.info("Database '%s' eliminato con successo.", db_root_path)
+
+    elif(args.delete_root_db or args.root_analysis or args.root_ocsp_analysis or args.plot_root_results):
+        if((args.root_ocsp_analysis or args.plot_root_results) and (not os.path.exists(db_root_path))):
+            logging.error(
+                "Il database root non è stato trovato nel percorso '%s'. "
+                "Per eseguire l'analisi OCSP o visualizzare i risultati, "
+                "è necessario eseguire prima l'analisi dei certificati dal file JSON per creare il database. "
+                "In alternativa, assicurati di posizionare il database nel percorso corretto.",
+                db_root_path
+            )
+            return
+        
         # Inizializza la connessione al database root
-        db_root_path = os.path.abspath(f'{root_path}/root_certificates.db')
         schema_root_db_path = os.path.abspath('db/schema_db.sql')
         root_database = Database(db_path=db_root_path, schema_path=schema_root_db_path, db_type=DatabaseType.ROOT)
         root_database.connect(delete_database=args.delete_root_db)

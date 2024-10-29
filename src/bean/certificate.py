@@ -44,6 +44,9 @@ class Certificate:
     def is_aia_critical(self, issuer):
         """Controlla se l'AIA è critico, non critico o non trovato."""
         try:
+            if(self.cert is None):
+                return "Not Found"
+            
             aia_ext = self.cert.extensions.get_extension_for_oid(ExtensionOID.AUTHORITY_INFORMATION_ACCESS)
             if aia_ext is None:
                 return "Not Found"
@@ -58,6 +61,9 @@ class Certificate:
     def get_cp(self) -> Optional[list[dict]]:
         """Restituisce il certificate policies relativo al certificato"""
         try:
+            if(self.cert is None):
+                return None
+            
             cp_ext = self.cert.extensions.get_extension_for_oid(ExtensionOID.CERTIFICATE_POLICIES)
             policies = []
 
@@ -80,6 +86,9 @@ class Certificate:
     def is_crl_distr_point_critical(self):
         """Controlla se il crl distribution point sia critico, non critico o non trovato."""
         try:
+            if(self.cert is None):
+                return "Not Found"
+            
             ext = self.cert.extensions.get_extension_for_oid(ExtensionOID.CRL_DISTRIBUTION_POINTS)
             if ext is None:
                 return "Not Found"
@@ -94,6 +103,9 @@ class Certificate:
     def is_key_usage_critical(self):
         """Controlla se il key usage sia critico, non critico o non trovato."""
         try:
+            if(self.cert is None):
+                return "Not Found"
+            
             ext = self.cert.extensions.get_extension_for_oid(ExtensionOID.KEY_USAGE)
             if ext is None:
                 return "Not Found"
@@ -108,6 +120,9 @@ class Certificate:
     def is_extended_key_usage_critical(self):
         """Controlla se l'extended key usage sia critico, non critico o non trovato."""
         try:
+            if(self.cert is None):
+                return "Not Found"
+            
             ext = self.cert.extensions.get_extension_for_oid(ExtensionOID.EXTENDED_KEY_USAGE)
             if ext is None:
                 return "Not Found"
@@ -122,6 +137,9 @@ class Certificate:
     def is_sub_alt_name_critical(self):
         """Controlla se il subject alternative name sia critico, non critico o non trovato."""
         try:
+            if(self.cert is None):
+                return "Not Found"
+            
             ext = self.cert.extensions.get_extension_for_oid(ExtensionOID.SUBJECT_ALTERNATIVE_NAME)
             if ext is None:
                 return "Not Found"
@@ -136,6 +154,9 @@ class Certificate:
     def is_ocsp_must_staple(self):
         """Controlla se l'OCSP must staple sia abilitato o meno."""
         try:
+            if(self.cert is None):
+                return "Not Found"
+            
             ext = self.cert.extensions.get_extension_for_oid(ExtensionOID.TLS_FEATURE)
             if ext is None:
                 return "Not Found"
