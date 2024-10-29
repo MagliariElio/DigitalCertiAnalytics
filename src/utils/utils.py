@@ -170,6 +170,9 @@ def get_issuer_certificate_from_issuer_link(issuer_link, issuer_common_name):
         req = requests.get(issuer_link, headers=headers, allow_redirects=True, timeout=15)
     except requests.exceptions.Timeout:
         return "Impossible Retrieve OCSP Information"
+    except requests.exceptions.HTTPError as http_err:
+        logging.error(f"Errore HTTP nel recupero del certificato ({issuer_link}): {http_err}")
+        return "Impossible Retrieve OCSP Information"
     except Exception as e:
         logging.error(f"Errore nel recupero del certificato ({issuer_link}): {e}")
         return "Impossible Retrieve OCSP Information"
@@ -180,6 +183,7 @@ def get_issuer_certificate_from_issuer_link(issuer_link, issuer_common_name):
         if (
             "application/x-x509-ca-cert" in content_type or 
             "application/octet-stream" in content_type or 
+            "binary/octet-stream" in content_type or 
             "application/pkix-cert" in content_type or
             content_type == ""
         ):
@@ -227,12 +231,16 @@ def get_issuer_certificate_from_issuer_link(issuer_link, issuer_common_name):
 def check_ocsp_status(raw, hash_alg, issuer_link, issuer_common_name, ocsp_link, issuer_cert) -> str:
     """Controlla l'OCSP, se il certificato dell'issuer è stato trovato nella catena si usa quello, altrimenti si richiede tramite issuer link."""
     
+    # Se sia l'issuer certificate che l'issuer link non sono disponibili allora non è possibile fare richiesta
+    if issuer_link is None and issuer_cert is None:
+        return "No Issuer Url Found"
+    
     # Prende l'issuer certificate dal link, ma potrebbe ritornare una stringa in caso di errore
-    if(issuer_cert is None):
+    if(issuer_cert is None and issuer_link is not None):
         issuer_cert = get_issuer_certificate_from_issuer_link(issuer_link, issuer_common_name)
     
-    if(issuer_cert is str):
-        return issuer_cert
+        if(issuer_cert is str):
+            return issuer_cert
     
     ocsp_resp = make_ocsp_query(raw, issuer_cert, hash_alg, ocsp_link)
     

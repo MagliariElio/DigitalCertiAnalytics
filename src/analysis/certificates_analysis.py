@@ -17,6 +17,8 @@ import pyfiglet
 
 def close_connections():
     """Funzione per gestire la chiusura delle connessioni ai database."""
+    global pbar_ocsp_check
+    
     logging.info("Inizio chiusura delle connessioni ai database...")
     
     if 'leaf_database' in globals():
@@ -36,6 +38,9 @@ def close_connections():
     
     if 'pbar_root' in globals():
         pbar_root.close()
+        
+    if 'pbar_ocsp_check' in globals():
+        pbar_ocsp_check.close()
     
     if 'plotter' in globals():
         plotter.close_all_plots()
@@ -92,7 +97,7 @@ def intermediate_certificates_analysis(certificates_file, dao: CertificateDAO, d
     with open(certificates_file, 'r') as certificates_reader:
         # Inizializza la barra di caricamento
         tqdm.write("")
-        pbar_intermediate = tqdm(total=total_lines, desc=" 📜  [green bold]Elaborazione Certificati[/green bold]", unit="cert.", 
+        pbar_intermediate = tqdm(total=total_lines, desc=" 📜  [green bold]Righe elaborate[/green bold]", unit="rows", 
                     colour="green", bar_format="{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} • ⚡ {rate_fmt}")
 
         for line_number, row in enumerate(certificates_reader, start=1):
@@ -210,9 +215,12 @@ def root_certificates_analysis(certificates_file, dao: CertificateDAO, database:
 
 def process_ocsp_check_status_request(dao: CertificateDAO, database: Database):
     """Elabora la richiesta per controllare lo stato OCSP di tutti i certificati nel DAO."""
+    
     try:
         with database.transaction():
-            dao.check_ocsp_status_for_certificates()
+            dao.check_ocsp_status_for_certificates(database.db_type)
+            tqdm.write("")
+            logging.info("Analisi OCSP per i certificati completata.")
     except Exception as e:
         logging.error(f"Errore nell'elaborazione della richiesta di controllo OCSP: {e}")
         
@@ -417,7 +425,7 @@ def certificates_analysis_main():
     if(args.leaf_analysis or args.intermediate_analysis or args.root_analysis):
         logging.info("Inizio il conteggio delle righe del file JSON contenente i certificati.")
 
-        console = Console()
+        """
         total_lines = 0
 
         tqdm.write(" ")
@@ -434,8 +442,9 @@ def certificates_analysis_main():
                     progress.update(task, description=f"[bold]{total_lines:,.0f}[/bold] certificati letti")
 
         logging.info(f"Conteggio completo: {total_lines} certificati letti.")
-
-        # total_lines = 10000000  # TODO: da rimuovere i commenti precedenti
+        """
+        
+        total_lines = 10000000  # TODO: da rimuovere i commenti precedenti
 
     # Analisi Certificati Leaf
     if(args.delete_leaf_db or args.leaf_analysis or args.leaf_ocsp_analysis or args.plot_leaf_results):
@@ -462,7 +471,6 @@ def certificates_analysis_main():
         if(args.leaf_ocsp_analysis):
             logging.info("Inizio dell'analisi OCSP per i certificati.")  
             process_ocsp_check_status_request(leaf_dao, leaf_database)
-            logging.info("Analisi OCSP per i certificati completata.")
         
         # Esegui la generazione dei grafici per i certificati leaf
         if(args.plot_leaf_results):
@@ -498,7 +506,6 @@ def certificates_analysis_main():
         if(args.intermediate_ocsp_analysis):
             logging.info("Inizio dell'analisi OCSP per i certificati.")  
             process_ocsp_check_status_request(intermediate_dao, intermediate_database)
-            logging.info("Analisi OCSP per i certificati completata.")
         
         # Esegui la generazione dei grafici per i certificati Intermediate
         if(args.plot_intermediate_results):
@@ -536,7 +543,6 @@ def certificates_analysis_main():
         if(args.root_ocsp_analysis):
             logging.info("Inizio dell'analisi OCSP per i certificati.")  
             process_ocsp_check_status_request(root_dao, root_database)
-            logging.info("Analisi OCSP per i certificati completata.")
         
         # Esegui la generazione dei grafici per i certificati Root
         if(args.plot_root_results):

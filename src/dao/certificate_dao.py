@@ -1,6 +1,6 @@
 import json
 import logging
-import tqdm
+from tqdm.rich import tqdm
 from typing import Optional
 from datetime import datetime
 from bean.certificate import Certificate
@@ -286,7 +286,7 @@ class CertificateDAO:
         self.insert_certificate_full(json_row, parsed, digital_certificate, issuer_id, subject_id, issuer_common_name, issuer_dn, certificate_type)
         return
 
-    def check_ocsp_status_for_certificates(self, batch_size=1000):
+    def check_ocsp_status_for_certificates(self, certificate_type: DatabaseType, batch_size=1000):
         """Controlla lo stato OCSP per ciascun certificato nel database e aggiorna il relativo stato."""
         global pbar_ocsp_check
         
@@ -299,10 +299,11 @@ class CertificateDAO:
                     WHERE c.ocsp_check = 'No Request Done'
                 """)
                 
-            total_lines = self.cursor.fetchone()
+            result = self.cursor.fetchone()
+            total_lines = result[0]
 
             # Controlla il conteggio
-            if total_lines[0] == 0:
+            if total_lines == 0:
                 logging.info("Nessun certificato da analizzare è presente nel database.")
                 return
         
@@ -311,7 +312,6 @@ class CertificateDAO:
             pbar_ocsp_check = tqdm(total=total_lines, desc=" 🕵️‍♂️  [blue bold]Elaborazione Certificati[/blue bold]", unit="cert.", 
                         colour="blue", bar_format="{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} • ⚡ {rate_fmt}")
 
-            certificate_counts = 0
             while True:
                 self.cursor.execute("""
                     SELECT c.certificate_id, c.authority_info_access, i.common_name, i.raw AS issuer_cert_raw, c.raw AS leaf_cert_raw
@@ -344,16 +344,21 @@ class CertificateDAO:
 
                         hash_algorithms = [SHA256(), SHA1(), SHA384(), SHA512(), SHA224()]
                         
-                        # Prende il certificato dell'issuer per controllare l'OCSP
+                        # Prende il certificato del leaf per controllare l'OCSP
                         digital_certificate = Certificate(None)
                         leaf_cert_raw = row['leaf_cert_raw']
-                        issuer_cert_raw = row['issuer_cert_raw']
-                        issuer_cert = digital_certificate.get_certificate_from_raw(issuer_cert_raw)
+                        
+                        # Prende il certificato dell'issuer per controllare l'OCSP
+                        if(certificate_type == DatabaseType.ROOT):
+                            issuer_cert = digital_certificate.get_certificate_from_raw(leaf_cert_raw)
+                        else:
+                            issuer_cert_raw = row['issuer_cert_raw']
+                            issuer_cert = digital_certificate.get_certificate_from_raw(issuer_cert_raw)
                         
                         issuer_common_name = row['common_name']
                         
                         ocsp_check = "No Issuer Url Found"
-                        if(issuer_url is not None and issuer_cert is not None):
+                        if(issuer_url is not None or issuer_cert is not None):
                             for ocsp_url in ocsp_urls:
                                 for hash_algorithm in hash_algorithms:
                                     ocsp_check = check_ocsp_status(leaf_cert_raw, hash_algorithm, issuer_url, issuer_common_name, ocsp_url, issuer_cert)
@@ -374,20 +379,17 @@ class CertificateDAO:
                             WHERE certificate_id = ?
                         """, (ocsp_check, certificate_id))
                         self.conn.commit()
+                        
+                         # Aggiorna la barra di caricamento
+                        pbar_ocsp_check.update(1)
 
                     except Exception as e:
                         logging.error(f"Errore durante il controllo dello stato OCSP per il certificato ID {certificate_id}: {e}")
                 
-                # Incremento del numero di certificati processati
-                certificate_counts += batch_size
-                
-                # Aggiorna la barra di caricamento
-                pbar_ocsp_check.update(certificate_counts)
-                
         except json.JSONDecodeError as json_err:
-            logging.error(f"Errore nella deserializzazione del JSON: {json_err}")
+            logging.error(f"\nErrore nella deserializzazione del JSON: {json_err}")
         except Exception as e:
-            logging.error(f"Errore generale durante il controllo dello stato OCSP: {e}")
+            logging.error(f"\nErrore generale durante il controllo dello stato OCSP: {e}")
         
         # Chiusura barra di progresso
         pbar_ocsp_check.close()
