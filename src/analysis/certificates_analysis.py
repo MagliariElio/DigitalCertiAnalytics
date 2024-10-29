@@ -8,7 +8,7 @@ from rich.console import Console
 from db.database import Database, DatabaseType
 from dao.certificate_dao import CertificateDAO
 from utils.utils import find_next_intermediate_certificate, find_root_certificate, setup_logging, ArgparseFormatter
-from utils.plotter_utils import plot_general_certificates_analysis, plot_leaf_certificates_analysis, plot_common_analysis_for_leaf_and_intermediate_certificates
+from utils.plotter_utils import plot_general_certificates_analysis, plot_leaf_certificates_analysis
 from utils.graph_plotter import GraphPlotter
 import pyfiglet
 
@@ -107,6 +107,15 @@ def intermediate_certificates_analysis(certificates_file, dao: CertificateDAO, d
 
                 # Aggiorna la barra di caricamento
                 pbar_intermediate.update(1)
+                
+                
+                # TODO: da rimuovere
+                if(line_number == 1000):
+                    pbar_intermediate.close()
+                    return
+                
+                
+                
 
                 with database.transaction():
                     if status == "success":
@@ -174,6 +183,14 @@ def root_certificates_analysis(certificates_file, dao: CertificateDAO, database:
 
                 # Aggiorna la barra di caricamento
                 pbar_root.update(1)
+                
+                # TODO: da rimuovere
+                if(line_number == 100):
+                    pbar_root.close()
+                    return
+                
+                
+                
               
                 with database.transaction():
                     if status == "success":
@@ -276,8 +293,8 @@ def plot_leaf_certificates(dao: CertificateDAO, is_verbose: bool):
     # Generazione grafici
     plot_general_certificates_analysis(dao, plotter, plots_path)
     plot_leaf_certificates_analysis(dao, plotter, plots_path)
-    plot_common_analysis_for_leaf_and_intermediate_certificates(dao, plotter, plots_path)
     
+    logging.info("Generazione dei grafici per l'analisi dei certificati Leaf completata.")
     return
 
 def plot_intermediate_certificates(dao: CertificateDAO, is_verbose: bool):
@@ -300,8 +317,8 @@ def plot_intermediate_certificates(dao: CertificateDAO, is_verbose: bool):
     
     # Generazione grafici
     plot_general_certificates_analysis(dao, plotter, plots_path)
-    plot_common_analysis_for_leaf_and_intermediate_certificates(dao, plotter, plots_path)
     
+    logging.info("Generazione dei grafici per l'analisi dei certificati Intermediate completata.")
     return
 
 def plot_root_certificates(dao: CertificateDAO, is_verbose: bool):
@@ -325,6 +342,7 @@ def plot_root_certificates(dao: CertificateDAO, is_verbose: bool):
     # Generazione grafici
     plot_general_certificates_analysis(dao, plotter, plots_path)
         
+    logging.info("Generazione dei grafici per l'analisi dei certificati Root completata.")
     return
  
 def certificates_analysis_main():
@@ -492,7 +510,6 @@ def certificates_analysis_main():
         if(args.plot_leaf_results):
             logging.info("Inizio generazione grafici per certificati Leaf.")        
             plot_leaf_certificates(leaf_dao, args.verbose)
-            logging.info("Generazione dei grafici per l'analisi dei certificati Leaf completata.")
 
         # Chiude la connessione al database
         leaf_database.close()
@@ -532,6 +549,10 @@ def certificates_analysis_main():
             logging.info("Inizio analisi certificati Intermediate.")      
             intermediate_certificates_analysis(result_json_file, intermediate_dao, intermediate_database, total_lines)
             logging.info("Analisi dei certificati Intermediate completata con successo.")
+            
+            # Rimuove i dati non necessari
+            intermediate_database.cleanup_unused_tables()
+            intermediate_database.remove_columns()
 
         # Esegui l'analisi OCSP dei certificati
         if(args.intermediate_ocsp_analysis):
@@ -542,11 +563,8 @@ def certificates_analysis_main():
         if(args.plot_intermediate_results):
             logging.info("Inizio generazione grafici per certificati Intermediate.")        
             plot_intermediate_certificates(intermediate_dao, args.verbose)
-            logging.info("Generazione dei grafici per l'analisi dei certificati Intermediate completata.")
 
-
-        # Chiude la connessione al database e rimuove i dati non necessari
-        intermediate_database.cleanup_unused_tables()
+        # Chiude la connessione al database
         intermediate_database.close()
     
     # Analisi Certificati Root
@@ -583,7 +601,11 @@ def certificates_analysis_main():
         if(args.root_analysis):
             logging.info("Inizio analisi certificati Root.")      
             root_certificates_analysis(result_json_file, root_dao, root_database, total_lines)
-            logging.info("Analisi dei certificati Root completata con successo.")        
+            logging.info("Analisi dei certificati Root completata con successo.")
+            
+            # Rimuove i dati non necessari
+            root_database.cleanup_unused_tables()
+            root_database.remove_columns()
 
         # Esegui l'analisi OCSP dei certificati
         if(args.root_ocsp_analysis):
@@ -594,10 +616,8 @@ def certificates_analysis_main():
         if(args.plot_root_results):
             logging.info("Inizio generazione grafici per certificati Root.")        
             plot_root_certificates(root_dao, args.verbose)
-            logging.info("Generazione dei grafici per l'analisi dei certificati Root completata.")
 
-        # Chiude la connessione al database e rimuove i dati non necessari
-        root_database.cleanup_unused_tables()
+        # Chiude la connessione al database
         root_database.close()
     
     logging.info("Applicazione terminata correttamente.\n")

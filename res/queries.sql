@@ -8,6 +8,46 @@ SELECT COUNT(*) AS count, *
 FROM Certificates
 GROUP BY ocsp_must_stapling
 
+
+
+-- Indici per la tabella Certificates
+CREATE INDEX IF NOT EXISTS idx_certificates_issuer_id ON Certificates(issuer_id);
+CREATE INDEX IF NOT EXISTS idx_certificates_subject_id ON Certificates(subject_id);
+CREATE INDEX IF NOT EXISTS idx_certificates_version ON Certificates(version);
+CREATE INDEX IF NOT EXISTS idx_certificates_validity_end ON Certificates(validity_end);
+CREATE INDEX IF NOT EXISTS idx_certificates_ocsp_check ON Certificates(ocsp_check);
+CREATE INDEX IF NOT EXISTS idx_certificates_signature_valid ON Certificates(signature_valid);
+CREATE INDEX IF NOT EXISTS idx_certificates_self_signed ON Certificates(self_signed);
+
+-- Indici per la tabella Issuers
+CREATE INDEX IF NOT EXISTS idx_issuers_common_name ON Issuers(common_name);
+CREATE INDEX IF NOT EXISTS idx_issuers_organization ON Issuers(organization);
+
+-- Indici per la tabella Subjects
+CREATE INDEX IF NOT EXISTS idx_subjects_subject_dn ON Subjects(subject_dn);
+CREATE INDEX IF NOT EXISTS idx_subjects_common_name ON Subjects(common_name);
+
+-- Indici per la tabella Extensions
+CREATE INDEX IF NOT EXISTS idx_extensions_certificate_id ON Extensions(certificate_id);
+CREATE INDEX IF NOT EXISTS idx_extensions_key_usage ON Extensions(key_usage);
+CREATE INDEX IF NOT EXISTS idx_extensions_extended_key_usage ON Extensions(extended_key_usage);
+
+-- Indici per la tabella SignedCertificateTimestamps
+CREATE INDEX IF NOT EXISTS idx_signed_cert_timestamps_certificate_id ON SignedCertificateTimestamps(certificate_id);
+CREATE INDEX IF NOT EXISTS idx_signed_cert_timestamps_log_id ON SignedCertificateTimestamps(log_id);
+
+-- Indici per la tabella Errors
+CREATE INDEX IF NOT EXISTS idx_errors_domain ON Errors(domain);
+CREATE INDEX IF NOT EXISTS idx_errors_status ON Errors(status);
+
+-- Indici per la tabella Logs
+CREATE INDEX IF NOT EXISTS idx_logs_operator_id ON Logs(operator_id);
+CREATE INDEX IF NOT EXISTS idx_logs_log_id ON Logs(log_id);
+
+
+
+
+
 -- Controlla se esistono differenze tra i dati del subject e issuer (Query per i certificati ROOT)
 -- Da eliminare la tabella Issuer una volta caricati tutti i root
 SELECT COUNT(*)
@@ -29,7 +69,7 @@ LIMIT 1000
 
 -- Conta quanti Issuer hanno emesso un certificato
 WITH IssuersCounts AS (
-	SELECT COUNT(*) AS certificate_count, Issuers.organization
+	SELECT Issuers.organization, COUNT(*) AS certificate_count
 	FROM Certificates 
 	INNER JOIN Issuers ON Certificates.issuer_id = Issuers.issuer_id 
 	WHERE Issuers.organization IS NOT NULL AND TRIM(Issuers.organization) <> ''
@@ -37,12 +77,12 @@ WITH IssuersCounts AS (
 	ORDER BY certificate_count DESC
 ),
 TopIssuers AS (
-	SELECT certificate_count, organization
+	SELECT organization, certificate_count
 	FROM IssuersCounts
 	LIMIT 20
 ),
 Others AS (
-	SELECT SUM(certificate_count) AS certificate_count, 'Others' AS organization
+	SELECT 'Others' AS organization, SUM(certificate_count) AS certificate_count
 	FROM IssuersCounts 
 	WHERE organization NOT IN (SELECT organization FROM TopIssuers)
 )

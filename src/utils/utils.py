@@ -181,9 +181,9 @@ def get_issuer_certificate_from_issuer_link(issuer_link, issuer_common_name):
         content_type = req.headers.get('Content-Type', '')
 
         if (
-            "application/x-x509-ca-cert" in content_type or 
-            "application/octet-stream" in content_type or 
-            "binary/octet-stream" in content_type or 
+            "application/x-x509-ca-cert" in content_type or
+            "application/octet-stream" in content_type or
+            "binary/octet-stream" in content_type or
             "application/pkix-cert" in content_type or
             content_type == ""
         ):

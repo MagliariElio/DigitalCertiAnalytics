@@ -44,7 +44,7 @@ class GraphPlotter:
         
         plt.savefig(filename, dpi=300)
         
-        logging.info(f"Grafico '{title}' generato con successo e salvato in {filename}.")
+        logging.info(f"Grafico '{title}' generato con successo e salvato in file://{filename}.")
         plt.close()
 
     def plot_pie_chart(self, data, column, title, filename):
@@ -64,7 +64,7 @@ class GraphPlotter:
         
         plt.savefig(filename, dpi=300)
         
-        logging.info(f"Grafico '{title}' generato con successo e salvato in {filename}.")
+        logging.info(f"Grafico '{title}' generato con successo e salvato in file://{filename}.")
         plt.close()
 
     def plot_histogram(self, data, y, title, xlabel, ylabel, filename):
@@ -93,7 +93,7 @@ class GraphPlotter:
 
         plt.savefig(filename, dpi=300)
         
-        logging.info(f"Grafico '{title}' generato con successo e salvato in {filename}.")
+        logging.info(f"Grafico '{title}' generato con successo e salvato in file://{filename}.")
         plt.close()
 
     def plot_line_chart(self, data, x, y, title, xlabel, ylabel, filename):
@@ -120,7 +120,7 @@ class GraphPlotter:
 
         plt.savefig(filename, dpi=300)
         
-        logging.info(f"Grafico '{title}' generato con successo e salvato in {filename}.")
+        logging.info(f"Grafico '{title}' generato con successo e salvato in file://{filename}.")
         plt.close()
 
     def plot_scatter_plot(self, data, x, y, title, xlabel, ylabel, filename):
@@ -146,7 +146,7 @@ class GraphPlotter:
 
         plt.savefig(filename, dpi=300)
         
-        logging.info(f"Grafico '{title}' generato con successo e salvato in {filename}.")
+        logging.info(f"Grafico '{title}' generato con successo e salvato in file://{filename}.")
         plt.close()
 
     def plot_box_plot(self, data, x, y, title, xlabel, ylabel, filename):
@@ -165,7 +165,7 @@ class GraphPlotter:
         
         plt.savefig(filename, dpi=300)
         
-        logging.info(f"Grafico '{title}' generato con successo e salvato in {filename}.")
+        logging.info(f"Grafico '{title}' generato con successo e salvato in file://{filename}.")
         plt.close()
 
     def plot_stacked_bar_chart(self, data, title, xlabel, ylabel, filename):
@@ -187,7 +187,7 @@ class GraphPlotter:
         
         plt.savefig(filename, dpi=300)
         
-        logging.info(f"Grafico '{title}' generato con successo e salvato in {filename}.")
+        logging.info(f"Grafico '{title}' generato con successo e salvato in file://{filename}.")
         plt.close()
 
     def plot_dot_plot(self, data, x, y, title, xlabel, ylabel, filename):
@@ -225,6 +225,6 @@ class GraphPlotter:
 
         plt.savefig(filename, dpi=300)
         
-        logging.info(f"Grafico '{title}' generato con successo e salvato in {filename}.")
+        logging.info(f"Grafico '{title}' generato con successo e salvato in file://{filename}.")
         plt.close()
 
