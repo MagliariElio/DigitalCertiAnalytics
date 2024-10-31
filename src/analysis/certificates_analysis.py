@@ -445,10 +445,10 @@ def certificates_analysis_main():
                     total_lines += 1
                     progress.update(task, description=f"[bold]{total_lines:,.0f}[/bold] certificati letti")
 
-        logging.info(f"Conteggio completo: {total_lines} certificati letti.")
         """
-        
         total_lines = 10000000  # TODO: da rimuovere i commenti precedenti
+        
+        logging.info(f"Conteggio completato: {total_lines:,.0f} certificati trovati.")
 
 
     # Analisi Certificati Leaf

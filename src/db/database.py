@@ -40,8 +40,8 @@ class Database:
         if not tables:
             self.create_tables()
             self.create_indexes()
-        else:
-            logging.info(f"Connessione al database esistente: 'file://{self.db_path}'")
+        
+        logging.info(f"Connessione al database esistente: 'file://{self.db_path}'")
         return
 
     def create_tables(self):
