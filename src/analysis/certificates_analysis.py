@@ -7,7 +7,7 @@ import os, shutil, sys, signal
 from rich.console import Console
 from db.database import Database, DatabaseType
 from dao.certificate_dao import CertificateDAO
-from utils.utils import find_next_intermediate_certificate, find_root_certificate, setup_logging, ArgparseFormatter
+from utils.utils import find_next_intermediate_certificate, count_certificates_to_root, setup_logging, ArgparseFormatter
 from utils.plotter_utils import plot_general_certificates_analysis, plot_leaf_certificates_analysis
 from utils.graph_plotter import GraphPlotter
 import pyfiglet
@@ -77,7 +77,7 @@ def leaf_certificates_analysis(certificates_file, dao: CertificateDAO, database:
 
                 with database.transaction():
                     if status == "success":
-                        dao.process_insert_certificate(json_row, database.db_type)
+                        dao.process_insert_certificate(json_row, database.db_type, 0)
                     else:
                         dao.insert_error_row(json_row)
 
@@ -112,27 +112,29 @@ def intermediate_certificates_analysis(certificates_file, dao: CertificateDAO, d
                     if status == "success":
                         handshake_log = json_row.get("data", {}).get("tls", {}).get("result", {}).get("handshake_log", {})
                         server_certificates = handshake_log.get("server_certificates", {})
-                        chain:list = server_certificates.get("chain", [])
+                        chain: list = server_certificates.get("chain", [])
                         current_cert = server_certificates.get("certificate", {})
+                        certificates_emitted_up_to = 0          # Numero di certificati presenti tra il certificato leaf fino all'intermediate
                         
                         while True:
                             # Estrae il certificato intermedio dalla catena. 
                             # Restituisce None se l'issuer del certificato corrente non è presente o se è un certificato root.
                             intermediate_cert = find_next_intermediate_certificate(chain, current_cert)
-                                                    
+                                           
                             # Se non è stato trovato alcun certificato intermedio, interrompe il ciclo.
                             if(intermediate_cert is None):
                                 break
                             
                             # Aggiorna il certificato corrente per la prossima iterazione
-                            current_cert = intermediate_cert 
+                            current_cert = intermediate_cert
                             
                             raw_intermediate = intermediate_cert.get("raw", {})
                             parsed_intermediate = intermediate_cert.get("parsed", {})
                         
                             try:
                                 # Rimuove il certificato intermedio estratto dalla catena
-                                chain.remove(intermediate_cert)
+                                serial_number_intermediate = intermediate_cert.get("parsed", {}).get("serial_number", "")
+                                chain = list(filter(lambda cert: cert.get("parsed", {}).get("serial_number", "") != serial_number_intermediate, chain))
                             except ValueError:
                                 pass  # Ignora l'errore se il certificato non è presente nella catena
                         
@@ -140,9 +142,10 @@ def intermediate_certificates_analysis(certificates_file, dao: CertificateDAO, d
                             server_certificates["certificate"]["raw"] = raw_intermediate
                             server_certificates["certificate"]["parsed"] = parsed_intermediate
                             server_certificates["chain"] = chain
-
+                            certificates_emitted_up_to += 1
+                            
                             # Inizia l'analisi del certificato intermediate
-                            dao.process_insert_certificate(json_row, database.db_type)
+                            dao.process_insert_certificate(json_row, database.db_type, certificates_emitted_up_to)
 
             except json.JSONDecodeError:
                 logging.error(f"Errore nel parsing della riga {line_number}: {row.strip()}")
@@ -181,10 +184,10 @@ def root_certificates_analysis(certificates_file, dao: CertificateDAO, database:
                         server_certificates = handshake_log.get("server_certificates", {})
                         chain:list = server_certificates.get("chain", [])
                         current_cert = server_certificates.get("certificate", {})
-                        
+                                                
                         # Estrae il certificato intermedio dalla catena. 
                         # Restituisce None se l'issuer del certificato corrente non è presente o se è un certificato root.
-                        root_cert = find_root_certificate(chain, current_cert)
+                        root_cert, certificates_emitted_up_to = count_certificates_to_root(chain, current_cert)
                                                 
                         # Se non è stato trovato alcun certificato root, passa alla prossima riga nel file JSON.
                         if(root_cert is None):
@@ -202,7 +205,7 @@ def root_certificates_analysis(certificates_file, dao: CertificateDAO, database:
                         server_certificates["chain"] = chain
 
                         # Inizia l'analisi del certificato root
-                        dao.process_insert_certificate(json_row, database.db_type)
+                        dao.process_insert_certificate(json_row, database.db_type, certificates_emitted_up_to)
 
             except json.JSONDecodeError:
                 logging.error(f"Errore nel parsing della riga {line_number}: {row.strip()}")

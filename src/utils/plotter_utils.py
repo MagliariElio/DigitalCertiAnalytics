@@ -51,8 +51,8 @@ def plot_general_certificates_analysis(dao: CertificateDAO, plotter:GraphPlotter
         data.set_index('Flag', inplace=True)
         plotter.plot_pie_chart(data, column='Count', title='Estensioni Critiche vs Non Critiche dell\'AIA', filename=filename)
         
-        # Certificates per Country
-        logging.info("Generazione grafico 'Certificates per Country'")
+        # Numero di Certificati Emessi in Diversi Paesi
+        logging.info("Generazione grafico 'Numero di Certificati Emessi in Diversi Paesi'")
         result = dao.get_certificates_per_country()
         filename = os.path.abspath(f'{plots_path}/certificates_per_country.png')
         data = pd.DataFrame(list(result.items()), columns=['Country', 'Certificate Count'])
@@ -211,8 +211,8 @@ def plot_general_certificates_analysis(dao: CertificateDAO, plotter:GraphPlotter
             filename=filename
         )
         
-        # Livelli di Validazione dei Certificati    
-        logging.info("Generazione grafico 'Livelli di Validazione dei Certificati'")
+        # Distribuzione del Validation Level dei Certificati    
+        logging.info("Generazione grafico 'Distribuzione del Validation Level dei Certificati'")
         result = dao.get_validation_level_distribution()
         filename = os.path.abspath(f'{plots_path}/validation_level_distribution.png')
         data = pd.DataFrame(list(result.items()), columns=['Validation', 'Count'])
@@ -237,7 +237,7 @@ def plot_general_certificates_analysis(dao: CertificateDAO, plotter:GraphPlotter
             data=data, 
             x=data.index, 
             y='Count', 
-            title='Estensioni Critiche vs Non Critiche del Key Usage nelle Estensioni', 
+            title='Distribuzione del Basic Constraints nelle Estensioni', 
             xlabel='Flag', 
             ylabel='Numero di Certificati', 
             filename=filename
@@ -311,6 +311,7 @@ def plot_leaf_certificates_analysis(dao: CertificateDAO, plotter:GraphPlotter, p
         )
         
         # Top SCT Logs
+        logging.info("Generazione grafico 'Top SCT Logs'")
         result = dao.get_top_sct_logs()
         data = pd.DataFrame(list(result.items()), columns=['Log Name', 'Certificate Count'])
         filename = os.path.abspath(f'{plots_path}/top_sct_logs.png')

@@ -62,7 +62,8 @@ CREATE TABLE IF NOT EXISTS Certificates (
     signature_valid VARCHAR(20) DEFAULT 'Error' CHECK (signature_valid IN ('Valid', 'Not Valid', 'Error', 'Unsupported key type', 'Issuer not found')),
     self_signed BOOLEAN,
     redacted BOOLEAN,
-    num_intermediate_certificates INT DEFAULT 0,
+    certificates_emitted_up_to INT DEFAULT 0,
+    certificates_up_to_root_count INT DEFAULT 0,
     has_root_certificate BOOLEAN DEFAULT FALSE,
     download_date TIMESTAMP,
     raw BLOB,
@@ -83,6 +84,7 @@ CREATE TABLE IF NOT EXISTS Extensions (
     extended_key_usage JSONB,
     extended_key_usage_is_critical VARCHAR(12) CHECK (extended_key_usage_is_critical IN ('Critical', 'Not Critical', 'Not Found', 'Error')),
     basic_constraints JSONB,
+    max_path_length INT DEFAULT NULL,
     crl_distribution_points TEXT[],
     crl_distr_point_is_critical VARCHAR(12) CHECK (crl_distr_point_is_critical IN ('Critical', 'Not Critical', 'Not Found', 'Error')),
     FOREIGN KEY (certificate_id) REFERENCES Certificates(certificate_id)

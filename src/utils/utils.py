@@ -283,8 +283,19 @@ def find_next_intermediate_certificate(chain, current_cert) -> Optional[str]:
     issuer_dn = current_cert.get("parsed", {}).get("issuer_dn", "")
     is_self_signed = current_cert.get("parsed", {}).get("signature", {}).get("self_signed", {})
     
+    # Controlla se è il certificato corrente sia root
+    if is_self_signed and subject_dn == issuer_dn:
+        return None
+    
     # Cerca il certificato successivo nella catena
     next_cert = next((cert for cert in chain if cert.get("parsed", {}).get("subject_dn", "") == issuer_dn), None)
+    
+    if(next_cert is None):
+        return None
+    
+    subject_dn = next_cert.get("parsed", {}).get("subject_dn", "")
+    issuer_dn = next_cert.get("parsed", {}).get("issuer_dn", "")
+    is_self_signed = next_cert.get("parsed", {}).get("signature", {}).get("self_signed", {})
     
     # Controlla se è un certificato root
     if is_self_signed and subject_dn == issuer_dn:
@@ -292,14 +303,18 @@ def find_next_intermediate_certificate(chain, current_cert) -> Optional[str]:
     
     return next_cert
 
-def find_root_certificate(chain, current_cert) -> Optional[str]:
+def count_certificates_to_root(chain_list: list, current_cert) -> Tuple[Optional[str], int]:
     """
-        Trova il certificato root nella catena partendo dal certificato corrente.
-        Restituisce il certificato root se trovato, altrimenti None.
+        Trova il certificato radice nella catena partendo dal certificato corrente e conta quanti certificati ci sono 
+        dalla foglia fino al certificato radice.
+        Restituisce il certificato radice se trovato, altrimenti None.
     """
-    if len(chain) == 0:
-        return None
+    chain = chain_list.copy()
     
+    if len(chain) == 0:
+        return (None, 0)
+    
+    certificates_emitted_up_to = 0  # Conta il numero di certificati intermedi trovati nella catena fino al root + certificato leaf
     while True:
         # Prende i dati del certificato corrente
         subject_dn = current_cert.get("parsed", {}).get("subject_dn", "")
@@ -316,23 +331,25 @@ def find_root_certificate(chain, current_cert) -> Optional[str]:
         
             # Controlla se è un certificato root
             if is_self_signed and subject_dn == issuer_dn:
-                return next_cert
+                return (next_cert, certificates_emitted_up_to)
             else:
                 try:
-                    chain.remove(current_cert)
+                    serial_number_next = next_cert.get("parsed", {}).get("serial_number", "")
+                    chain = list(filter(lambda cert: cert.get("parsed", {}).get("serial_number", "") != serial_number_next, chain))
                 except ValueError:
                     pass
                 # Continua con la ricerca del root
                 current_cert = next_cert
+                certificates_emitted_up_to += 1     # Altro certificato intermediate trovato
         else:
-            return None
-        
-def count_intermediate_and_root_certificates(chain:list, current_cert: dict) -> Tuple[int, int]:
+            return (None, 0)
+
+def count_intermediate_up_to_root_and_root_certificates(chain_list:list, current_cert: dict) -> Tuple[int, int]:
     """
-    Conta nella catena passata, il numero di certificati intermedi e indica se è presente il certificato radice.
+    Conta nella catena, il numero di certificati intermedi rimanenti fino al certificato root e indica se è presente il certificato radice.
     
     Args:
-        chain (List[Dict]): Lista di certificati nella catena.
+        chain_list (List[Dict]): Lista di certificati nella catena.
         current_cert (Dict): Il certificato corrente da analizzare.
 
     Returns:
@@ -342,6 +359,7 @@ def count_intermediate_and_root_certificates(chain:list, current_cert: dict) -> 
     """
     
     count_intermediate = 0
+    chain = chain_list.copy()
 
     # Se la lista è vuota allora non è presente nessun intermediate e root
     if(len(chain) == 0):
@@ -368,7 +386,8 @@ def count_intermediate_and_root_certificates(chain:list, current_cert: dict) -> 
                 # Certificato Intermediate trovato 
                 count_intermediate += 1
                 try:
-                    chain.remove(current_cert)
+                    serial_number_next = next_cert.get("parsed", {}).get("serial_number", "")
+                    chain = list(filter(lambda cert: cert.get("parsed", {}).get("serial_number", "") != serial_number_next, chain))
                 except ValueError:
                     pass
                 # Continua con la ricerca del root

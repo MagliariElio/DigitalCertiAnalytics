@@ -41,7 +41,7 @@ class Database:
             self.create_tables()
             self.create_indexes()
         else:
-            logging.info(f"Connessione al database esistente: {self.db_path}")
+            logging.info(f"Connessione al database esistente: 'file://{self.db_path}'")
         return
 
     def create_tables(self):
@@ -166,7 +166,7 @@ class Database:
                 columns = [
                     "ocsp_stapling",
                     "ocsp_must_stapling",
-                    "num_intermediate_certificates",
+                    "certificates_up_to_root_count",
                     "has_root_certificate"
                 ]
                 self._restructure_table_remove_columns("Certificates", columns)
@@ -214,9 +214,9 @@ class Database:
         if self.conn:
             self.conn.close()
             if(self.db_type == DatabaseType.LEAF):
-                logging.info("Connessione al database Leaf chiusa con successo.")
+                logging.info(f"Connessione al database Leaf chiusa con successo: 'file://{self.db_path}'")
             elif(self.db_type == DatabaseType.INTERMEDIATE):
-                logging.info("Connessione al database Intermediate chiusa con successo.")
+                logging.info(f"Connessione al database Intermediate chiusa con successo: 'file://{self.db_path}'")
             elif(self.db_type == DatabaseType.ROOT):
-                logging.info("Connessione al database Root chiusa con successo.")
+                logging.info(f"Connessione al database Root chiusa con successo: 'file://{self.db_path}'")
         return

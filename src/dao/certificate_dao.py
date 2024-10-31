@@ -7,7 +7,7 @@ from bean.certificate import Certificate
 from db.database import DatabaseType
 from cryptography.hazmat.primitives.hashes import SHA1, SHA256, SHA224, SHA384, SHA512
 from cryptography.x509.extensions import UserNotice
-from utils.utils import verify_signature, find_raw_cert_issuer, check_ocsp_status, reorder_signature_algorithm, count_intermediate_and_root_certificates
+from utils.utils import verify_signature, find_raw_cert_issuer, check_ocsp_status, reorder_signature_algorithm, count_intermediate_up_to_root_and_root_certificates
 
 # Admin: Anuar Elio Magliari 
 # Politecnico di Torino
@@ -81,7 +81,8 @@ class CertificateDAO:
         logging.debug(f"Subject inserito: {subject_dn}")
         return self.cursor.lastrowid
 
-    def insert_certificate(self, json_row, parsed, issuer_id, subject_id, issuer_common_name, issuer_dn, certificate_type: DatabaseType) -> Optional[int]:
+    def insert_certificate(self, json_row, parsed, issuer_id, subject_id, issuer_common_name, issuer_dn, 
+                           certificate_type: DatabaseType, certificates_emitted_up_to: int) -> Optional[int]:
         """Inserisce un certificato nel database e restituisce il certificate_id."""
         download_date = json_row.get("data", {}).get("tls", {}).get("timestamp", datetime.now().isoformat())
         handshake_log = json_row.get("data", {}).get("tls", {}).get("result", {}).get("handshake_log", {})
@@ -106,7 +107,7 @@ class CertificateDAO:
                 
         raw = handshake_log.get("server_certificates", {}).get("certificate", {}).get("raw", {})
         digital_certificate = Certificate(raw)
-
+        
         chain = handshake_log.get("server_certificates", {}).get("chain", [])
 
         self_signed = parsed.get("signature", {}).get("self_signed", False)
@@ -136,7 +137,7 @@ class CertificateDAO:
         ocsp_check = "No Request Done"
         
         certificate = handshake_log.get("server_certificates", {}).get("certificate", {})
-        num_intermediate_certificates, has_root_certificate = count_intermediate_and_root_certificates(chain, certificate)
+        certificates_up_to_root_count, has_root_certificate = count_intermediate_up_to_root_and_root_certificates(chain, certificate)
         
         self.cursor.execute("""
             INSERT INTO Certificates (
@@ -144,14 +145,14 @@ class CertificateDAO:
                 validity_start, validity_end, validity_length, issuer_id, 
                 subject_id, validation_level, redacted, signature_valid, self_signed, download_date, 
                 ocsp_stapling, ocsp_must_stapling, authority_info_access_is_critical, authority_info_access, 
-                ocsp_check, num_intermediate_certificates, has_root_certificate, raw
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ocsp_check, certificates_emitted_up_to, certificates_up_to_root_count, has_root_certificate, raw
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             serial_number, leaf_domain, version, signature_algorithm, key_algorithm, key_length,
             validity_start, validity_end, validity_length, issuer_id,
             subject_id, validation_level, redacted, signature_valid, self_signed, download_date, 
             ocsp_stapling, ocsp_must_stapling, authority_info_access_is_critical, json.dumps(authority_info_access), 
-            ocsp_check, num_intermediate_certificates, has_root_certificate, raw
+            ocsp_check, certificates_emitted_up_to, certificates_up_to_root_count, has_root_certificate, raw
         ))
 
         logging.debug(f"Certificato inserito: {serial_number}")
@@ -164,8 +165,13 @@ class CertificateDAO:
         
         key_usage = json.dumps(extensions.get("key_usage", {}))
         extended_key_usage = json.dumps(extensions.get("extended_key_usage", {}))
-        basic_constraints = json.dumps(extensions.get("basic_constraints", {}))
+        basic_constraints: dict = extensions.get("basic_constraints", {})
         crl_distribution_points = json.dumps(extensions.get("crl_distribution_points", []))
+        
+        max_path_length = None
+        if("max_path_len" in basic_constraints):
+            max_path_length = basic_constraints.get("max_path_len", None)
+            basic_constraints.pop("max_path_len")
         
         digital_certificate = Certificate(raw)
         crl_distr_point_is_critical = digital_certificate.is_crl_distr_point_critical()
@@ -176,11 +182,11 @@ class CertificateDAO:
         self.cursor.execute("""
             INSERT INTO Extensions (
                 certificate_id, key_usage, key_usage_is_critical, extended_key_usage, extended_key_usage_is_critical, 
-                basic_constraints, crl_distribution_points, crl_distr_point_is_critical
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                basic_constraints, max_path_length, crl_distribution_points, crl_distr_point_is_critical
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
-            certificate_id, key_usage, key_usage_is_critical, extended_key_usage, extended_key_usage_is_critical, basic_constraints,
-            crl_distribution_points, crl_distr_point_is_critical
+            certificate_id, key_usage, key_usage_is_critical, extended_key_usage, extended_key_usage_is_critical, json.dumps(basic_constraints),
+            max_path_length, crl_distribution_points, crl_distr_point_is_critical
         ))
 
         logging.debug(f"Estensioni inserite per certificato ID: {certificate_id}")
@@ -248,9 +254,11 @@ class CertificateDAO:
             logging.debug(f"SCT inserito per il certificate ID: {certificate_id}")
         return
 
-    def insert_certificate_full(self, json_row, parsed, digital_certificate: Certificate, issuer_id, subject_id, issuer_common_name, issuer_dn, certificate_type: DatabaseType):
+    def insert_certificate_full(self, json_row, parsed, digital_certificate: Certificate, issuer_id, subject_id, issuer_common_name, 
+                                issuer_dn, certificate_type: DatabaseType, certificates_emitted_up_to: int):
         """Processa e inserisce un certificato nel database, comprese le estensioni."""
-        certificate_id = self.insert_certificate(json_row, parsed, issuer_id, subject_id, issuer_common_name, issuer_dn, certificate_type)
+        certificate_id = self.insert_certificate(json_row, parsed, issuer_id, subject_id, issuer_common_name, 
+                                                issuer_dn, certificate_type, certificates_emitted_up_to)
         
         if certificate_id:
             # Inserisce le Extensions
@@ -266,7 +274,7 @@ class CertificateDAO:
             if (certificate_policies is not None):
                 self.insert_certificate_policies(extension_id, certificate_policies)
 
-    def process_insert_certificate(self, json_row, certificate_type: DatabaseType):
+    def process_insert_certificate(self, json_row, certificate_type: DatabaseType, certificates_emitted_up_to: int):
         """Processa e inserisce un certificato nel database."""
         parsed = json_row.get("data", {}).get("tls", {}).get("result", {}).get("handshake_log", {}).get("server_certificates", {}).get("certificate", {}).get("parsed", {})
 
@@ -283,7 +291,9 @@ class CertificateDAO:
         subject_id = self.insert_subject(parsed, digital_certificate)
         
         # Inserisci Certificate e Extensions
-        self.insert_certificate_full(json_row, parsed, digital_certificate, issuer_id, subject_id, issuer_common_name, issuer_dn, certificate_type)
+        self.insert_certificate_full(json_row, parsed, digital_certificate, 
+                                    issuer_id, subject_id, issuer_common_name, issuer_dn, 
+                                    certificate_type, certificates_emitted_up_to)
         return
 
     def check_ocsp_status_for_certificates(self, certificate_type: DatabaseType, batch_size=1000):
@@ -521,7 +531,7 @@ class CertificateDAO:
                 TopCountry AS (
                     SELECT country, country_count
                     FROM IssuersCounts
-                    LIMIT 11
+                    LIMIT 10
                 ),
                 Others AS (
                     SELECT 'Others' AS country, COALESCE(SUM(country_count), 0) AS country_count
@@ -552,7 +562,7 @@ class CertificateDAO:
                 FROM Certificates
                 WHERE validity_length IS NOT NULL AND validity_length >= 0 AND validity_length <= 630720000
                 GROUP BY validity_length
-                ORDER BY count DESC;
+                ORDER BY validity_length ASC;
             """)
             
             results = self.cursor.fetchall()
@@ -583,7 +593,7 @@ class CertificateDAO:
                 FROM Certificates
                 WHERE validity_end IS NOT NULL
                 GROUP BY month
-                HAVING count > 10
+                HAVING count > 20
                 ORDER BY month ASC;
             """)
             
@@ -778,14 +788,10 @@ class CertificateDAO:
         """Rappresenta la proporzione di firme valide rispetto a quelle non valide."""
         try:
             self.cursor.execute("""
-                SELECT
-                    CASE 
-                        WHEN signature_valid = 1 THEN 'True' 
-                        ELSE 'False' 
-                    END AS is_valid_signature,
-                    COUNT(*) AS count
+                SELECT signature_valid AS is_valid_signature, COUNT(*) AS count
                 FROM Certificates
-                GROUP BY signature_valid;
+                GROUP BY signature_valid
+                ORDER BY count ASC;
             """)
             
             results = self.cursor.fetchall()

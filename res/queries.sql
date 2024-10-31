@@ -8,6 +8,11 @@ SELECT COUNT(*) AS count, *
 FROM Certificates
 GROUP BY ocsp_must_stapling
 
+-- Controsenso tra max_path_length pari a 0 e la presenza di certificati intermedi emessi dal certificato nella catena (CONTROLLARE, SI PUÒ FARE UN GRAFICO).
+SELECT c.certificate_id, e.max_path_length, c.certificates_emitted_up_to, c.has_root_certificate, e.basic_constraints
+FROM Certificates AS c INNER JOIN Extensions AS e ON c.certificate_id = e.certificate_id
+WHERE max_path_length = 0 AND c.certificates_emitted_up_to > 0;
+
 
 
 -- Indici per la tabella Certificates
@@ -106,7 +111,7 @@ WITH IssuersCounts AS (
 TopCountry AS (
 	SELECT country, country_count
 	FROM IssuersCounts
-	LIMIT 11
+	LIMIT 10
 ),
 Others AS (
 	SELECT 'Others' AS country, COALESCE(SUM(country_count), 0) AS country_count
@@ -122,14 +127,14 @@ SELECT validity_length, COUNT(*) AS count
 FROM Certificates
 WHERE validity_length IS NOT NULL AND validity_length >= 0 AND validity_length <= 630720000
 GROUP BY validity_length
-ORDER BY count DESC;
+ORDER BY validity_length ASC;
 
 -- Trend di Scadenza dei Certificati
 SELECT strftime('%Y-%m', validity_end) AS month, COUNT(*) AS count
 FROM Certificates
 WHERE validity_end IS NOT NULL
 GROUP BY month
-HAVING count > 10
+HAVING count > 20
 ORDER BY month ASC;
 
 -- Algoritmi di Firma Utilizzati
@@ -188,14 +193,10 @@ FROM Certificates
 GROUP BY version;
 
 -- Validità delle Firme dei Certificati
-SELECT
-	CASE 
-        WHEN signature_valid = 1 THEN 'True' 
-        ELSE 'False' 
-    END AS is_valid_signature,
-	COUNT(*) AS count
+SELECT signature_valid AS is_valid_signature, COUNT(*) AS count
 FROM Certificates
-GROUP BY signature_valid;
+GROUP BY signature_valid
+ORDER BY count ASC;
 
 -- Analisi Status Certificati
 SELECT 'success', COUNT(*) AS count
