@@ -156,10 +156,12 @@ def download_json_domain(input_file, domain: str, line_num: int):
                 domain_data = json_data.get("domain", "")
                 
                 if(domain_data == domain):
+                    print(f"Dominio trovato alla riga {line_number} del file.")
                     domain_json_data = json_data
                     break
                 
                 if(line_num == line_number):
+                    print(f"Dominio {domain_data} trovato alla riga {line_number} del file.")
                     domain_json_data = json_data
                     break
             
@@ -373,8 +375,8 @@ def main():
 
     # check_chain_certificates(result_json_file)
 
-    download_json_domain(result_json_file, "semrush.com", None)
-    # download_json_domain(result_json_file, None, 1505)
+    # download_json_domain(result_json_file, "dr-radio.com", None)
+    download_json_domain(result_json_file, None, 9718401)
 
     # count_root_cert_chain(result_json_file)
     # count_certs_chain(result_json_file)
