@@ -8,12 +8,27 @@ SELECT COUNT(*) AS count, *
 FROM Certificates
 GROUP BY ocsp_must_stapling
 
+SELECT COUNT(*) AS count, ocsp_check
+FROM Certificates
+GROUP BY ocsp_check;
+
+SELECT COUNT(*) AS count, ocsp_check, authority_info_access
+FROM Certificates
+WHERE ocsp_check = 'No Request Done' AND (authority_info_access LIKE '{}' OR NOT authority_info_access LIKE '%ocsp_urls%')
+GROUP BY ocsp_check;
+
+SELECT COUNT(*) AS count, ocsp_check, authority_info_access
+FROM Certificates
+WHERE (authority_info_access LIKE '{}' OR NOT authority_info_access LIKE '%ocsp_urls%')
+GROUP BY ocsp_check, authority_info_access;
+
+UPDATE Certificates
+SET ocsp_check = 'No Request Done';
+
 -- Controsenso tra max_path_length pari a 0 e la presenza di certificati intermedi emessi dal certificato nella catena (CONTROLLARE, SI PUÒ FARE UN GRAFICO).
 SELECT c.certificate_id, e.max_path_length, c.certificates_emitted_up_to, c.has_root_certificate, e.basic_constraints
 FROM Certificates AS c INNER JOIN Extensions AS e ON c.certificate_id = e.certificate_id
 WHERE max_path_length = 0 AND c.certificates_emitted_up_to > 0;
-
-
 
 -- Indici per la tabella Certificates
 CREATE INDEX IF NOT EXISTS idx_certificates_issuer_id ON Certificates(issuer_id);

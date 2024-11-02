@@ -1,13 +1,13 @@
 import json
 import logging
+import asyncio
 from tqdm.rich import tqdm
 from typing import Optional
 from datetime import datetime
 from bean.certificate import Certificate
 from db.database import DatabaseType
-from cryptography.hazmat.primitives.hashes import SHA1, SHA256, SHA224, SHA384, SHA512
 from cryptography.x509.extensions import UserNotice
-from utils.utils import verify_signature, find_raw_cert_issuer, check_ocsp_status, reorder_signature_algorithm, count_intermediate_up_to_root_and_root_certificates
+from utils.utils import verify_signature, find_raw_cert_issuer, check_ocsp_status_row, reorder_signature_algorithm, count_intermediate_up_to_root_and_root_certificates
 
 # Admin: Anuar Elio Magliari 
 # Politecnico di Torino
@@ -296,21 +296,28 @@ class CertificateDAO:
                                     certificate_type, certificates_emitted_up_to)
         return
 
-    def check_ocsp_status_for_certificates(self, certificate_type: DatabaseType, batch_size=1000):
+    async def check_ocsp_status_for_certificates(self, certificate_type: DatabaseType, db, batch_size=1000):
         """Controlla lo stato OCSP per ciascun certificato nel database e aggiorna il relativo stato."""
         global pbar_ocsp_check
         
         try:
+            # Esclude tutte le righe che non hanno un ocsp url
+            await db.execute("""
+                UPDATE Certificates
+                SET ocsp_check = 'No OCSP Url Found'
+                WHERE ocsp_check = 'No Request Done' AND 
+                    (authority_info_access LIKE '{}' OR NOT authority_info_access LIKE '%ocsp_urls%')
+            """)
+            
             # Conta il numero di certificati per la barra di progresso
-            self.cursor.execute("""
+            async with db.execute("""
                     SELECT COUNT(c.certificate_id)
                     FROM Certificates AS c 
                     INNER JOIN Issuers AS i ON c.issuer_id = i.issuer_id
                     WHERE c.ocsp_check = 'No Request Done'
-                """)
-                
-            result = self.cursor.fetchone()
-            total_lines = result[0]
+                """) as cursor:
+                result = await cursor.fetchone()
+                total_lines = result[0]
 
             # Controlla il conteggio
             if total_lines == 0:
@@ -323,78 +330,34 @@ class CertificateDAO:
                         colour="blue", bar_format="{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} • ⚡ {rate_fmt}")
 
             while True:
-                self.cursor.execute("""
+                async with db.execute("""
                     SELECT c.certificate_id, c.authority_info_access, i.common_name, i.raw AS issuer_cert_raw, c.raw AS leaf_cert_raw
                     FROM Certificates AS c 
                     INNER JOIN Issuers AS i ON c.issuer_id = i.issuer_id
                     WHERE c.ocsp_check = 'No Request Done'
                     LIMIT ?
-                """, (batch_size, ))
+                """, (batch_size, )) as cursor:
                 
-                # Prendi tutti i record
-                rows = self.cursor.fetchall()
+                    # Prende tutti i record
+                    rows = await cursor.fetchall()
 
-                # Se non ci sono più record, interrompi il ciclo
-                if not rows:
-                    break
-                
-                for row in rows:
-                    certificate_id = None
+                    # Se non ci sono più record, interrompe il ciclo
+                    if not rows:
+                        break
                     
-                    try:
-                        certificate_id = row['certificate_id']
-                        
-                        aia = row['authority_info_access']
-                        aia = json.loads(aia)
-
-                        issuer_urls = aia.get("issuer_urls", [])
-                        issuer_url = next(iter(issuer_urls), None)
-            
-                        ocsp_urls = aia.get("ocsp_urls", [])
-
-                        hash_algorithms = [SHA256(), SHA1(), SHA384(), SHA512(), SHA224()]
-                        
-                        # Prende il certificato del leaf per controllare l'OCSP
-                        digital_certificate = Certificate(None)
-                        leaf_cert_raw = row['leaf_cert_raw']
-                        
-                        # Prende il certificato dell'issuer per controllare l'OCSP
-                        if(certificate_type == DatabaseType.ROOT):
-                            issuer_cert = digital_certificate.get_certificate_from_raw(leaf_cert_raw)
-                        else:
-                            issuer_cert_raw = row['issuer_cert_raw']
-                            issuer_cert = digital_certificate.get_certificate_from_raw(issuer_cert_raw)
-                        
-                        issuer_common_name = row['common_name']
-                        
-                        ocsp_check = "No Issuer Url Found"
-                        if(issuer_url is not None or issuer_cert is not None):
-                            for ocsp_url in ocsp_urls:
-                                for hash_algorithm in hash_algorithms:
-                                    ocsp_check = check_ocsp_status(leaf_cert_raw, hash_algorithm, issuer_url, issuer_common_name, ocsp_url, issuer_cert)
-                                    
-                                    if(ocsp_check != "Impossible Retrieve OCSP Information"):
-                                        break
-                                
-                                if(ocsp_check != "Impossible Retrieve OCSP Information"):
-                                        break
-                        
-                        if(ocsp_check == "Impossible Retrieve OCSP Information"):
-                            logging.error(f"Impossibile recuperare le informazioni OCSP per il certificato ID {certificate_id}. Verifica la connessione o il formato del certificato.")                            
-                        
-                        # Aggiornamento dell'OCSP status nel db
-                        self.cursor.execute("""
-                            UPDATE Certificates
-                            SET ocsp_check = ?
-                            WHERE certificate_id = ?
-                        """, (ocsp_check, certificate_id))
-                        self.conn.commit()
-                        
-                         # Aggiorna la barra di caricamento
-                        pbar_ocsp_check.update(1)
-
-                    except Exception as e:
-                        logging.error(f"Errore durante il controllo dello stato OCSP per il certificato ID {certificate_id}: {e}")
+                    tasks = [check_ocsp_status_row(row, certificate_type) for row in rows]
+                    results = await asyncio.gather(*tasks)
+                
+                    # Aggiornamento in batch dell'OCSP status nel db
+                    await db.executemany("""
+                        UPDATE Certificates
+                        SET ocsp_check = ?
+                        WHERE certificate_id = ?
+                    """, (list(zip(*results))))
+                    await db.commit()
+                    
+                    # Aggiorna la barra di caricamento
+                    pbar_ocsp_check.update(len(results))
                 
         except json.JSONDecodeError as json_err:
             logging.error(f"\nErrore nella deserializzazione del JSON: {json_err}")

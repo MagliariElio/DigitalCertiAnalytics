@@ -55,7 +55,7 @@ CREATE TABLE IF NOT EXISTS Certificates (
     validity_length INT,
     authority_info_access_is_critical VARCHAR(12) CHECK (authority_info_access_is_critical IN ('Critical', 'Not Critical', 'Not Found', 'Error')),
     authority_info_access TEXT,
-    ocsp_check VARCHAR(36) DEFAULT 'No Request Done' CHECK (ocsp_check IN ('Good', 'Revoked', 'Unknown', 'Impossible Retrieve OCSP Information', 'Not Ok OCSP Response', 'No Issuer Url Found', 'No Request Done')),
+    ocsp_check VARCHAR(36) DEFAULT 'No Request Done' CHECK (ocsp_check IN ('Good', 'Revoked', 'Unknown', 'Impossible Retrieve OCSP Information', 'Not Ok OCSP Response', 'No Issuer Url Found', 'No OCSP Url Found', 'No Request Done')),
     ocsp_stapling INT,
     ocsp_must_stapling VARCHAR(9) DEFAULT 'Not Found' CHECK (ocsp_must_stapling IN ('Enabled', 'Not Found', 'Error')),
     validation_level VARCHAR,

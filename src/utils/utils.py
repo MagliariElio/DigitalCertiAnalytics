@@ -1,8 +1,10 @@
+import json
 import logging
 import base64
 import warnings
-import requests
 import argparse
+import aiohttp
+from db.database import DatabaseType
 from typing import Optional, Tuple
 from bean.certificate import Certificate
 from rich.logging import RichHandler
@@ -17,6 +19,7 @@ from cryptography.x509.ocsp import OCSPCertStatus
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives.serialization import pkcs7
+from cryptography.hazmat.primitives.hashes import SHA1, SHA256, SHA224, SHA384, SHA512
 
 # Admin: Anuar Elio Magliari 
 # Politecnico di Torino
@@ -133,7 +136,7 @@ def find_raw_cert_issuer(chain, issuer_dn) -> Optional[str]:
             return raw
     return None
 
-def make_ocsp_query(raw, issuer_certificate, alg, ocsp_link):
+async def make_ocsp_query(raw, issuer_certificate, alg, ocsp_link):
     """Costruisce e invia una richiesta OCSP per verificare lo stato di un certificato."""
     current_certificate = Certificate(raw).get_cert()
     
@@ -145,90 +148,110 @@ def make_ocsp_query(raw, issuer_certificate, alg, ocsp_link):
         logging.error("Impossibile eseguire la richiesta OCSP: il certificato Issuer non è presente")
         return None
     
-    builder = ocsp.OCSPRequestBuilder()
-    builder = builder.add_certificate(current_certificate, issuer_certificate, alg)
-    req = builder.build()
-    req_path = base64.b64encode(req.public_bytes(serialization.Encoding.DER))
-    final_url = urljoin(ocsp_link + '/', req_path.decode('ascii'))
-    try:
-        ocsp_resp = requests.get(final_url, timeout=15)
-        return ocsp_resp
-    except requests.exceptions.Timeout:
-        return None
-    except requests.exceptions.RequestException as e:
-        logging.error(f"Errore durante la richiesta OCSP per {final_url}: {e}")
-        return None
+    async with aiohttp.ClientSession() as session:
+        builder = ocsp.OCSPRequestBuilder()
+        builder = builder.add_certificate(current_certificate, issuer_certificate, alg)
+        req = builder.build()
+        req_path = base64.b64encode(req.public_bytes(serialization.Encoding.DER))
+        final_url = urljoin(ocsp_link + '/', req_path.decode('ascii'))
+        async with session.get(final_url, timeout=15) as response:
+            try:
+                result = "Impossible Retrieve OCSP Information"
+                
+                if response.status == 200:
+                    ocsp_resp = await response.read()
+                    ocsp_decoded = ocsp.load_der_ocsp_response(ocsp_resp)
+                    if ocsp_decoded.response_status == OCSPResponseStatus.SUCCESSFUL:
+                        if ocsp_decoded.certificate_status == OCSPCertStatus.GOOD:
+                            result = "Good"
+                        elif ocsp_decoded.certificate_status == OCSPCertStatus.REVOKED:
+                            result = "Revoked"
+                        elif ocsp_decoded.certificate_status == OCSPCertStatus.UNKNOWN:
+                            result = "Unknown"
+                    else:
+                        result = "Impossible Retrieve OCSP Information"
+                else:
+                    result = "Not Ok OCSP Response"
 
-def get_issuer_certificate_from_issuer_link(issuer_link, issuer_common_name):
+                return result
+            except aiohttp.ClientTimeout:
+                return "Impossible Retrieve OCSP Information"
+            except aiohttp.ClientResponseError as e:
+                logging.error(f"Errore durante la richiesta OCSP per {final_url}: {e}")
+                return "Impossible Retrieve OCSP Information"
+
+async def get_issuer_certificate_from_issuer_link(issuer_link, issuer_common_name):
     """Recupera e restituisce il certificato dell'emittente dal link fornito."""
     
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.183 Safari/537.36'
     }
     
-    try:
-        req = requests.get(issuer_link, headers=headers, allow_redirects=True, timeout=15)
-    except requests.exceptions.Timeout:
-        return "Impossible Retrieve OCSP Information"
-    except requests.exceptions.HTTPError as http_err:
-        logging.error(f"Errore HTTP nel recupero del certificato ({issuer_link}): {http_err}")
-        return "Impossible Retrieve OCSP Information"
-    except Exception as e:
-        logging.error(f"Errore nel recupero del certificato ({issuer_link}): {e}")
-        return "Impossible Retrieve OCSP Information"
-    
-    if req.status_code == 200:
-        content_type = req.headers.get('Content-Type', '')
+    async with aiohttp.ClientSession() as session:
+        try:
+            async with session.get(issuer_link, headers=headers, allow_redirects=True, timeout=15) as response:
+                if response.status == 200:
+                    content_type = response.headers.get('Content-Type', '')
+        
+                    if (
+                        "application/x-x509-ca-cert" in content_type or
+                        "application/octet-stream" in content_type or
+                        "binary/octet-stream" in content_type or
+                        "application/pkix-cert" in content_type or
+                        content_type == ""
+                    ):
+                        try:
+                            content = await response.read()
+                            issuer_cert = x509.load_der_x509_certificate(content, backend=default_backend())
+                            return issuer_cert
+                        except Exception as e:
+                            logging.error(f"Errore nel parsing del certificato DER ({issuer_link}): {e}")
+                            return "Impossible Retrieve OCSP Information"
+                    elif (
+                        "application/x-pem-file" in content_type or
+                        "text/plain" in content_type      
+                    ):
+                        try:
+                            pem_data = await response.text()
+                            issuer_cert = x509.load_pem_x509_certificate(pem_data.encode('utf-8'), backend=default_backend())
+                            return issuer_cert
+                        except Exception as e:
+                            logging.error(f"Errore nel parsing del certificato PEM ({issuer_link}): {e}")
+                            return "Impossible Retrieve OCSP Information"
+                    elif "application/pkcs7-mime" in content_type:
+                        try:
+                            pkcs7_data = await response.read()
+                            issuer_certs = pkcs7.load_der_pkcs7_certificates(pkcs7_data)
+                            
+                            issuer_cert = None
+                            for cert in issuer_certs:
+                                if (cert.subject.get_attributes_for_oid(x509.NameOID.COMMON_NAME)[0].value == issuer_common_name):
+                                    issuer_cert = cert
 
-        if (
-            "application/x-x509-ca-cert" in content_type or
-            "application/octet-stream" in content_type or
-            "binary/octet-stream" in content_type or
-            "application/pkix-cert" in content_type or
-            content_type == ""
-        ):
-            try:
-                issuer_cert = x509.load_der_x509_certificate(req.content, backend=default_backend())
-                return issuer_cert
-            except Exception as e:
-                logging.error(f"Errore nel parsing del certificato DER ({issuer_link}): {e}")
-                return "Impossible Retrieve OCSP Information"
-        elif (
-            "application/x-pem-file" in content_type or
-            "text/plain" in content_type      
-        ):
-            try:
-                pem_data = req.content.decode('utf-8')
-                issuer_cert = x509.load_pem_x509_certificate(pem_data.encode('utf-8'), backend=default_backend())
-                return issuer_cert
-            except Exception as e:
-                logging.error(f"Errore nel parsing del certificato PEM ({issuer_link}): {e}")
-                return "Impossible Retrieve OCSP Information"
-        elif "application/pkcs7-mime" in content_type:
-            try:
-                pkcs7_data = req.content
-                issuer_certs = pkcs7.load_der_pkcs7_certificates(pkcs7_data)
+                            if(issuer_cert is None):
+                                logging.error(f"Errore certificato non trovato durante il parsing del PKCS #7 ({issuer_link}): {e}")
+                                return "Impossible Retrieve OCSP Information"    
+                            return issuer_cert
+                        except Exception as e:
+                            logging.error(f"Errore nel parsing del PKCS #7 ({issuer_link}): {e}")
+                            return "Impossible Retrieve OCSP Information"
+                    else:
+                        logging.error(f"Formato del certificato sconosciuto ({issuer_link}): {content_type}")
+                        return "Impossible Retrieve OCSP Information"
+                else:
+                    logging.error(f"Errore nel recupero del certificato ({issuer_link}). Stato: {response.status}")
+                    return "Impossible Retrieve OCSP Information"
                 
-                issuer_cert = None
-                for cert in issuer_certs:
-                    if (cert.subject.get_attributes_for_oid(x509.NameOID.COMMON_NAME)[0].value == issuer_common_name):
-                        issuer_cert = cert
-
-                if(issuer_cert is None):
-                    logging.error(f"Errore certificato non trovato durante il parsing del PKCS #7 ({issuer_link}): {e}")
-                    return "Impossible Retrieve OCSP Information"    
-                return issuer_cert
-            except Exception as e:
-                logging.error(f"Errore nel parsing del PKCS #7 ({issuer_link}): {e}")
-                return "Impossible Retrieve OCSP Information"
-        else:
-            logging.error(f"Formato del certificato sconosciuto ({issuer_link}): {content_type}")
+        except aiohttp.ClientTimeout:
             return "Impossible Retrieve OCSP Information"
-    else:
-        logging.error(f"Errore nel recupero del certificato ({issuer_link}). Stato: {req.status_code}")
-        return "Impossible Retrieve OCSP Information"
-
-def check_ocsp_status(raw, hash_alg, issuer_link, issuer_common_name, ocsp_link, issuer_cert) -> str:
+        except aiohttp.ClientResponseError as http_err:
+            logging.error(f"Errore HTTP nel recupero del certificato ({issuer_link}): {http_err}")
+            return "Impossible Retrieve OCSP Information"
+        except Exception as e:
+            logging.error(f"Errore nel recupero del certificato ({issuer_link}): {e}")
+            return "Impossible Retrieve OCSP Information"
+    
+async def check_ocsp_status(raw, hash_alg, issuer_link, issuer_common_name, ocsp_link, issuer_cert) -> str:
     """Controlla l'OCSP, se il certificato dell'issuer è stato trovato nella catena si usa quello, altrimenti si richiede tramite issuer link."""
     
     # Se sia l'issuer certificate che l'issuer link non sono disponibili allora non è possibile fare richiesta
@@ -237,29 +260,64 @@ def check_ocsp_status(raw, hash_alg, issuer_link, issuer_common_name, ocsp_link,
     
     # Prende l'issuer certificate dal link, ma potrebbe ritornare una stringa in caso di errore
     if(issuer_cert is None and issuer_link is not None):
-        issuer_cert = get_issuer_certificate_from_issuer_link(issuer_link, issuer_common_name)
+        issuer_cert = await get_issuer_certificate_from_issuer_link(issuer_link, issuer_common_name)
     
-        if(issuer_cert is str):
+        # Verifica se issuer_cert è una stringa di errore
+        if(isinstance(issuer_cert, str)):
             return issuer_cert
     
-    ocsp_resp = make_ocsp_query(raw, issuer_cert, hash_alg, ocsp_link)
+    ocsp_resp = await make_ocsp_query(raw, issuer_cert, hash_alg, ocsp_link)
+    return ocsp_resp
     
-    if(ocsp_resp is None):
-        return "Impossible Retrieve OCSP Information"
+async def check_ocsp_status_row(row, certificate_type):
+    """Controlla lo stato OCSP per un certificato specificato in una riga del database."""
     
-    if ocsp_resp.ok:
-        ocsp_decoded = ocsp.load_der_ocsp_response(ocsp_resp.content)
-        if ocsp_decoded.response_status == OCSPResponseStatus.SUCCESSFUL:
-            if ocsp_decoded.certificate_status == OCSPCertStatus.GOOD:
-                return "Good"
-            elif ocsp_decoded.certificate_status == OCSPCertStatus.REVOKED:
-                return "Revoked"
-            elif ocsp_decoded.certificate_status == OCSPCertStatus.UNKNOWN:
-                return "Unknown"
+    certificate_id = None
+                        
+    try:
+        certificate_id = row['certificate_id']
+        
+        aia = row['authority_info_access']
+        aia = json.loads(aia)
+
+        issuer_urls = aia.get("issuer_urls", [])
+        issuer_url = next(iter(issuer_urls), None)
+
+        ocsp_urls = aia.get("ocsp_urls", [])
+
+        hash_algorithms = [SHA256(), SHA1(), SHA384(), SHA512(), SHA224()]
+        
+        # Prende il certificato del leaf per controllare l'OCSP
+        digital_certificate = Certificate(None)
+        leaf_cert_raw = row['leaf_cert_raw']
+        
+        # Prende il certificato dell'issuer per controllare l'OCSP
+        if(certificate_type == DatabaseType.ROOT):
+            issuer_cert = digital_certificate.get_certificate_from_raw(leaf_cert_raw)
         else:
-            return "Impossible Retrieve OCSP Information"
-    else:
-        return "Not Ok OCSP Response"
+            issuer_cert_raw = row['issuer_cert_raw']
+            issuer_cert = digital_certificate.get_certificate_from_raw(issuer_cert_raw)
+        
+        issuer_common_name = row['common_name']
+        
+        ocsp_check = "No Issuer Url Found"
+        if(issuer_url is not None or issuer_cert is not None):
+            for ocsp_url in ocsp_urls:
+                for hash_algorithm in hash_algorithms:
+                    ocsp_check = await check_ocsp_status(leaf_cert_raw, hash_algorithm, issuer_url, issuer_common_name, ocsp_url, issuer_cert)
+                    
+                    if(ocsp_check != "Impossible Retrieve OCSP Information"):
+                        break
+                
+                if(ocsp_check != "Impossible Retrieve OCSP Information"):
+                        break
+        
+        if(ocsp_check == "Impossible Retrieve OCSP Information"):
+            logging.error(f"Impossibile recuperare le informazioni OCSP per il certificato ID {certificate_id}. Verifica la connessione o il formato del certificato.")
+        
+        return (ocsp_check, certificate_id)
+    except Exception as e:
+        logging.error(f"Errore durante il controllo dello stato OCSP per il certificato ID {certificate_id}: {e}")
     
 def reorder_signature_algorithm(signature_algorithm):
     """Riorganizza l'algoritmo di firma nel formato 'signing-hash' se è un algoritmo RSA."""

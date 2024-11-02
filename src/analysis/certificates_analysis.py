@@ -1,16 +1,17 @@
 import json
-from rich.progress import Progress, SpinnerColumn, TextColumn
+import aiosqlite
 import logging
 import argparse
-from tqdm.rich import tqdm
+import pyfiglet
 import os, shutil, sys, signal
+from tqdm.rich import tqdm
+from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.console import Console
 from db.database import Database, DatabaseType
 from dao.certificate_dao import CertificateDAO
 from utils.utils import find_next_intermediate_certificate, count_certificates_to_root, setup_logging, ArgparseFormatter
 from utils.plotter_utils import plot_general_certificates_analysis, plot_leaf_certificates_analysis
 from utils.graph_plotter import GraphPlotter
-import pyfiglet
 
 # Admin: Anuar Elio Magliari 
 # Politecnico di Torino
@@ -216,12 +217,11 @@ def root_certificates_analysis(certificates_file, dao: CertificateDAO, database:
     pbar_root.close()
     return
 
-def process_ocsp_check_status_request(dao: CertificateDAO, database: Database):
+async def process_ocsp_check_status_request(dao: CertificateDAO, database: Database):
     """Elabora la richiesta per controllare lo stato OCSP di tutti i certificati nel DAO."""
-    
     try:
-        with database.transaction():
-            dao.check_ocsp_status_for_certificates(database.db_type)
+        async with aiosqlite.connect(database.db_path) as db:
+            await dao.check_ocsp_status_for_certificates(database.db_type, db)
             tqdm.write("")
             logging.info("Analisi OCSP per i certificati completata.")
     except Exception as e:
@@ -331,7 +331,7 @@ def plot_root_certificates(dao: CertificateDAO, is_verbose: bool):
     logging.info("Generazione dei grafici per l'analisi dei certificati Root completata.")
     return
  
-def certificates_analysis_main():
+async def certificates_analysis_main():
     global leaf_database, intermediate_database, root_database
     
     # Pulisce la console
@@ -450,7 +450,6 @@ def certificates_analysis_main():
         
         logging.info(f"Conteggio completato: {total_lines:,.0f} certificati trovati.")
 
-
     # Analisi Certificati Leaf
     db_leaf_path = os.path.abspath(f'{leaf_path}/leaf_certificates.db')
     if(args.delete_leaf_db and not (args.leaf_analysis or args.leaf_ocsp_analysis or args.plot_leaf_results)):
@@ -490,7 +489,7 @@ def certificates_analysis_main():
         # Esegui l'analisi OCSP dei certificati
         if(args.leaf_ocsp_analysis):
             logging.info("Inizio dell'analisi OCSP per i certificati.")  
-            process_ocsp_check_status_request(leaf_dao, leaf_database)
+            await process_ocsp_check_status_request(leaf_dao, leaf_database)
         
         # Esegui la generazione dei grafici per i certificati leaf
         if(args.plot_leaf_results):
@@ -543,7 +542,7 @@ def certificates_analysis_main():
         # Esegui l'analisi OCSP dei certificati
         if(args.intermediate_ocsp_analysis):
             logging.info("Inizio dell'analisi OCSP per i certificati.")  
-            process_ocsp_check_status_request(intermediate_dao, intermediate_database)
+            await process_ocsp_check_status_request(intermediate_dao, intermediate_database)
         
         # Esegui la generazione dei grafici per i certificati Intermediate
         if(args.plot_intermediate_results):
@@ -596,7 +595,7 @@ def certificates_analysis_main():
         # Esegui l'analisi OCSP dei certificati
         if(args.root_ocsp_analysis):
             logging.info("Inizio dell'analisi OCSP per i certificati.")  
-            process_ocsp_check_status_request(root_dao, root_database)
+            await process_ocsp_check_status_request(root_dao, root_database)
         
         # Esegui la generazione dei grafici per i certificati Root
         if(args.plot_root_results):

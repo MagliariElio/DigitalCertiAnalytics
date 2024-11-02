@@ -155,7 +155,13 @@ class Database:
         """Rimuove colonne specifiche dalla tabella 'Certificates' in base al tipo di database."""
         try:
             # Elimina le colonne dalle tabelle specificate
-            if(self.db_type == DatabaseType.INTERMEDIATE):
+            if(self.db_type == DatabaseType.LEAF):
+                columns = [
+                    "certificates_emitted_up_to"
+                ]
+                self._restructure_table_remove_columns("Certificates", columns)
+                logging.info("Colonne specificate rimosse dalla tabella 'Certificates'.")
+            elif(self.db_type == DatabaseType.INTERMEDIATE):
                 columns = [
                     "ocsp_stapling",
                     "ocsp_must_stapling"

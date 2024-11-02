@@ -40,7 +40,7 @@ class Certificate:
         except Exception as e:
             logging.error(f"Certificato non valido, errore nel parsing: {e}")
             return None
-
+    
     def is_aia_critical(self, issuer):
         """Controlla se l'AIA è critico, non critico o non trovato."""
         try:
