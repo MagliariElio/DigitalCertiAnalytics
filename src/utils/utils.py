@@ -3,7 +3,8 @@ import logging
 import base64
 import warnings
 import argparse
-import aiohttp
+import traceback
+import aiohttp, asyncio
 from db.database import DatabaseType
 from typing import Optional, Tuple
 from bean.certificate import Certificate
@@ -154,7 +155,7 @@ async def make_ocsp_query(raw, issuer_certificate, alg, ocsp_link):
         req = builder.build()
         req_path = base64.b64encode(req.public_bytes(serialization.Encoding.DER))
         final_url = urljoin(ocsp_link + '/', req_path.decode('ascii'))
-        async with session.get(final_url, timeout=15) as response:
+        async with session.get(final_url, timeout=30) as response:
             try:
                 result = "Impossible Retrieve OCSP Information"
                 
@@ -174,9 +175,14 @@ async def make_ocsp_query(raw, issuer_certificate, alg, ocsp_link):
                     result = "Not Ok OCSP Response"
 
                 return result
+            except asyncio.TimeoutError:
+                return "Impossible Retrieve OCSP Information"
             except aiohttp.ClientTimeout:
                 return "Impossible Retrieve OCSP Information"
             except aiohttp.ClientResponseError as e:
+                logging.error(f"Errore durante la richiesta OCSP per {final_url}: {e}")
+                return "Impossible Retrieve OCSP Information"
+            except Exception:
                 logging.error(f"Errore durante la richiesta OCSP per {final_url}: {e}")
                 return "Impossible Retrieve OCSP Information"
 
@@ -241,7 +247,9 @@ async def get_issuer_certificate_from_issuer_link(issuer_link, issuer_common_nam
                 else:
                     logging.error(f"Errore nel recupero del certificato ({issuer_link}). Stato: {response.status}")
                     return "Impossible Retrieve OCSP Information"
-                
+        
+        except asyncio.TimeoutError:
+                return "Impossible Retrieve OCSP Information"
         except aiohttp.ClientTimeout:
             return "Impossible Retrieve OCSP Information"
         except aiohttp.ClientResponseError as http_err:
@@ -279,7 +287,7 @@ async def check_ocsp_status_row(row, certificate_type):
         
         aia = row['authority_info_access']
         aia = json.loads(aia)
-
+        
         issuer_urls = aia.get("issuer_urls", [])
         issuer_url = next(iter(issuer_urls), None)
 
@@ -318,6 +326,8 @@ async def check_ocsp_status_row(row, certificate_type):
         return (ocsp_check, certificate_id)
     except Exception as e:
         logging.error(f"Errore durante il controllo dello stato OCSP per il certificato ID {certificate_id}: {e}")
+        # traceback.print_exc()
+        return ("Impossible Retrieve OCSP Information", certificate_id)
     
 def reorder_signature_algorithm(signature_algorithm):
     """Riorganizza l'algoritmo di firma nel formato 'signing-hash' se è un algoritmo RSA."""

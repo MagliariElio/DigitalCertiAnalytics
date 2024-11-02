@@ -39,7 +39,6 @@ class Database:
         tables = cursor.fetchall()
         if not tables:
             self.create_tables()
-            self.create_indexes()
         
         logging.info(f"Connessione al database esistente: 'file://{self.db_path}'")
         return
@@ -84,6 +83,7 @@ class Database:
             cursor.executescript("""
                 -- Indici per la tabella Certificates
                 CREATE INDEX IF NOT EXISTS idx_certificates_ocsp_check ON Certificates(ocsp_check);
+                CREATE INDEX IF NOT EXISTS idx_certificates_authority_info_access ON Certificates(authority_info_access);
                 CREATE INDEX IF NOT EXISTS idx_certificates_self_signed ON Certificates(self_signed);
 
                 -- Indici per la tabella SignedCertificateTimestamps
@@ -103,6 +103,7 @@ class Database:
             cursor.executescript("""
                 -- Indici per la tabella Certificates
                 CREATE INDEX IF NOT EXISTS idx_certificates_ocsp_check ON Certificates(ocsp_check);
+                CREATE INDEX IF NOT EXISTS idx_certificates_authority_info_access ON Certificates(authority_info_access);
                 CREATE INDEX IF NOT EXISTS idx_certificates_self_signed ON Certificates(self_signed);
 
                 -- Indici per la tabella SignedCertificateTimestamps

@@ -296,7 +296,7 @@ class CertificateDAO:
                                     certificate_type, certificates_emitted_up_to)
         return
 
-    async def check_ocsp_status_for_certificates(self, certificate_type: DatabaseType, db, batch_size=1000):
+    async def check_ocsp_status_for_certificates(self, certificate_type: DatabaseType, db, batch_size=5000):
         """Controlla lo stato OCSP per ciascun certificato nel database e aggiorna il relativo stato."""
         global pbar_ocsp_check
         
@@ -308,6 +308,22 @@ class CertificateDAO:
                 WHERE ocsp_check = 'No Request Done' AND 
                     (authority_info_access LIKE '{}' OR NOT authority_info_access LIKE '%ocsp_urls%')
             """)
+            await db.commit()
+            
+            # Esclude tutte le righe che non hanno un URL dell'emittente e il certificato dell'emittente non è presente nel database. 
+            # Questa logica si applica solo ai certificati non root, poiché i certificati root hanno il campo 'raw' uguale a quello del certificato issuer.
+            if(certificate_type != DatabaseType.ROOT):
+                await db.execute("""
+                    UPDATE Certificates
+                    SET ocsp_check = 'No Issuer Url Found'
+                    WHERE NOT authority_info_access LIKE '{}' 
+                    AND NOT authority_info_access LIKE '%issuer_urls%' 
+                    AND issuer_id IN (
+                        SELECT issuer_id
+                        FROM Issuers
+                        WHERE raw IS NULL)
+                """)
+                await db.commit()
             
             # Conta il numero di certificati per la barra di progresso
             async with db.execute("""
@@ -329,6 +345,14 @@ class CertificateDAO:
             pbar_ocsp_check = tqdm(total=total_lines, desc=" 🕵️‍♂️  [blue bold]Elaborazione Certificati[/blue bold]", unit="cert.", 
                         colour="blue", bar_format="{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} • ⚡ {rate_fmt}")
 
+            row_to_certificate = lambda row: {
+                "certificate_id": row[0],
+                "authority_info_access": row[1],
+                "common_name": row[2],
+                "issuer_cert_raw": row[3],
+                "leaf_cert_raw": row[4]
+            }
+
             while True:
                 async with db.execute("""
                     SELECT c.certificate_id, c.authority_info_access, i.common_name, i.raw AS issuer_cert_raw, c.raw AS leaf_cert_raw
@@ -342,27 +366,29 @@ class CertificateDAO:
                     rows = await cursor.fetchall()
 
                     # Se non ci sono più record, interrompe il ciclo
-                    if not rows:
+                    if not rows or len(rows) == 0:
                         break
                     
-                    tasks = [check_ocsp_status_row(row, certificate_type) for row in rows]
+                    # Aggiorna la barra di caricamento
+                    pbar_ocsp_check.update(len(rows))
+                    
+                    tasks = [check_ocsp_status_row(row_to_certificate(row), certificate_type) for row in rows]
                     results = await asyncio.gather(*tasks)
+                
+                    update_values = [(result[0], result[1]) for result in results]
                 
                     # Aggiornamento in batch dell'OCSP status nel db
                     await db.executemany("""
                         UPDATE Certificates
                         SET ocsp_check = ?
                         WHERE certificate_id = ?
-                    """, (list(zip(*results))))
+                    """, (update_values))
                     await db.commit()
-                    
-                    # Aggiorna la barra di caricamento
-                    pbar_ocsp_check.update(len(results))
                 
         except json.JSONDecodeError as json_err:
-            logging.error(f"\nErrore nella deserializzazione del JSON: {json_err}")
+            logging.error(f"Errore nella deserializzazione del JSON: {json_err}")
         except Exception as e:
-            logging.error(f"\nErrore generale durante il controllo dello stato OCSP: {e}")
+            logging.error(f"Errore generale durante il controllo dello stato OCSP: {e}")
         
         # Chiusura barra di progresso
         pbar_ocsp_check.close()

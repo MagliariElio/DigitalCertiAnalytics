@@ -17,6 +17,28 @@ FROM Certificates
 WHERE ocsp_check = 'No Request Done' AND (authority_info_access LIKE '{}' OR NOT authority_info_access LIKE '%ocsp_urls%')
 GROUP BY ocsp_check;
 
+SELECT COUNT(*) AS count
+FROM Certificates
+WHERE (authority_info_access LIKE '{}' OR NOT authority_info_access LIKE '%ocsp_urls%')
+
+SELECT COUNT(*) AS count, *
+FROM Certificates AS c INNER JOIN Issuers AS i ON c.issuer_id = i.issuer_id
+WHERE (NOT c.authority_info_access LIKE '{}' AND NOT c.authority_info_access LIKE '%issuer_urls%' AND i.raw IS NULL)
+
+UPDATE Certificates
+SET ocsp_check = 'No Issuer Url Found'
+WHERE NOT authority_info_access LIKE '{}' 
+  AND NOT authority_info_access LIKE '%issuer_urls%' 
+  AND issuer_id IN (
+      SELECT issuer_id
+      FROM Issuers
+      WHERE raw IS NULL
+  );
+
+SELECT COUNT(*) AS count
+FROM Certificates
+WHERE NOT (authority_info_access LIKE '{}' OR NOT authority_info_access LIKE '%ocsp_urls%')
+
 SELECT COUNT(*) AS count, ocsp_check, authority_info_access
 FROM Certificates
 WHERE (authority_info_access LIKE '{}' OR NOT authority_info_access LIKE '%ocsp_urls%')
