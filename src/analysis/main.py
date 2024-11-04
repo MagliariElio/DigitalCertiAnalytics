@@ -1,14 +1,13 @@
 import asyncio
-from analysis.certificates_analysis import certificates_analysis_main, handle_exit_signal, setup_signal_handlers
+from analysis.certificates_analysis import certificates_analysis_main, setup_signal_handlers, close_connections
 
 # Admin: Anuar Elio Magliari 
 # Politecnico di Torino
 
 if __name__ == "__main__":
     # Imposta i gestori dei segnali
-    setup_signal_handlers()
-    
-    try:
-        asyncio.run(certificates_analysis_main())
-    except KeyboardInterrupt:
-        asyncio.run(handle_exit_signal())
+    loop = asyncio.get_event_loop()
+    setup_signal_handlers(loop)
+    loop.run_until_complete(certificates_analysis_main())
+    loop.run_until_complete(close_connections())
+    loop.close()

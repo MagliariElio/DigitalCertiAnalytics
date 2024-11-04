@@ -296,7 +296,7 @@ class CertificateDAO:
                                     certificate_type, certificates_emitted_up_to)
         return
 
-    async def check_ocsp_status_for_certificates(self, certificate_type: DatabaseType, db, batch_size=2500):
+    async def check_ocsp_status_for_certificates(self, certificate_type: DatabaseType, db, ocsp_temp_file_writer, batch_size=1500, offset=0):
         """Controlla lo stato OCSP per ciascun certificato nel database e aggiorna il relativo stato."""
         global pbar_ocsp_check
         
@@ -359,8 +359,8 @@ class CertificateDAO:
                     FROM Certificates AS c 
                     INNER JOIN Issuers AS i ON c.issuer_id = i.issuer_id
                     WHERE c.ocsp_check = 'No Request Done'
-                    LIMIT ?
-                """, (batch_size, )) as cursor:
+                    LIMIT ? OFFSET ?
+                """, (batch_size, offset)) as cursor:
                 
                     # Prende tutti i record
                     rows = await cursor.fetchall()
@@ -377,14 +377,20 @@ class CertificateDAO:
                 
                     update_values = [(result[0], result[1]) for result in results]
                 
+                    # Scrive i risultati in un file temporaneo per evitare di scrivere direttamente nel db
+                    ocsp_temp_file_writer.writerows(update_values)
+
+                    # Incrementa l'offset per il prossimo batch
+                    offset += batch_size
+
                     # Aggiornamento in batch dell'OCSP status nel db
-                    await db.executemany("""
-                        UPDATE Certificates
-                        SET ocsp_check = ?
-                        WHERE certificate_id = ?
-                    """, (update_values))
-                    await db.commit()
-                
+                    # await db.executemany("""
+                    #    UPDATE Certificates
+                    #    SET ocsp_check = ?
+                    #    WHERE certificate_id = ?
+                    # """, (update_values))
+                    # await db.commit()
+                    
         except json.JSONDecodeError as json_err:
             logging.error(f"Errore nella deserializzazione del JSON: {json_err}")
         except Exception as e:

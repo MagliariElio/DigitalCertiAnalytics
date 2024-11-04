@@ -1,14 +1,15 @@
-import json
+import json, csv
 import aiosqlite, asyncio
 import logging
 import argparse
 import pyfiglet
-import os, shutil, signal
+import os, sys, shutil, signal
 from tqdm.rich import tqdm
 from rich.console import Console
 from db.database import Database, DatabaseType
 from dao.certificate_dao import CertificateDAO
-from utils.utils import find_next_intermediate_certificate, count_certificates_to_root, setup_logging, ArgparseFormatter
+from utils.utils import find_next_intermediate_certificate, count_certificates_to_root, setup_logging, ArgparseFormatter 
+from utils.utils import update_certificates_ocsp_status_db, save_certificates_ocsp_status_file
 from utils.plotter_utils import plot_general_certificates_analysis, plot_leaf_certificates_analysis
 from utils.graph_plotter import GraphPlotter
 
@@ -46,22 +47,31 @@ async def close_connections():
         plotter.close_all_plots()
         
     logging.info("Tutte le connessioni ai database sono state chiuse.")
+    return
 
-async def handle_exit_signal(signal, frame):
-    """Funzione per gestire il segnale SIGINT (Ctrl + C)."""
-    logging.info("Segnale SIGINT (Ctrl + C) ricevuto. Inizio della procedura di chiusura...")
+async def handle_exit_signal(loop, signal=None):
+    """Cancella i task e chiude il loop in modo ordinato."""
+    if signal:
+        logging.info(f"Ricevuto segnale di interruzione ({signal.name}). Inizio della procedura di chiusura...")
+
+    tasks = [t for t in asyncio.all_tasks(loop) if t is not asyncio.current_task(loop)]
+    for task in tasks:
+        task.cancel()
+
+    # Attende la cancellazione di tutti i task
+    await asyncio.gather(*tasks, return_exceptions=True)
+    
     await close_connections()
     logging.info("Uscita dell'applicazione in corso...\n")
-    asyncio.get_event_loop().stop()
 
-def setup_signal_handlers():
+    loop.stop()
+    return
+
+def setup_signal_handlers(loop):
     """Configura i gestori dei segnali per gestire SIGINT."""
-    loop = asyncio.get_event_loop()
-    
-    def signal_handler(sig, frame):
-        asyncio.ensure_future(handle_exit_signal())
-    
-    signal.signal(signal.SIGINT, signal_handler)
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        loop.add_signal_handler(sig, lambda s=sig: asyncio.create_task(handle_exit_signal(loop, signal=s)))
+    return
 
 def leaf_certificates_analysis(certificates_file, dao: CertificateDAO, database: Database, total_lines:int=0):
     """Analizza e inserisce i certificati leaf dal file JSON nel database."""
@@ -72,28 +82,28 @@ def leaf_certificates_analysis(certificates_file, dao: CertificateDAO, database:
         tqdm.write("")
         pbar_leaf = tqdm(total=total_lines, desc=" 🔍  [magenta bold]Elaborazione Certificati[/magenta bold]", unit="cert.", 
                     colour="magenta", bar_format="{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} • ⚡ {rate_fmt}")
+        try:
+            for line_number, row in enumerate(certificates_reader, start=1):
+                try:
+                    json_row = json.loads(row)
+                    status = json_row.get("data", {}).get("tls", {}).get("status", "")
 
-        for line_number, row in enumerate(certificates_reader, start=1):
-            try:
-                json_row = json.loads(row)
-                status = json_row.get("data", {}).get("tls", {}).get("status", "")
+                    # Aggiorna la barra di caricamento
+                    pbar_leaf.update(1)
 
-                # Aggiorna la barra di caricamento
-                pbar_leaf.update(1)
-
-                with database.transaction():
-                    if status == "success":
-                        dao.process_insert_certificate(json_row, database.db_type, 0)
-                    else:
-                        dao.insert_error_row(json_row)
-                        
-            except json.JSONDecodeError:
-                logging.error(f"Errore nel parsing della riga {line_number}: {row.strip()}")
-            except Exception as e:
-                logging.error(f"Errore nell'elaborazione della riga {line_number}: {e}")
+                    with database.transaction():
+                        if status == "success":
+                            dao.process_insert_certificate(json_row, database.db_type, 0)
+                        else:
+                            dao.insert_error_row(json_row)
+                            
+                except json.JSONDecodeError:
+                    logging.error(f"Errore nel parsing della riga {line_number}: {row.strip()}")
+                except Exception as e:
+                    logging.error(f"Errore nell'elaborazione della riga {line_number}: {e}")
         
-    # Chiusura barra di progresso
-    pbar_leaf.close()
+        finally:
+            pbar_leaf.close()   # Chiusura barra di progresso
     return
 
 def intermediate_certificates_analysis(certificates_file, dao: CertificateDAO, database: Database, total_lines:int=0):
@@ -222,13 +232,34 @@ def root_certificates_analysis(certificates_file, dao: CertificateDAO, database:
     pbar_root.close()
     return
 
-async def process_ocsp_check_status_request(dao: CertificateDAO, database: Database):
+async def process_ocsp_check_status_request(dao: CertificateDAO, database: Database, main_path):
     """Elabora la richiesta per controllare lo stato OCSP di tutti i certificati nel DAO."""
     try:
+        ocsp_temp_file = os.path.abspath(f'{main_path}/ocsp_check_results_temp.csv')
+        ocsp_backup_file = os.path.abspath(f'{main_path}/ocsp_certificates_backup.csv')
+        
         async with aiosqlite.connect(database.db_path) as db:
-            await dao.check_ocsp_status_for_certificates(database.db_type, db)
+            # Se il file esiste e ha delle righe, salva questi dati nel db e lo cancella
+            if os.path.exists(ocsp_temp_file) and os.path.getsize(ocsp_temp_file) > 0:
+                await update_certificates_ocsp_status_db(db, ocsp_temp_file)
+                
+            # Esegue l'ocsp check prendendo i dati dal db e scrive nel file temporaneo
+            with open(ocsp_temp_file, mode="a", newline="") as ocsp_temp_file_csv:
+                ocsp_temp_file_writer = csv.writer(ocsp_temp_file_csv)
+                await dao.check_ocsp_status_for_certificates(database.db_type, db, ocsp_temp_file_writer)
+            
+            # Esegue il salvataggio dei dati presenti nel file al db
+            await update_certificates_ocsp_status_db(db, ocsp_temp_file)
+            
             tqdm.write("")
+            logging.info("Salvataggio dei dati dello stato OCSP come backup.")
+            
+            # Scrive su un file CSV i lo status OCSP relativi ai certificati come backup
+            await save_certificates_ocsp_status_file(db, ocsp_backup_file)
+            
             logging.info("Analisi OCSP per i certificati completata.")
+    except asyncio.CancelledError:
+        logging.info("Elaborazione della richiesta di controllo OCSP cancellata.")
     except Exception as e:
         logging.error(f"Errore nell'elaborazione della richiesta di controllo OCSP: {e}")
         
@@ -499,7 +530,7 @@ async def certificates_analysis_main():
         # Esegui l'analisi OCSP dei certificati
         if(args.leaf_ocsp_analysis):
             logging.info("Inizio dell'analisi OCSP per i certificati.")  
-            await process_ocsp_check_status_request(leaf_dao, leaf_database)
+            await process_ocsp_check_status_request(leaf_dao, leaf_database, leaf_path)
         
         # Esegui la generazione dei grafici per i certificati leaf
         if(args.plot_leaf_results):
@@ -554,7 +585,7 @@ async def certificates_analysis_main():
         # Esegui l'analisi OCSP dei certificati
         if(args.intermediate_ocsp_analysis):
             logging.info("Inizio dell'analisi OCSP per i certificati.")  
-            await process_ocsp_check_status_request(intermediate_dao, intermediate_database)
+            await process_ocsp_check_status_request(intermediate_dao, intermediate_database, intermediate_path)
         
         # Esegui la generazione dei grafici per i certificati Intermediate
         if(args.plot_intermediate_results):
@@ -609,7 +640,7 @@ async def certificates_analysis_main():
         # Esegui l'analisi OCSP dei certificati
         if(args.root_ocsp_analysis):
             logging.info("Inizio dell'analisi OCSP per i certificati.")  
-            await process_ocsp_check_status_request(root_dao, root_database)
+            await process_ocsp_check_status_request(root_dao, root_database, root_path)
         
         # Esegui la generazione dei grafici per i certificati Root
         if(args.plot_root_results):

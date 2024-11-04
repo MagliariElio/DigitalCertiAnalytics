@@ -3,7 +3,8 @@ import logging
 import base64
 import warnings
 import argparse
-import traceback
+import csv
+import os
 import aiohttp, asyncio
 from db.database import DatabaseType
 from typing import Optional, Tuple
@@ -155,7 +156,7 @@ async def make_ocsp_query(raw, issuer_certificate, alg, ocsp_link):
         req = builder.build()
         req_path = base64.b64encode(req.public_bytes(serialization.Encoding.DER))
         final_url = urljoin(ocsp_link + '/', req_path.decode('ascii'))
-        async with session.get(final_url, timeout=30) as response:
+        async with session.get(final_url, timeout=20) as response:
             try:
                 result = "Impossible Retrieve OCSP Information"
                 
@@ -195,7 +196,7 @@ async def get_issuer_certificate_from_issuer_link(issuer_link, issuer_common_nam
     
     async with aiohttp.ClientSession() as session:
         try:
-            async with session.get(issuer_link, headers=headers, allow_redirects=True, timeout=15) as response:
+            async with session.get(issuer_link, headers=headers, allow_redirects=True, timeout=20) as response:
                 if response.status == 200:
                     content_type = response.headers.get('Content-Type', '')
         
@@ -322,7 +323,7 @@ async def check_ocsp_status_row(row, certificate_type):
                 
         return (ocsp_check, certificate_id)
     except Exception as e:
-        logging.error(f"Errore durante il controllo dello stato OCSP per il certificato ID {certificate_id}: {e}")
+        # logging.error(f"Errore durante il controllo dello stato OCSP per il certificato ID {certificate_id}: {e}")
         # traceback.print_exc()
         return ("Impossible Retrieve OCSP Information", certificate_id)
     
@@ -459,3 +460,71 @@ def count_intermediate_up_to_root_and_root_certificates(chain_list:list, current
                 current_cert = next_cert
         else:
             return (count_intermediate, False)
+
+async def update_certificates_ocsp_status_db(db, ocsp_temp_file, batch_size=10000):
+    """Aggiorna lo stato OCSP dei certificati nel database."""
+    update_values = []
+
+    with open(ocsp_temp_file, mode="r", newline="") as ocsp_temp_file_csv:
+        ocsp_temp_file_reader = csv.reader(ocsp_temp_file_csv)
+        
+        for row in ocsp_temp_file_reader:
+            update_values.append((row[0], row[1]))
+
+            if len(update_values) >= batch_size:
+                await db.executemany("""
+                    UPDATE Certificates
+                    SET ocsp_check = ?
+                    WHERE certificate_id = ?
+                """, update_values)
+                update_values.clear()
+
+        # Inserisce eventuali righe rimanenti
+        if update_values:
+            await db.executemany("""
+                UPDATE Certificates
+                SET ocsp_check = ?
+                WHERE certificate_id = ?
+            """, update_values)
+    
+        await db.commit()
+    
+    # Cancella il file temporaneo
+    os.remove(ocsp_temp_file)
+    return
+    
+async def save_certificates_ocsp_status_file(db, ocsp_file, batch_size=10000, offset=0):
+    """Salva lo stato OCSP dei certificati in un file CSV."""
+
+    # Verifica se il file esiste e scrivi intestazioni solo se il file è vuoto
+    write_header = not os.path.exists(ocsp_file)
+    
+    with open(ocsp_file, mode="a", newline="") as ocsp_file_csv:
+        ocsp_file_writer = csv.writer(ocsp_file_csv)
+        
+        if write_header:
+            ocsp_file_writer.writerow(['Certificate Id', 'Leaf Domain', 'OCSP Check'])
+    
+        while True:
+            async with db.execute("""
+                SELECT certificate_id, leaf_domain, ocsp_check
+                FROM Certificates
+                WHERE ocsp_check <> 'No Request Done'
+                LIMIT ? OFFSET ?
+                """, (batch_size, offset)) as cursor:
+            
+                # Prende tutti i record
+                rows = await cursor.fetchall()
+
+                # Se non ci sono più record, interrompe il ciclo
+                if not rows:
+                    break
+
+                # Scrivi le righe nel file CSV
+                ocsp_file_writer.writerows(rows)
+                
+                # Incrementa l'offset per il prossimo batch
+                offset += batch_size
+    
+    return
+    
