@@ -485,10 +485,11 @@ async def certificates_analysis_main():
             leaf_certificates_analysis(result_json_file, leaf_dao, leaf_database, total_lines)
             logging.info("Analisi dei certificati Leaf completata con successo.")
             
-            # Rimuove i dati non necessari e crea gli indici
+            # Rimuove i dati non necessari, crea gli indici e applica delle correzioni ai dati
             leaf_database.cleanup_unused_tables()
             leaf_database.remove_columns()
             leaf_database.create_indexes()
+            leaf_database.apply_database_corrections()
 
         # Esegui l'analisi OCSP dei certificati
         if(args.leaf_ocsp_analysis):
@@ -539,10 +540,11 @@ async def certificates_analysis_main():
             intermediate_certificates_analysis(result_json_file, intermediate_dao, intermediate_database, total_lines)
             logging.info("Analisi dei certificati Intermediate completata con successo.")
             
-            # Rimuove i dati non necessari e crea gli indici
+            # Rimuove i dati non necessari, crea gli indici e applica delle correzioni ai dati
             intermediate_database.cleanup_unused_tables()
             intermediate_database.remove_columns()
             intermediate_database.create_indexes()
+            intermediate_database.apply_database_corrections()
 
         # Esegui l'analisi OCSP dei certificati
         if(args.intermediate_ocsp_analysis):
@@ -593,10 +595,11 @@ async def certificates_analysis_main():
             root_certificates_analysis(result_json_file, root_dao, root_database, total_lines)
             logging.info("Analisi dei certificati Root completata con successo.")
             
-            # Rimuove i dati non necessari e crea gli indici
+            # Rimuove i dati non necessari, crea gli indici e applica delle correzioni ai dati
             root_database.cleanup_unused_tables()
             root_database.remove_columns()
             root_database.create_indexes()
+            root_database.apply_database_corrections()
 
         # Esegui l'analisi OCSP dei certificati
         if(args.root_ocsp_analysis):

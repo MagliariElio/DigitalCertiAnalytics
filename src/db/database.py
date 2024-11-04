@@ -57,26 +57,26 @@ class Database:
         """Crea gli indici per migliorare le prestazioni delle query."""
         cursor = self.conn.cursor()
         cursor.executescript("""
-                -- Indici per la tabella Certificates
-                CREATE INDEX IF NOT EXISTS idx_certificates_issuer_id ON Certificates(issuer_id);
-                CREATE INDEX IF NOT EXISTS idx_certificates_subject_id ON Certificates(subject_id);
-                CREATE INDEX IF NOT EXISTS idx_certificates_validity_end ON Certificates(validity_end);
-                CREATE INDEX IF NOT EXISTS idx_certificates_version ON Certificates(version);
-                CREATE INDEX IF NOT EXISTS idx_certificates_signature_valid ON Certificates(signature_valid);
+            -- Indici per la tabella Certificates
+            CREATE INDEX IF NOT EXISTS idx_certificates_issuer_id ON Certificates(issuer_id);
+            CREATE INDEX IF NOT EXISTS idx_certificates_subject_id ON Certificates(subject_id);
+            CREATE INDEX IF NOT EXISTS idx_certificates_validity_end ON Certificates(validity_end);
+            CREATE INDEX IF NOT EXISTS idx_certificates_version ON Certificates(version);
+            CREATE INDEX IF NOT EXISTS idx_certificates_signature_valid ON Certificates(signature_valid);
 
-                -- Indici per la tabella Issuers
-                CREATE INDEX IF NOT EXISTS idx_issuers_common_name ON Issuers(common_name);
-                CREATE INDEX IF NOT EXISTS idx_issuers_organization ON Issuers(organization);
+            -- Indici per la tabella Issuers
+            CREATE INDEX IF NOT EXISTS idx_issuers_common_name ON Issuers(common_name);
+            CREATE INDEX IF NOT EXISTS idx_issuers_organization ON Issuers(organization);
 
-                -- Indici per la tabella Subjects
-                CREATE INDEX IF NOT EXISTS idx_subjects_subject_dn ON Subjects(subject_dn);
-                CREATE INDEX IF NOT EXISTS idx_subjects_common_name ON Subjects(common_name);
+            -- Indici per la tabella Subjects
+            CREATE INDEX IF NOT EXISTS idx_subjects_subject_dn ON Subjects(subject_dn);
+            CREATE INDEX IF NOT EXISTS idx_subjects_common_name ON Subjects(common_name);
 
-                -- Indici per la tabella Extensions
-                CREATE INDEX IF NOT EXISTS idx_extensions_certificate_id ON Extensions(certificate_id);
-                CREATE INDEX IF NOT EXISTS idx_extensions_key_usage ON Extensions(key_usage);
-                CREATE INDEX IF NOT EXISTS idx_extensions_extended_key_usage ON Extensions(extended_key_usage);
-            """)
+            -- Indici per la tabella Extensions
+            CREATE INDEX IF NOT EXISTS idx_extensions_certificate_id ON Extensions(certificate_id);
+            CREATE INDEX IF NOT EXISTS idx_extensions_key_usage ON Extensions(key_usage);
+            CREATE INDEX IF NOT EXISTS idx_extensions_extended_key_usage ON Extensions(extended_key_usage);
+        """)
         
         if self.db_type == DatabaseType.LEAF:
             # Inserisci qui gli indici specifici solo per il database leaf
@@ -120,6 +120,26 @@ class Database:
         
         self.conn.commit()
         logging.info("Indici creati con successo.")
+        return
+    
+    def apply_database_corrections(self):
+        """Applica correzioni ai dati nel database."""
+        logging.info("Inizio delle correzioni al database.")
+        
+        try:
+            cursor = self.conn.cursor()
+            cursor.executescript("""
+                -- Rename DigiCert
+                UPDATE Issuers
+                SET organization = 'DigiCert Inc'
+                WHERE organization = 'DigiCert, Inc.';
+            """)
+
+            self.conn.commit()
+            logging.info("Correzioni al database applicate.")
+        except Exception as e:
+            logging.error(f"Errore nell'applicare le correzioni: {e}")
+            self.conn.rollback()
         return
     
     def _restructure_table_remove_columns(self, table_name: str, columns_to_remove: list[str]):

@@ -1,0 +1,5 @@
+Tempo impiegato per le analisi senza inserire gli indici nel database:
+
+- Leaf: 21 ore e 20 minuti (27 ore con indici), peso db senza indici 45 GB
+- Intermediate
+- Root: 2 ore
