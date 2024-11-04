@@ -1,11 +1,10 @@
 import json
-import aiosqlite
+import aiosqlite, asyncio
 import logging
 import argparse
 import pyfiglet
-import os, shutil, sys, signal
+import os, shutil, signal
 from tqdm.rich import tqdm
-from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.console import Console
 from db.database import Database, DatabaseType
 from dao.certificate_dao import CertificateDAO
@@ -16,7 +15,7 @@ from utils.graph_plotter import GraphPlotter
 # Admin: Anuar Elio Magliari 
 # Politecnico di Torino
 
-def close_connections():
+async def close_connections():
     """Funzione per gestire la chiusura delle connessioni ai database."""
     global pbar_ocsp_check
     
@@ -48,15 +47,21 @@ def close_connections():
         
     logging.info("Tutte le connessioni ai database sono state chiuse.")
 
-def handle_exit_signal(signal, frame):
+async def handle_exit_signal(signal, frame):
     """Funzione per gestire il segnale SIGINT (Ctrl + C)."""
     logging.info("Segnale SIGINT (Ctrl + C) ricevuto. Inizio della procedura di chiusura...")
-    close_connections()
+    await close_connections()
     logging.info("Uscita dell'applicazione in corso...\n")
-    sys.exit(0)
+    asyncio.get_event_loop().stop()
 
-# Associa il gestore di segnale
-signal.signal(signal.SIGINT, handle_exit_signal)
+def setup_signal_handlers():
+    """Configura i gestori dei segnali per gestire SIGINT."""
+    loop = asyncio.get_event_loop()
+    
+    def signal_handler(sig, frame):
+        asyncio.ensure_future(handle_exit_signal())
+    
+    signal.signal(signal.SIGINT, signal_handler)
 
 def leaf_certificates_analysis(certificates_file, dao: CertificateDAO, database: Database, total_lines:int=0):
     """Analizza e inserisce i certificati leaf dal file JSON nel database."""

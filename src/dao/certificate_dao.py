@@ -296,7 +296,7 @@ class CertificateDAO:
                                     certificate_type, certificates_emitted_up_to)
         return
 
-    async def check_ocsp_status_for_certificates(self, certificate_type: DatabaseType, db, batch_size=5000):
+    async def check_ocsp_status_for_certificates(self, certificate_type: DatabaseType, db, batch_size=2500):
         """Controlla lo stato OCSP per ciascun certificato nel database e aggiorna il relativo stato."""
         global pbar_ocsp_check
         

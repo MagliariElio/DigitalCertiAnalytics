@@ -319,10 +319,7 @@ async def check_ocsp_status_row(row, certificate_type):
                 
                 if(ocsp_check != "Impossible Retrieve OCSP Information"):
                         break
-        
-        if(ocsp_check == "Impossible Retrieve OCSP Information"):
-            logging.error(f"Impossibile recuperare le informazioni OCSP per il certificato ID {certificate_id}. Verifica la connessione o il formato del certificato.")
-        
+                
         return (ocsp_check, certificate_id)
     except Exception as e:
         logging.error(f"Errore durante il controllo dello stato OCSP per il certificato ID {certificate_id}: {e}")
