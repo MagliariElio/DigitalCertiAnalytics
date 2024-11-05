@@ -7,7 +7,8 @@ from analysis.certificates_analysis import certificates_analysis_main, setup_sig
 if __name__ == "__main__":
     # Imposta i gestori dei segnali
     loop = asyncio.get_event_loop()
-    setup_signal_handlers(loop)
+    # setup_signal_handlers(loop)
+    
     loop.run_until_complete(certificates_analysis_main())
     loop.run_until_complete(close_connections())
     loop.close()

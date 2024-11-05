@@ -113,7 +113,16 @@ def plot_general_certificates_analysis(dao: CertificateDAO, plotter:GraphPlotter
         filename = os.path.abspath(f'{plots_path}/signature_validity_distribution.png')
         data = pd.DataFrame(list(result.items()), columns=['Signature Validity', 'Count'])
         data.set_index('Signature Validity', inplace=True)
-        plotter.plot_pie_chart(data, column='Count', title='Validità delle Firme dei Certificati', filename=filename)
+        plotter.plot_bar_chart(
+            data=data, 
+            x=data.index, 
+            y='Count', 
+            title='Validità delle Firme dei Certificati', 
+            xlabel='Numero di Certificati', 
+            ylabel='Signature Validity', 
+            filename=filename
+        )
+        # plotter.plot_pie_chart(data, column='Count', title='Validità delle Firme dei Certificati', filename=filename)
         
         # Utilizzo del Key Usage nelle Estensioni
         logging.info("Generazione grafico 'Utilizzo del Key Usage nelle Estensioni'")
@@ -121,7 +130,7 @@ def plot_general_certificates_analysis(dao: CertificateDAO, plotter:GraphPlotter
         filename = os.path.abspath(f'{plots_path}/key_usage_distribution.png')
         data = pd.DataFrame(list(result.items()), columns=['Key Usage', 'Count'])
         data.set_index('Key Usage', inplace=True)    
-        plotter.plot_dot_plot(
+        plotter.plot_horizontal_bar(
             data=data, 
             x='Count',
             y='Key Usage',
@@ -148,12 +157,12 @@ def plot_general_certificates_analysis(dao: CertificateDAO, plotter:GraphPlotter
         )
         
         # Utilizzo dell'Extended Key Usage nelle Estensioni
-        logging.info("Generazione grafico 'Utilizzo dell'Extended Key Usage nelle Estensioni'")
+        logging.info("Generazione grafico 'Utilizzo dell\'Extended Key Usage nelle Estensioni'")
         result = dao.get_extended_key_usage_distribution()
         filename = os.path.abspath(f'{plots_path}/extended_key_usage_distribution.png')
         data = pd.DataFrame(list(result.items()), columns=['Extendend Key Usage', 'Count'])
         data.set_index('Extendend Key Usage', inplace=True)
-        plotter.plot_dot_plot(
+        plotter.plot_horizontal_bar(
             data=data, 
             x='Count',
             y=data.index,
@@ -164,7 +173,7 @@ def plot_general_certificates_analysis(dao: CertificateDAO, plotter:GraphPlotter
         )
         
         # Estensioni Critiche vs Non Critiche dell'Extended Key Usage nelle Estensioni
-        logging.info("Generazione grafico 'Estensioni Critiche vs Non Critiche dell'Extended Key Usage nelle Estensioni'")
+        logging.info("Generazione grafico 'Estensioni Critiche vs Non Critiche dell\'Extended Key Usage nelle Estensioni'")
         result = dao.get_critical_vs_non_critical_extended_key_usage()
         filename = os.path.abspath(f'{plots_path}/critical_vs_non_critical_extended_key_usage.png')
         data = pd.DataFrame(list(result.items()), columns=['Flag', 'Count'])
@@ -251,6 +260,13 @@ def plot_general_certificates_analysis(dao: CertificateDAO, plotter:GraphPlotter
         data.set_index('Flag', inplace=True)
         plotter.plot_pie_chart(data, column='Count', title='Estensioni Critiche vs Non Critiche del CRL Distribution', filename=filename)
         
+        # Stato OCSP dei Certificati
+        logging.info("Generazione grafico 'Stato OCSP dei Certificati'")
+        result = dao.get_ocsp_status_distribution()
+        filename = os.path.abspath(f'{plots_path}/ocsp_status_distribution.png')
+        data = pd.DataFrame(list(result.items()), columns=['OCSP Status', 'Count'])
+        data.set_index('OCSP Status', inplace=True)
+        plotter.plot_pie_chart(data, column='Count', title='Stato OCSP dei Certificati', filename=filename)
     except Exception as e:
         logging.error(f"Errore nella generazione di un grafico: {e}")
     
@@ -260,14 +276,6 @@ def plot_leaf_certificates_analysis(dao: CertificateDAO, plotter:GraphPlotter, p
     """Genera e salva grafici specifici per l'analisi dei certificati leaf."""    
     
     try:
-        # Stato OCSP dei Certificati
-        logging.info("Generazione grafico 'Stato OCSP dei Certificati'")
-        result = dao.get_ocsp_status_distribution()
-        filename = os.path.abspath(f'{plots_path}/ocsp_status_distribution.png')
-        data = pd.DataFrame(list(result.items()), columns=['OCSP Status', 'Count'])
-        data.set_index('OCSP Status', inplace=True)
-        plotter.plot_pie_chart(data, column='Count', title='Stato OCSP dei Certificati', filename=filename)
-        
         # Analisi Status Certificati
         logging.info("Generazione grafico 'Analisi Status Certificati'")
         result = dao.get_status_analysis()

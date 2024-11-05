@@ -111,7 +111,7 @@ def verify_signature(cert: Optional[x509.Certificate], ca_cert: Optional[x509.Ce
                 cert.signature_hash_algorithm
             )
         else:
-            return "Unsupported key type"
+            return "Unsupported Key Type"
 
         return "Valid"
     except InvalidSignature:
@@ -282,9 +282,11 @@ async def check_ocsp_status_row(row, certificate_type):
     """Controlla lo stato OCSP per un certificato specificato in una riga del database."""
     
     certificate_id = None
+    leaf_domain = None
                         
     try:
         certificate_id = row['certificate_id']
+        leaf_domain = row['leaf_domain']
         
         aia = row['authority_info_access']
         aia = json.loads(aia)
@@ -321,11 +323,11 @@ async def check_ocsp_status_row(row, certificate_type):
                 if(ocsp_check != "Impossible Retrieve OCSP Information"):
                         break
                 
-        return (ocsp_check, certificate_id)
+        return (ocsp_check, certificate_id, leaf_domain)
     except Exception as e:
         # logging.error(f"Errore durante il controllo dello stato OCSP per il certificato ID {certificate_id}: {e}")
         # traceback.print_exc()
-        return ("Impossible Retrieve OCSP Information", certificate_id)
+        return ("Impossible Retrieve OCSP Information", certificate_id, leaf_domain)
     
 def reorder_signature_algorithm(signature_algorithm):
     """Riorganizza l'algoritmo di firma nel formato 'signing-hash' se è un algoritmo RSA."""
@@ -461,21 +463,25 @@ def count_intermediate_up_to_root_and_root_certificates(chain_list:list, current
         else:
             return (count_intermediate, False)
 
-async def update_certificates_ocsp_status_db(db, ocsp_temp_file, batch_size=10000):
+async def update_certificates_ocsp_status_db(db, ocsp_temp_file, is_backup_file: bool = False, batch_size=10000):
     """Aggiorna lo stato OCSP dei certificati nel database."""
     update_values = []
 
     with open(ocsp_temp_file, mode="r", newline="") as ocsp_temp_file_csv:
         ocsp_temp_file_reader = csv.reader(ocsp_temp_file_csv)
         
+        # Salta l'intestazione
+        if(is_backup_file):
+            next(ocsp_temp_file_reader)
+        
         for row in ocsp_temp_file_reader:
-            update_values.append((row[0], row[1]))
+            update_values.append((row[0], row[1], row[2]))
 
             if len(update_values) >= batch_size:
                 await db.executemany("""
                     UPDATE Certificates
                     SET ocsp_check = ?
-                    WHERE certificate_id = ?
+                    WHERE certificate_id = ? AND leaf_domain = ?
                 """, update_values)
                 update_values.clear()
 
@@ -484,7 +490,7 @@ async def update_certificates_ocsp_status_db(db, ocsp_temp_file, batch_size=1000
             await db.executemany("""
                 UPDATE Certificates
                 SET ocsp_check = ?
-                WHERE certificate_id = ?
+                WHERE certificate_id = ? AND leaf_domain = ?
             """, update_values)
     
         await db.commit()
@@ -503,11 +509,11 @@ async def save_certificates_ocsp_status_file(db, ocsp_file, batch_size=10000, of
         ocsp_file_writer = csv.writer(ocsp_file_csv)
         
         if write_header:
-            ocsp_file_writer.writerow(['Certificate Id', 'Leaf Domain', 'OCSP Check'])
+            ocsp_file_writer.writerow(['OCSP Check', 'Certificate Id', 'Leaf Domain'])
     
         while True:
             async with db.execute("""
-                SELECT certificate_id, leaf_domain, ocsp_check
+                SELECT ocsp_check, certificate_id, leaf_domain
                 FROM Certificates
                 WHERE ocsp_check <> 'No Request Done'
                 LIMIT ? OFFSET ?

@@ -123,7 +123,7 @@ class CertificateDAO:
                 issuer_cert = digital_certificate.get_certificate_from_raw(find_raw_cert_issuer(chain, issuer_dn))
                 leaf_cert = digital_certificate.get_cert()
                 if(issuer_cert is None):
-                    signature_valid = "Issuer not found"
+                    signature_valid = "Issuer Not Found"
                 else:
                     signature_valid = verify_signature(leaf_cert, issuer_cert)
                     
@@ -351,12 +351,13 @@ class CertificateDAO:
                 "authority_info_access": row[1],
                 "common_name": row[2],
                 "issuer_cert_raw": row[3],
-                "leaf_cert_raw": row[4]
+                "leaf_cert_raw": row[4],
+                "leaf_domain": row[5]
             }
 
             while True:
                 async with db.execute("""
-                    SELECT c.certificate_id, c.authority_info_access, i.common_name, i.raw AS issuer_cert_raw, c.raw AS leaf_cert_raw
+                    SELECT c.certificate_id, c.authority_info_access, i.common_name, i.raw AS issuer_cert_raw, c.raw AS leaf_cert_raw, c.leaf_domain
                     FROM Certificates AS c 
                     INNER JOIN Issuers AS i ON c.issuer_id = i.issuer_id
                     WHERE c.ocsp_check = 'No Request Done'
@@ -376,7 +377,7 @@ class CertificateDAO:
                     tasks = [check_ocsp_status_row(row_to_certificate(row), certificate_type) for row in rows]
                     results = await asyncio.gather(*tasks)
                 
-                    update_values = [(result[0], result[1]) for result in results]
+                    update_values = [(result[0], result[1], result[2]) for result in results]
                 
                     # Scrive i risultati in un file temporaneo per evitare di scrivere direttamente nel db
                     ocsp_temp_file_writer.writerows(update_values)
@@ -477,6 +478,8 @@ class CertificateDAO:
     def get_issuer_certificate_count(self):
         """Conta il numero di certificati per ciascun issuer."""
         try:
+            limit_issuers = 20
+            
             self.cursor.execute("""
                 WITH IssuersCounts AS (
                     SELECT Issuers.organization, COUNT(*) AS certificate_count
@@ -489,7 +492,7 @@ class CertificateDAO:
                 TopIssuers AS (
                     SELECT organization, certificate_count
                     FROM IssuersCounts
-                    LIMIT 20
+                    LIMIT ?
                 ),
                 Others AS (
                     SELECT 'Others' AS organization, SUM(certificate_count) AS certificate_count
@@ -499,7 +502,7 @@ class CertificateDAO:
                 SELECT * FROM TopIssuers
                 UNION ALL
                 SELECT * FROM Others;
-            """)
+            """, (limit_issuers,))
             
             results = self.cursor.fetchall()
 
@@ -516,6 +519,10 @@ class CertificateDAO:
     def get_certificates_per_country(self) -> dict:
         """Conta quanti certificati sono stati emessi per ciascun paese."""
         try:
+            limit_issuers = 5
+            if(self.certificate_type == DatabaseType.INTERMEDIATE):
+                limit_issuers = 3
+                
             self.cursor.execute("""
                 WITH IssuersCounts AS (
                     SELECT Issuers.country, COUNT(*) AS country_count
@@ -527,7 +534,7 @@ class CertificateDAO:
                 TopCountry AS (
                     SELECT country, country_count
                     FROM IssuersCounts
-                    LIMIT 10
+                    LIMIT ?
                 ),
                 Others AS (
                     SELECT 'Others' AS country, COALESCE(SUM(country_count), 0) AS country_count
@@ -537,7 +544,7 @@ class CertificateDAO:
                 SELECT * FROM TopCountry
                 UNION ALL
                 SELECT * FROM Others;
-            """)
+            """, (limit_issuers, ))
             results = self.cursor.fetchall()
 
             logging.debug(f"Risultati ottenuti: {len(results)}")
@@ -556,10 +563,12 @@ class CertificateDAO:
             self.cursor.execute("""
                 SELECT validity_length, COUNT(*) AS count
                 FROM Certificates
-                WHERE validity_length IS NOT NULL AND validity_length >= 0 AND validity_length <= 630720000
+                WHERE validity_length IS NOT NULL AND validity_length >= 0
                 GROUP BY validity_length
                 ORDER BY validity_length ASC;
             """)
+            
+            # AND validity_length <= 630720000
             
             results = self.cursor.fetchall()
 
@@ -584,11 +593,11 @@ class CertificateDAO:
     def get_certificate_expiration_trend(self) -> dict:
         """Rappresenta il numero di certificati che scadranno nel tempo."""
         try:
-            count = 100
+            count_certs = 1800
             
             if(self.certificate_type == DatabaseType.ROOT):
-                count = 20
-                
+                count_certs = 50
+            
             self.cursor.execute("""
                 SELECT strftime('%Y-%m', validity_end) AS month, COUNT(*) AS count
                 FROM Certificates
@@ -596,7 +605,7 @@ class CertificateDAO:
                 GROUP BY month
                 HAVING count > ?
                 ORDER BY month ASC;
-            """, (count,))
+            """, (count_certs,))
             
             results = self.cursor.fetchall()
 
@@ -792,7 +801,7 @@ class CertificateDAO:
                 SELECT signature_valid AS is_valid_signature, COUNT(*) AS count
                 FROM Certificates
                 GROUP BY signature_valid
-                ORDER BY count ASC;
+                ORDER BY count DESC;
             """)
             
             results = self.cursor.fetchall()
@@ -973,15 +982,19 @@ class CertificateDAO:
     def get_signed_certificate_timestamp_trend(self) -> dict:
         """Mostra la distribuzione temporale per mese e anno dei Signed Certificate Timestamps."""
         try:
+            count = 20
+            if(self.certificate_type == DatabaseType.ROOT):
+                count = 0
+                
             self.cursor.execute("""
                 SELECT 
                     strftime('%Y-%m', datetime(timestamp, 'unixepoch')) AS month_year, 
                     COUNT(*) AS count
                 FROM SignedCertificateTimestamps
                 GROUP BY month_year
-                HAVING count > 10
+                HAVING count > ?
                 ORDER BY month_year ASC;
-            """)
+            """, (count,))
             
             results = self.cursor.fetchall()
 

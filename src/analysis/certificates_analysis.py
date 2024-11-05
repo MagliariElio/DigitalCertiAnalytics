@@ -101,7 +101,8 @@ def leaf_certificates_analysis(certificates_file, dao: CertificateDAO, database:
                     logging.error(f"Errore nel parsing della riga {line_number}: {row.strip()}")
                 except Exception as e:
                     logging.error(f"Errore nell'elaborazione della riga {line_number}: {e}")
-        
+        except KeyboardInterrupt:
+            logging.info(f"Ricevuto segnale di interruzione (SIGINT). Inizio della procedura di chiusura...")
         finally:
             pbar_leaf.close()   # Chiusura barra di progresso
     return
@@ -116,60 +117,62 @@ def intermediate_certificates_analysis(certificates_file, dao: CertificateDAO, d
         pbar_intermediate = tqdm(total=total_lines, desc=" 📜  [green bold]Righe elaborate[/green bold]", unit="rows", 
                     colour="green", bar_format="{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} • ⚡ {rate_fmt}")
 
-        for line_number, row in enumerate(certificates_reader, start=1):
-            try:
-                json_row = json.loads(row)
-                status = json_row.get("data", {}).get("tls", {}).get("status", "")
+        try:
+            for line_number, row in enumerate(certificates_reader, start=1):
+                try:
+                    json_row = json.loads(row)
+                    status = json_row.get("data", {}).get("tls", {}).get("status", "")
 
-                # Aggiorna la barra di caricamento
-                pbar_intermediate.update(1)
-                
-                with database.transaction():
-                    if status == "success":
-                        handshake_log = json_row.get("data", {}).get("tls", {}).get("result", {}).get("handshake_log", {})
-                        server_certificates = handshake_log.get("server_certificates", {})
-                        chain: list = server_certificates.get("chain", [])
-                        current_cert = server_certificates.get("certificate", {})
-                        certificates_emitted_up_to = 0          # Numero di certificati presenti tra il certificato leaf fino all'intermediate
-                        
-                        while True:
-                            # Estrae il certificato intermedio dalla catena. 
-                            # Restituisce None se l'issuer del certificato corrente non è presente o se è un certificato root.
-                            intermediate_cert = find_next_intermediate_certificate(chain, current_cert)
-                                           
-                            # Se non è stato trovato alcun certificato intermedio, interrompe il ciclo.
-                            if(intermediate_cert is None):
-                                break
+                    # Aggiorna la barra di caricamento
+                    pbar_intermediate.update(1)
+                    
+                    with database.transaction():
+                        if status == "success":
+                            handshake_log = json_row.get("data", {}).get("tls", {}).get("result", {}).get("handshake_log", {})
+                            server_certificates = handshake_log.get("server_certificates", {})
+                            chain: list = server_certificates.get("chain", [])
+                            current_cert = server_certificates.get("certificate", {})
+                            certificates_emitted_up_to = 0          # Numero di certificati presenti tra il certificato leaf fino all'intermediate
                             
-                            # Aggiorna il certificato corrente per la prossima iterazione
-                            current_cert = intermediate_cert
+                            while True:
+                                # Estrae il certificato intermedio dalla catena. 
+                                # Restituisce None se l'issuer del certificato corrente non è presente o se è un certificato root.
+                                intermediate_cert = find_next_intermediate_certificate(chain, current_cert)
+                                            
+                                # Se non è stato trovato alcun certificato intermedio, interrompe il ciclo.
+                                if(intermediate_cert is None):
+                                    break
+                                
+                                # Aggiorna il certificato corrente per la prossima iterazione
+                                current_cert = intermediate_cert
+                                
+                                raw_intermediate = intermediate_cert.get("raw", {})
+                                parsed_intermediate = intermediate_cert.get("parsed", {})
                             
-                            raw_intermediate = intermediate_cert.get("raw", {})
-                            parsed_intermediate = intermediate_cert.get("parsed", {})
-                        
-                            try:
-                                # Rimuove il certificato intermedio estratto dalla catena
-                                serial_number_intermediate = intermediate_cert.get("parsed", {}).get("serial_number", "")
-                                chain = list(filter(lambda cert: cert.get("parsed", {}).get("serial_number", "") != serial_number_intermediate, chain))
-                            except ValueError:
-                                pass  # Ignora l'errore se il certificato non è presente nella catena
-                        
-                            # Aggiorna i dati del certificato nel server_certificates
-                            server_certificates["certificate"]["raw"] = raw_intermediate
-                            server_certificates["certificate"]["parsed"] = parsed_intermediate
-                            server_certificates["chain"] = chain
-                            certificates_emitted_up_to += 1
+                                try:
+                                    # Rimuove il certificato intermedio estratto dalla catena
+                                    serial_number_intermediate = intermediate_cert.get("parsed", {}).get("serial_number", "")
+                                    chain = list(filter(lambda cert: cert.get("parsed", {}).get("serial_number", "") != serial_number_intermediate, chain))
+                                except ValueError:
+                                    pass  # Ignora l'errore se il certificato non è presente nella catena
                             
-                            # Inizia l'analisi del certificato intermediate
-                            dao.process_insert_certificate(json_row, database.db_type, certificates_emitted_up_to)
+                                # Aggiorna i dati del certificato nel server_certificates
+                                server_certificates["certificate"]["raw"] = raw_intermediate
+                                server_certificates["certificate"]["parsed"] = parsed_intermediate
+                                server_certificates["chain"] = chain
+                                certificates_emitted_up_to += 1
+                                
+                                # Inizia l'analisi del certificato intermediate
+                                dao.process_insert_certificate(json_row, database.db_type, certificates_emitted_up_to)
 
-            except json.JSONDecodeError:
-                logging.error(f"Errore nel parsing della riga {line_number}: {row.strip()}")
-            except Exception as e:
-                logging.error(f"Errore nell'elaborazione della riga {line_number}: {e}")
-    
-    # Chiusura barra di progresso
-    pbar_intermediate.close()
+                except json.JSONDecodeError:
+                    logging.error(f"Errore nel parsing della riga {line_number}: {row.strip()}")
+                except Exception as e:
+                    logging.error(f"Errore nell'elaborazione della riga {line_number}: {e}")
+        except KeyboardInterrupt:
+            logging.info(f"Ricevuto segnale di interruzione (SIGINT). Inizio della procedura di chiusura...")
+        finally:
+            pbar_intermediate.close()   # Chiusura barra di progresso
     return
 
 def root_certificates_analysis(certificates_file, dao: CertificateDAO, database: Database, total_lines: int=0):
@@ -185,51 +188,54 @@ def root_certificates_analysis(certificates_file, dao: CertificateDAO, database:
         # TODO: da rimuovere
         # for _ in range(800000): # 800000
         #   next(certificates_reader)
-            
-        for line_number, row in enumerate(certificates_reader, start=1):
-            try:
-                json_row = json.loads(row)
-                status = json_row.get("data", {}).get("tls", {}).get("status", "")
+        
+        try:
+            for line_number, row in enumerate(certificates_reader, start=1):
+                try:
+                    json_row = json.loads(row)
+                    status = json_row.get("data", {}).get("tls", {}).get("status", "")
 
-                # Aggiorna la barra di caricamento
-                pbar_root.update(1)
-                
-                with database.transaction():
-                    if status == "success":
-                        handshake_log = json_row.get("data", {}).get("tls", {}).get("result", {}).get("handshake_log", {})
-                        server_certificates = handshake_log.get("server_certificates", {})
-                        chain:list = server_certificates.get("chain", [])
-                        current_cert = server_certificates.get("certificate", {})
-                                                
-                        # Estrae il certificato intermedio dalla catena. 
-                        # Restituisce None se l'issuer del certificato corrente non è presente o se è un certificato root.
-                        root_cert, certificates_emitted_up_to = count_certificates_to_root(chain, current_cert)
-                                                
-                        # Se non è stato trovato alcun certificato root, passa alla prossima riga nel file JSON.
-                        if(root_cert is None):
-                            continue
+                    # Aggiorna la barra di caricamento
+                    pbar_root.update(1)
+                    
+                    with database.transaction():
+                        if status == "success":
+                            handshake_log = json_row.get("data", {}).get("tls", {}).get("result", {}).get("handshake_log", {})
+                            server_certificates = handshake_log.get("server_certificates", {})
+                            chain:list = server_certificates.get("chain", [])
+                            current_cert = server_certificates.get("certificate", {})
+                                                    
+                            # Estrae il certificato intermedio dalla catena. 
+                            # Restituisce None se l'issuer del certificato corrente non è presente o se è un certificato root.
+                            root_cert, certificates_emitted_up_to = count_certificates_to_root(chain, current_cert)
+                                                    
+                            # Se non è stato trovato alcun certificato root, passa alla prossima riga nel file JSON.
+                            if(root_cert is None):
+                                continue
+                            
+                            raw_root = root_cert.get("raw", {})
+                            parsed_root = root_cert.get("parsed", {})
                         
-                        raw_root = root_cert.get("raw", {})
-                        parsed_root = root_cert.get("parsed", {})
-                    
-                        # Imposta la catena ad una lista vuota essendo il certificato root
-                        chain = []
-                    
-                        # Aggiorna i dati del certificato nel server_certificates
-                        server_certificates["certificate"]["raw"] = raw_root
-                        server_certificates["certificate"]["parsed"] = parsed_root
-                        server_certificates["chain"] = chain
+                            # Imposta la catena ad una lista vuota essendo il certificato root
+                            chain = []
+                        
+                            # Aggiorna i dati del certificato nel server_certificates
+                            server_certificates["certificate"]["raw"] = raw_root
+                            server_certificates["certificate"]["parsed"] = parsed_root
+                            server_certificates["chain"] = chain
 
-                        # Inizia l'analisi del certificato root
-                        dao.process_insert_certificate(json_row, database.db_type, certificates_emitted_up_to)
+                            # Inizia l'analisi del certificato root
+                            dao.process_insert_certificate(json_row, database.db_type, certificates_emitted_up_to)
 
-            except json.JSONDecodeError:
-                logging.error(f"Errore nel parsing della riga {line_number}: {row.strip()}")
-            except Exception as e:
-                logging.error(f"Errore nell'elaborazione della riga {line_number}: {e}")
-    
-    # Chiusura barra di progresso
-    pbar_root.close()
+                except json.JSONDecodeError:
+                    logging.error(f"Errore nel parsing della riga {line_number}: {row.strip()}")
+                except Exception as e:
+                    logging.error(f"Errore nell'elaborazione della riga {line_number}: {e}")
+        
+        except KeyboardInterrupt:
+            logging.info(f"Ricevuto segnale di interruzione (SIGINT). Inizio della procedura di chiusura...")
+        finally:
+            pbar_root.close()   # Chiusura barra di progresso
     return
 
 async def process_ocsp_check_status_request(dao: CertificateDAO, database: Database, main_path):
@@ -238,11 +244,17 @@ async def process_ocsp_check_status_request(dao: CertificateDAO, database: Datab
         ocsp_temp_file = os.path.abspath(f'{main_path}/ocsp_check_results_temp.csv')
         ocsp_backup_file = os.path.abspath(f'{main_path}/ocsp_certificates_backup.csv')
         
+        # Rimuove gli indici non necessari che rallentano le operazioni di aggiornamento del database
+        database.drop_indexes_for_table()
+        
         async with aiosqlite.connect(database.db_path) as db:
             # Se il file esiste e ha delle righe, salva questi dati nel db e lo cancella
             if os.path.exists(ocsp_temp_file) and os.path.getsize(ocsp_temp_file) > 0:
                 await update_certificates_ocsp_status_db(db, ocsp_temp_file)
-                
+            
+            if(os.path.exists(ocsp_backup_file)):
+                await update_certificates_ocsp_status_db(db, ocsp_backup_file, True)
+             
             # Esegue l'ocsp check prendendo i dati dal db e scrive nel file temporaneo
             with open(ocsp_temp_file, mode="a", newline="") as ocsp_temp_file_csv:
                 ocsp_temp_file_writer = csv.writer(ocsp_temp_file_csv)
@@ -252,7 +264,7 @@ async def process_ocsp_check_status_request(dao: CertificateDAO, database: Datab
             await update_certificates_ocsp_status_db(db, ocsp_temp_file)
             
             tqdm.write("")
-            logging.info("Salvataggio dei dati dello stato OCSP come backup.")
+            logging.info(f"Salvataggio dei dati dello stato OCSP come backup eseguito con successo: 'file://{ocsp_backup_file}'")
             
             # Scrive su un file CSV i lo status OCSP relativi ai certificati come backup
             await save_certificates_ocsp_status_file(db, ocsp_backup_file)
@@ -527,14 +539,14 @@ async def certificates_analysis_main():
 
         # Esegui l'analisi OCSP dei certificati
         if(args.leaf_ocsp_analysis):
-            # Crea gli indici e applica delle correzioni ai dati
-            leaf_database.create_indexes()
-            leaf_database.apply_database_corrections()
             logging.info("Inizio dell'analisi OCSP per i certificati.")  
             await process_ocsp_check_status_request(leaf_dao, leaf_database, leaf_path)
         
         # Esegui la generazione dei grafici per i certificati leaf
         if(args.plot_leaf_results):
+            # Crea gli indici e applica delle correzioni ai dati
+            leaf_database.create_indexes()
+            leaf_database.apply_database_corrections()
             logging.info("Inizio generazione grafici per certificati Leaf.")        
             plot_leaf_certificates(leaf_dao, args.verbose)
 

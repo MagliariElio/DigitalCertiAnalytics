@@ -214,6 +214,29 @@ class Database:
             logging.error("Errore durante la pulizia delle tabelle non utilizzate: %s", e)
         return
 
+    def drop_indexes_for_table(self):
+        """Rimuove tutti gli indici esistenti."""
+        try:
+            cursor = self.conn.cursor()
+            cursor.execute(f"SELECT name FROM sqlite_master WHERE type='index';")
+            indexes = cursor.fetchall()
+            
+            # Lista di indici da ignorare durante la rimozione
+            ignore = ['idx_certificates_ocsp_check', 'idx_certificates_authority_info_access', 'idx_logs_log_id', 'sqlite_autoindex_Logs_1']
+            
+            if indexes:
+                for index in indexes:
+                    index_name = index[0]
+                    if(index_name not in ignore):
+                        cursor.execute(f"DROP INDEX IF EXISTS {index_name};")
+                self.conn.commit()
+                logging.info(f"Tutti gli indici, eccetto quelli ignorati, sono stati rimossi dal database.")
+            else:
+                logging.info(f"Nessun indice trovato nel database.")
+        except Exception as e:
+            logging.error(f"Errore nel rimuovere gli indici: {e}")
+            self.conn.rollback()
+
     @contextmanager
     def transaction(self):
         """Gestisce una transazione con commit o rollback."""

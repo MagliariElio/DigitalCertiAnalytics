@@ -9,3 +9,4 @@ domini_italiani_google.txt
 
 # DB files
 *.db
+*.db-journal

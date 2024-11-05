@@ -150,7 +150,7 @@ WITH IssuersCounts AS (
 TopCountry AS (
 	SELECT country, country_count
 	FROM IssuersCounts
-	LIMIT 10
+	LIMIT 5
 ),
 Others AS (
 	SELECT 'Others' AS country, COALESCE(SUM(country_count), 0) AS country_count
@@ -173,7 +173,7 @@ SELECT strftime('%Y-%m', validity_end) AS month, COUNT(*) AS count
 FROM Certificates
 WHERE validity_end IS NOT NULL
 GROUP BY month
-HAVING count > 100
+HAVING count > 1800
 ORDER BY month ASC;
 
 -- Algoritmi di Firma Utilizzati
@@ -235,7 +235,7 @@ GROUP BY version;
 SELECT signature_valid AS is_valid_signature, COUNT(*) AS count
 FROM Certificates
 GROUP BY signature_valid
-ORDER BY count ASC;
+ORDER BY count DESC;
 
 -- Analisi Status Certificati
 SELECT 'success', COUNT(*) AS count

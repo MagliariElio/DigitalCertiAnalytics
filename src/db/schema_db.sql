@@ -59,7 +59,7 @@ CREATE TABLE IF NOT EXISTS Certificates (
     ocsp_stapling INT,
     ocsp_must_stapling VARCHAR(9) DEFAULT 'Not Found' CHECK (ocsp_must_stapling IN ('Enabled', 'Not Found', 'Error')),
     validation_level VARCHAR,
-    signature_valid VARCHAR(20) DEFAULT 'Error' CHECK (signature_valid IN ('Valid', 'Not Valid', 'Error', 'Unsupported key type', 'Issuer not found')),
+    signature_valid VARCHAR(20) DEFAULT 'Error' CHECK (signature_valid IN ('Valid', 'Not Valid', 'Error', 'Unsupported Key Type', 'Issuer Not Found')),
     self_signed BOOLEAN,
     redacted BOOLEAN,
     certificates_emitted_up_to INT DEFAULT 0,

@@ -56,7 +56,7 @@ class GraphPlotter:
         plt.title(title, fontsize=16, fontweight='bold', pad=20)
         plt.axis('equal')
         
-        plt.legend(wedges, data.index, title='Legend', loc='lower right', bbox_to_anchor=(1.1, 0), fontsize=10)
+        plt.legend(wedges, data.index, title='Legend', loc='lower left', bbox_to_anchor=(-0.1, -0.125), fontsize=10)
         
         directory = os.path.dirname(filename)
         if not os.path.exists(directory):
@@ -206,7 +206,7 @@ class GraphPlotter:
                             markersize=10, markerfacecolor=color_mapping[key_usage])
                 for i, key_usage in enumerate(unique_key_usages)]
 
-        plt.legend(handles=handles, title='Key Usage', bbox_to_anchor=(0.5, -0.1), loc='upper center', ncol=2, borderpad=1, labelspacing=1.2, handletextpad=1)
+        plt.legend(handles=handles, title='Legend', bbox_to_anchor=(-0.5, -0.1), loc='upper center', ncol=3, borderpad=1, labelspacing=1.2, handletextpad=1)
 
         plt.title(title, fontsize=20, fontweight='bold', pad=20)
         plt.xlabel(xlabel, fontsize=16)
@@ -227,4 +227,95 @@ class GraphPlotter:
         
         logging.info(f"Grafico '{title}' generato con successo e salvato in file://{filename}.")
         plt.close()
+
+    def plot_horizontal_bar(self, data, x, y, title, xlabel, ylabel, filename):
+        """Crea un grafico a barre ottimizzato per la visualizzazione dei dati con legenda."""
+        plt.figure(figsize=(20, 14))  
+
+        unique_key_usages = data.index.unique()
+
+        palette = sns.color_palette('viridis', n_colors=len(unique_key_usages))
+        color_mapping = dict(zip(unique_key_usages, palette))
+
+        data['Color'] = data.index.map(color_mapping)
+
+        sns.barplot(x=x, y=y, data=data, hue=data.index, dodge=False, palette=color_mapping, ci=None)
+
+        handles = [plt.Line2D([0], [0], marker='s', color='w', label=f'{i+1}: {key_usage}',
+                            markersize=10, markerfacecolor=color_mapping[key_usage])
+                for i, key_usage in enumerate(unique_key_usages)]
+
+        """
+        plt.legend(handles=handles,
+            title='Legend',
+            bbox_to_anchor=(0, -0.25),
+            loc='lower center',
+            ncol=2,
+            borderpad=1,
+            labelspacing=1.2,
+            handletextpad=1,
+            fontsize=12
+        )
+        """
+
+        plt.title(title, fontsize=20, fontweight='bold', pad=20, loc='center')
+        plt.xlabel(xlabel, fontsize=16)
+        plt.ylabel(ylabel, fontsize=16)
+
+        plt.xticks(fontsize=14)
+        plt.yticks(fontsize=14)
+        # plt.yticks(ticks=range(len(unique_key_usages)), labels=range(1, len(unique_key_usages) + 1), fontsize=14)
+        
+        plt.grid(axis='y', linestyle='--', alpha=0.7)
+
+        plt.tight_layout()
+        plt.subplots_adjust(bottom=0.25, left=10.25, right=0.25)
+
+        directory = os.path.dirname(filename)
+        if not os.path.exists(directory):
+            os.makedirs(directory)
+
+        plt.savefig(filename, dpi=300)
+        
+        logging.info(f"Grafico '{title}' generato con successo e salvato in file://{filename}.")
+        plt.close()
+        
+    def plot_horizontal_bar(self, data, x, y, title, xlabel, ylabel, filename):
+        """Crea un grafico a barre orizzontali ottimizzato per la visualizzazione dei dati senza legenda e con titolo centrato."""
+        plt.figure(figsize=(20, 14))  
+
+        unique_key_usages = data.index.unique()
+
+        palette = sns.color_palette('viridis', n_colors=len(unique_key_usages))
+        color_mapping = dict(zip(unique_key_usages, palette))
+
+        data['Color'] = data.index.map(color_mapping)
+
+        # Creazione del grafico a barre orizzontali senza legenda
+        sns.barplot(x=x, y=y, data=data, hue=data.index, dodge=False, palette=color_mapping, ci=None)
+
+        # Titolo centrato rispetto all'intera figura
+        plt.title(title, fontsize=20, fontweight='bold', pad=20, loc='center')
+
+        # Etichette degli assi
+        plt.xlabel(xlabel, fontsize=16)
+        plt.ylabel(ylabel, fontsize=16)
+
+        # Regola la visualizzazione delle etichette sull'asse y per evitare che escano dalla figura
+        plt.xticks(fontsize=14)
+        plt.yticks(fontsize=14)
+
+        # Evita che le etichette sull'asse y escano dalla figura
+        plt.tight_layout()  # Assicura che tutti gli elementi del grafico siano visibili
+
+        # Salva il grafico come file
+        directory = os.path.dirname(filename)
+        if not os.path.exists(directory):
+            os.makedirs(directory)
+
+        plt.savefig(filename, dpi=300)
+        
+        logging.info(f"Grafico '{title}' generato con successo e salvato in file://{filename}.")
+        plt.close()
+
 
