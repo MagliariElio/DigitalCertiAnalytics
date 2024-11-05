@@ -509,7 +509,7 @@ async def certificates_analysis_main():
         leaf_database.connect(delete_database=args.delete_leaf_db)
 
         # Crea un'istanza del DAO
-        leaf_dao = CertificateDAO(leaf_database.conn)
+        leaf_dao = CertificateDAO(leaf_database.conn, DatabaseType.LEAF)
 
         # Inserisce gli SCT Operators e SCT Logs 
         if(args.delete_leaf_db):
@@ -521,14 +521,15 @@ async def certificates_analysis_main():
             leaf_certificates_analysis(result_json_file, leaf_dao, leaf_database, total_lines)
             logging.info("Analisi dei certificati Leaf completata con successo.")
             
-            # Rimuove i dati non necessari, crea gli indici e applica delle correzioni ai dati
+            # Rimuove i dati non necessari
             leaf_database.cleanup_unused_tables()
             leaf_database.remove_columns()
-            leaf_database.create_indexes()
-            leaf_database.apply_database_corrections()
 
         # Esegui l'analisi OCSP dei certificati
         if(args.leaf_ocsp_analysis):
+            # Crea gli indici e applica delle correzioni ai dati
+            leaf_database.create_indexes()
+            leaf_database.apply_database_corrections()
             logging.info("Inizio dell'analisi OCSP per i certificati.")  
             await process_ocsp_check_status_request(leaf_dao, leaf_database, leaf_path)
         
@@ -564,7 +565,7 @@ async def certificates_analysis_main():
         intermediate_database.connect(delete_database=args.delete_intermediate_db)
 
         # Crea un'istanza del DAO
-        intermediate_dao = CertificateDAO(intermediate_database.conn)
+        intermediate_dao = CertificateDAO(intermediate_database.conn, DatabaseType.INTERMEDIATE)
 
         # Inserisce gli SCT Operators e SCT Logs 
         if(args.delete_intermediate_db):
@@ -579,8 +580,6 @@ async def certificates_analysis_main():
             # Rimuove i dati non necessari, crea gli indici e applica delle correzioni ai dati
             intermediate_database.cleanup_unused_tables()
             intermediate_database.remove_columns()
-            intermediate_database.create_indexes()
-            intermediate_database.apply_database_corrections()
 
         # Esegui l'analisi OCSP dei certificati
         if(args.intermediate_ocsp_analysis):
@@ -589,6 +588,9 @@ async def certificates_analysis_main():
         
         # Esegui la generazione dei grafici per i certificati Intermediate
         if(args.plot_intermediate_results):
+            # Crea gli indici e applica delle correzioni ai dati
+            intermediate_database.create_indexes()
+            intermediate_database.apply_database_corrections()
             logging.info("Inizio generazione grafici per certificati Intermediate.")        
             plot_intermediate_certificates(intermediate_dao, args.verbose)
 
@@ -619,7 +621,7 @@ async def certificates_analysis_main():
         root_database.connect(delete_database=args.delete_root_db)
 
         # Crea un'istanza del DAO
-        root_dao = CertificateDAO(root_database.conn)
+        root_dao = CertificateDAO(root_database.conn, DatabaseType.ROOT)
 
         # Inserisce gli SCT Operators e SCT Logs 
         if(args.delete_root_db):
@@ -634,8 +636,6 @@ async def certificates_analysis_main():
             # Rimuove i dati non necessari, crea gli indici e applica delle correzioni ai dati
             root_database.cleanup_unused_tables()
             root_database.remove_columns()
-            root_database.create_indexes()
-            root_database.apply_database_corrections()
 
         # Esegui l'analisi OCSP dei certificati
         if(args.root_ocsp_analysis):
@@ -644,6 +644,9 @@ async def certificates_analysis_main():
         
         # Esegui la generazione dei grafici per i certificati Root
         if(args.plot_root_results):
+            # Crea gli indici e applica delle correzioni ai dati
+            root_database.create_indexes()
+            root_database.apply_database_corrections()
             logging.info("Inizio generazione grafici per certificati Root.")        
             plot_root_certificates(root_dao, args.verbose)
 

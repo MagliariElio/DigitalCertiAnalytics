@@ -1,5 +1,7 @@
 SELECT COUNT(*) FROM Certificates;
 
+SELECT COUNT(DISTINCT leaf_domain) FROM Certificates;
+
 SELECT COUNT(*) FROM Errors;
 
 SELECT COUNT(*) FROM Extensions;
@@ -171,7 +173,7 @@ SELECT strftime('%Y-%m', validity_end) AS month, COUNT(*) AS count
 FROM Certificates
 WHERE validity_end IS NOT NULL
 GROUP BY month
-HAVING count > 20
+HAVING count > 100
 ORDER BY month ASC;
 
 -- Algoritmi di Firma Utilizzati

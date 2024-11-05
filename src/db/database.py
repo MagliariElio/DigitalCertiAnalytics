@@ -60,6 +60,8 @@ class Database:
             -- Indici per la tabella Certificates
             CREATE INDEX IF NOT EXISTS idx_certificates_issuer_id ON Certificates(issuer_id);
             CREATE INDEX IF NOT EXISTS idx_certificates_subject_id ON Certificates(subject_id);
+            CREATE INDEX IF NOT EXISTS idx_certificates_ocsp_check ON Certificates(ocsp_check);
+            CREATE INDEX IF NOT EXISTS idx_certificates_authority_info_access ON Certificates(authority_info_access);
             CREATE INDEX IF NOT EXISTS idx_certificates_validity_end ON Certificates(validity_end);
             CREATE INDEX IF NOT EXISTS idx_certificates_version ON Certificates(version);
             CREATE INDEX IF NOT EXISTS idx_certificates_signature_valid ON Certificates(signature_valid);
@@ -82,8 +84,6 @@ class Database:
             # Inserisci qui gli indici specifici solo per il database leaf
             cursor.executescript("""
                 -- Indici per la tabella Certificates
-                CREATE INDEX IF NOT EXISTS idx_certificates_ocsp_check ON Certificates(ocsp_check);
-                CREATE INDEX IF NOT EXISTS idx_certificates_authority_info_access ON Certificates(authority_info_access);
                 CREATE INDEX IF NOT EXISTS idx_certificates_self_signed ON Certificates(self_signed);
 
                 -- Indici per la tabella SignedCertificateTimestamps
@@ -102,17 +102,7 @@ class Database:
             # Inserisci qui gli indici specifici solo per il database intermediate
             cursor.executescript("""
                 -- Indici per la tabella Certificates
-                CREATE INDEX IF NOT EXISTS idx_certificates_ocsp_check ON Certificates(ocsp_check);
-                CREATE INDEX IF NOT EXISTS idx_certificates_authority_info_access ON Certificates(authority_info_access);
                 CREATE INDEX IF NOT EXISTS idx_certificates_self_signed ON Certificates(self_signed);
-
-                -- Indici per la tabella SignedCertificateTimestamps
-                CREATE INDEX IF NOT EXISTS idx_signed_cert_timestamps_certificate_id ON SignedCertificateTimestamps(certificate_id);
-                CREATE INDEX IF NOT EXISTS idx_signed_cert_timestamps_log_id ON SignedCertificateTimestamps(log_id);
-
-                -- Indici per la tabella Logs
-                CREATE INDEX IF NOT EXISTS idx_logs_operator_id ON Logs(operator_id);
-                CREATE INDEX IF NOT EXISTS idx_logs_log_id ON Logs(log_id);
             """)
         elif self.db_type == DatabaseType.ROOT:
             # Inserisci qui gli indici specifici solo per il database root

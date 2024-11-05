@@ -13,9 +13,10 @@ from utils.utils import verify_signature, find_raw_cert_issuer, check_ocsp_statu
 # Politecnico di Torino
 
 class CertificateDAO:
-    def __init__(self, connection):
+    def __init__(self, connection, certificate_type: DatabaseType):
         self.conn = connection
         self.cursor = self.conn.cursor()
+        self.certificate_type = certificate_type
 
     def insert_error_row(self, json_row):
         """Inserisce la riga di errore nel database. Vale solo per i certificati Leaf."""
@@ -583,14 +584,19 @@ class CertificateDAO:
     def get_certificate_expiration_trend(self) -> dict:
         """Rappresenta il numero di certificati che scadranno nel tempo."""
         try:
+            count = 100
+            
+            if(self.certificate_type == DatabaseType.ROOT):
+                count = 20
+                
             self.cursor.execute("""
                 SELECT strftime('%Y-%m', validity_end) AS month, COUNT(*) AS count
                 FROM Certificates
                 WHERE validity_end IS NOT NULL
                 GROUP BY month
-                HAVING count > 20
+                HAVING count > ?
                 ORDER BY month ASC;
-            """)
+            """, (count,))
             
             results = self.cursor.fetchall()
 
