@@ -375,8 +375,8 @@ def main():
 
     # check_chain_certificates(result_json_file)
 
-    # download_json_domain(result_json_file, "dr-radio.com", None)
-    download_json_domain(result_json_file, None, 9718401)
+    download_json_domain(result_json_file, "digitalcameraworld.com", None)
+    # download_json_domain(result_json_file, None, 9718401)
 
     # count_root_cert_chain(result_json_file)
     # count_certs_chain(result_json_file)

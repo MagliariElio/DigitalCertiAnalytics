@@ -10,3 +10,8 @@ domini_italiani_google.txt
 # DB files
 *.db
 *.db-journal
+*.db-shm
+*.db-wal
+
+# BACKUP files
+*ocsp_certificates_backup.csv

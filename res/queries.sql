@@ -6,6 +6,10 @@ SELECT COUNT(*) FROM Errors;
 
 SELECT COUNT(*) FROM Extensions;
 
+SELECT c.certificate_id, c.leaf_domain
+FROM Certificates AS c LEFT JOIN SignedCertificateTimestamps AS s ON c.certificate_id = s.certificate_id
+WHERE s.certificate_id IS NULL;
+
 SELECT COUNT(*) AS count, *
 FROM Certificates
 GROUP BY ocsp_must_stapling

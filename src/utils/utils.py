@@ -209,7 +209,16 @@ async def get_issuer_certificate_from_issuer_link(issuer_link, issuer_common_nam
                     ):
                         try:
                             content = await response.read()
-                            issuer_cert = x509.load_der_x509_certificate(content, backend=default_backend())
+                            
+                            # Verifica se il contenuto è in formato DER o PEM
+                            if content.startswith(b"-----BEGIN CERTIFICATE-----"):
+                                # È un certificato PEM
+                                pem_data = content.decode('utf-8')
+                                issuer_cert = x509.load_pem_x509_certificate(pem_data.encode('utf-8'), backend=default_backend())
+                            else:
+                                # Tentativo di caricare come certificato DER
+                                issuer_cert = x509.load_der_x509_certificate(content, backend=default_backend())
+
                             return issuer_cert
                         except Exception as e:
                             logging.error(f"Errore nel parsing del certificato DER ({issuer_link}): {e}")
@@ -225,7 +234,10 @@ async def get_issuer_certificate_from_issuer_link(issuer_link, issuer_common_nam
                         except Exception as e:
                             logging.error(f"Errore nel parsing del certificato PEM ({issuer_link}): {e}")
                             return "Impossible Retrieve OCSP Information"
-                    elif "application/pkcs7-mime" in content_type:
+                    elif (
+                        "application/pkcs7-mime" in content_type or 
+                        "application/x-pkcs7-certificates" in content_type
+                    ):
                         try:
                             pkcs7_data = await response.read()
                             issuer_certs = pkcs7.load_der_pkcs7_certificates(pkcs7_data)
@@ -463,7 +475,7 @@ def count_intermediate_up_to_root_and_root_certificates(chain_list:list, current
         else:
             return (count_intermediate, False)
 
-async def update_certificates_ocsp_status_db(db, ocsp_temp_file, is_backup_file: bool = False, batch_size=10000):
+async def update_certificates_ocsp_status_db(db, ocsp_temp_file, is_backup_file: bool = False, batch_size=1000):
     """Aggiorna lo stato OCSP dei certificati nel database."""
     update_values = []
 
@@ -472,27 +484,31 @@ async def update_certificates_ocsp_status_db(db, ocsp_temp_file, is_backup_file:
         
         # Salta l'intestazione
         if(is_backup_file):
+            logging.info("Inizio aggiornamento dei dati dal file di backup al database.")
             next(ocsp_temp_file_reader)
+        else:
+            logging.info("Inizio aggiornamento dei dati dal file temporaneo al database.")
         
-        for row in ocsp_temp_file_reader:
-            update_values.append((row[0], row[1], row[2]))
-
-            if len(update_values) >= batch_size:
-                await db.executemany("""
+        async with db.cursor() as cursor:
+            for row in ocsp_temp_file_reader:
+                update_values.append((row[0], int(row[1]), row[2]))
+                
+                if len(update_values) >= batch_size:
+                    await cursor.executemany("""
+                        UPDATE Certificates
+                        SET ocsp_check = ?
+                        WHERE certificate_id = ? AND leaf_domain = ?
+                    """, update_values)
+                    update_values.clear()
+            
+            # Inserisce eventuali righe rimanenti
+            if update_values:
+                await cursor.executemany("""
                     UPDATE Certificates
                     SET ocsp_check = ?
                     WHERE certificate_id = ? AND leaf_domain = ?
                 """, update_values)
-                update_values.clear()
-
-        # Inserisce eventuali righe rimanenti
-        if update_values:
-            await db.executemany("""
-                UPDATE Certificates
-                SET ocsp_check = ?
-                WHERE certificate_id = ? AND leaf_domain = ?
-            """, update_values)
-    
+        
         await db.commit()
     
     # Cancella il file temporaneo

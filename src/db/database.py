@@ -45,6 +45,8 @@ class Database:
 
     def create_tables(self):
         """Crea le tabelle nel database utilizzando lo schema SQL."""
+        logging.info(f"Creazione tabelle nel database in corso...")
+        
         with open(self.schema_path, 'r') as f:
             schema_sql = f.read()
         cursor = self.conn.cursor()
@@ -55,9 +57,13 @@ class Database:
 
     def create_indexes(self):
         """Crea gli indici per migliorare le prestazioni delle query."""
+
+        logging.info(f"Creazione indici nel database in corso...")
+        
         cursor = self.conn.cursor()
         cursor.executescript("""
             -- Indici per la tabella Certificates
+            CREATE INDEX IF NOT EXISTS idx_certificate_id_leaf_domain ON Certificates(certificate_id, leaf_domain);
             CREATE INDEX IF NOT EXISTS idx_certificates_issuer_id ON Certificates(issuer_id);
             CREATE INDEX IF NOT EXISTS idx_certificates_subject_id ON Certificates(subject_id);
             CREATE INDEX IF NOT EXISTS idx_certificates_ocsp_check ON Certificates(ocsp_check);
@@ -116,7 +122,7 @@ class Database:
         """Applica correzioni ai dati nel database."""
         logging.info("Inizio delle correzioni al database.")
         
-        try:
+        try:            
             cursor = self.conn.cursor()
             cursor.executescript("""
                 -- Rename DigiCert
@@ -165,6 +171,8 @@ class Database:
     def remove_columns(self):
         """Rimuove colonne specifiche dalla tabella 'Certificates' in base al tipo di database."""
         try:
+            logging.info(f"Rimozione colonne non necessarie dal database in corso...")
+            
             # Elimina le colonne dalle tabelle specificate
             if(self.db_type == DatabaseType.LEAF):
                 columns = [
@@ -198,6 +206,8 @@ class Database:
             Elimina le tabelle non necessarie in base al tipo di database.
         """
         try:
+            logging.info(f"Rimozione tabelle non necessarie in corso...")
+            
             cursor = self.conn.cursor()
             
             if self.db_type in {DatabaseType.INTERMEDIATE, DatabaseType.ROOT}:
@@ -217,12 +227,18 @@ class Database:
     def drop_indexes_for_table(self):
         """Rimuove tutti gli indici esistenti."""
         try:
+            logging.info(f"Rimozione indici dal database in corso...")
+            
             cursor = self.conn.cursor()
             cursor.execute(f"SELECT name FROM sqlite_master WHERE type='index';")
             indexes = cursor.fetchall()
             
             # Lista di indici da ignorare durante la rimozione
-            ignore = ['idx_certificates_ocsp_check', 'idx_certificates_authority_info_access', 'idx_logs_log_id', 'sqlite_autoindex_Logs_1']
+            ignore = ['idx_certificates_ocsp_check', 
+                      'idx_certificates_authority_info_access', 
+                      'idx_logs_log_id', 
+                      'sqlite_autoindex_Logs_1',
+                      'idx_certificate_id_leaf_domain']
             
             if indexes:
                 for index in indexes:

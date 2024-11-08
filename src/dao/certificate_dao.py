@@ -302,6 +302,9 @@ class CertificateDAO:
         global pbar_ocsp_check
         
         try:
+            logging.info(f"Inizio del controllo OCSP per i certificati. Tipo di certificati: {certificate_type}, "
+             f"Batch Size: {batch_size}, Offset iniziale: {offset}.")
+            
             # Esclude tutte le righe che non hanno un ocsp url
             await db.execute("""
                 UPDATE Certificates
@@ -325,6 +328,8 @@ class CertificateDAO:
                         WHERE raw IS NULL)
                 """)
                 await db.commit()
+            
+            logging.info("Conteggio del numero di certificati da elaborare...")
             
             # Conta il numero di certificati per la barra di progresso
             async with db.execute("""
