@@ -148,7 +148,38 @@ Scarica e installa l'ultima versione di Python dal [sito ufficiale](https://www.
 5. **Impostare il percorso di Zlint**:
    Assicurati che l'eseguibile Zlint sia nella cartella `zlint/v3/`, come specificato nel codice. Se il percorso non è corretto, il programma non riuscirà a eseguire l'analisi Zlint. Se necessario, puoi modificare il percorso nel codice Python dove è definito `zlint_path` per riflettere la posizione esatta.
 
-### 3. Librerie Python
+### 3. **MongoDB**
+Per utilizzare il programma con il salvataggio dei dati, è necessario installare MongoDB sul proprio computer. Inoltre, prima di eseguire comandi come `--leaf_zlint_check` o `--intermediate_zlint_check`, che richiedono l'interazione con MongoDB, è importante assicurarsi che il servizio di MongoDB sia avviato e funzionante.
+
+#### **Verifica e avvio di MongoDB su Linux:**
+
+1. **Verificare lo stato di MongoDB**:
+   Puoi controllare se il servizio MongoDB è attivo eseguendo il comando:
+   ```bash
+   sudo systemctl status mongod
+   ```
+
+   Se il servizio è attivo, vedrai un messaggio che indica che MongoDB è in esecuzione.
+
+2. **Avviare MongoDB se non è attivo**:
+   Se MongoDB non è attivo, puoi avviare il servizio con il comando:
+   ```bash
+   sudo systemctl start mongod
+   ```
+
+3. **Verifica che MongoDB sia attivo**:
+   Dopo aver avviato il servizio, verifica di nuovo lo stato con:
+   ```bash
+   sudo systemctl status mongod
+   ```
+
+4. **Abilitare l'avvio automatico di MongoDB**:
+   Puoi anche configurare MongoDB per avviarsi automaticamente al riavvio del sistema con:
+   ```bash
+   sudo systemctl enable mongod
+   ```
+
+### 4. Librerie Python
 Assicurati di installare le seguenti librerie Python utilizzando il comando `pip`. Puoi installare i pacchetti necessari utilizzando il file `requirements.txt`. Segui questi passi:
 
 1. Crea un ambiente virtuale (opzionale ma consigliato):
