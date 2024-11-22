@@ -3,22 +3,23 @@ import aiosqlite, asyncio
 import logging
 import argparse
 import pyfiglet
-import os, sys, shutil, signal
+import os, shutil, signal
 from tqdm.rich import tqdm
 from rich.console import Console
 from db.database import Database, DatabaseType
 from dao.certificate_dao import CertificateDAO
 from utils.utils import find_next_intermediate_certificate, count_certificates_to_root, setup_logging, ArgparseFormatter 
-from utils.utils import update_certificates_ocsp_status_db, save_certificates_ocsp_status_file
+from utils.utils import update_certificates_ocsp_status_db, save_certificates_ocsp_status_file, check_certificate_chain
 from utils.plotter_utils import plot_general_certificates_analysis, plot_leaf_certificates_analysis
 from utils.graph_plotter import GraphPlotter
+from utils.zlint_utils import run_zlint_check
 
 # Admin: Anuar Elio Magliari 
 # Politecnico di Torino
 
 async def close_connections():
     """Funzione per gestire la chiusura delle connessioni ai database."""
-    global pbar_ocsp_check
+    global pbar_ocsp_check, pbar_leaf_chain_check
     
     logging.info("Inizio chiusura delle connessioni ai database...")
     
@@ -39,6 +40,9 @@ async def close_connections():
     
     if 'pbar_root' in globals():
         pbar_root.close()
+    
+    if 'pbar_zlint' in globals():
+        pbar_leaf_chain_check.close()
         
     if 'pbar_ocsp_check' in globals():
         pbar_ocsp_check.close()
@@ -378,7 +382,47 @@ def plot_root_certificates(dao: CertificateDAO, is_verbose: bool):
         
     logging.info("Generazione dei grafici per l'analisi dei certificati Root completata.")
     return
- 
+
+def start_leaf_certificate_chain_check(dao: CertificateDAO, database: Database):
+    global pbar_leaf_chain_check
+    
+    try:
+        logging.info("Inizio controllo della validità della catena sui certificati...")
+        
+        total_lines = dao.get_leaf_domain_certificates_validation_count()
+        
+        tqdm.write("")
+        pbar_leaf_chain_check = tqdm(total=total_lines, desc=" 🔍  [magenta bold]Elaborazione Certificati[/magenta bold]", unit="cert.", 
+                    colour="magenta", bar_format="{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} • ⚡ {rate_fmt}")
+        
+        while(True):
+            batch_size = 5000
+            offset = 0
+            
+            certificates = dao.get_leaf_domain_certificates(batch_size, offset)
+            
+            offset += batch_size
+                
+            if not certificates or len(certificates) == 0:
+                return
+        
+            for certificate in certificates:
+                # Aggiorna la barra di caricamento
+                pbar_leaf_chain_check.update(1)
+            
+                certificate_id, leaf_domain = certificate
+                signature_valid = check_certificate_chain(leaf_domain)
+                with database.transaction():
+                    dao.update_leaf_certificate_validity(signature_valid, certificate_id)
+
+    except Exception as e:
+        logging.error(f"Errore durante l'esecuzione della funzione start_leaf_certificate_chain_check: {str(e)}")
+    except KeyboardInterrupt:
+        logging.info(f"Ricevuto segnale di interruzione (SIGINT). Inizio della procedura di chiusura...")
+    finally:
+        pbar_leaf_chain_check.close()
+    return
+    
 async def certificates_analysis_main():
     global leaf_database, intermediate_database, root_database
     
@@ -408,10 +452,13 @@ async def certificates_analysis_main():
     parser.add_argument('--delete_root_db', action='store_true', help='Se presente, elimina il database root prima di iniziare.\n\n')
     
     parser.add_argument('--leaf_analysis', action='store_true', help='Rimuove il database esistente e analizza i certificati leaf nel file JSON generato da zgrab2.')
-    parser.add_argument('--leaf_ocsp_analysis', action='store_true', help='Esegue l\'analisi OCSP per i certificati leaf presenti nel database.\n\n')
-    
+    parser.add_argument('--leaf_ocsp_analysis', action='store_true', help='Esegue l\'analisi OCSP per i certificati leaf presenti nel database.')
+    parser.add_argument('--leaf_zlint_check', action='store_true', help='Esegue l\'analisi Zlint sui certificati leaf per verificare eventuali vulnerabilità e configurazioni errate.')
+    parser.add_argument('--leaf_chain_validation', action='store_true', help='Esegue la validazione della catena dei certificati leaf per verificare la conformità e l\'affidabilità della catena di trust.\n\n')
+
     parser.add_argument('--intermediate_analysis', action='store_true', help='Rimuove il database esistente e analizza ed analizza i certificati intermediate nel file JSON generato da zgrab2.')
-    parser.add_argument('--intermediate_ocsp_analysis', action='store_true', help='Esegue l\'analisi OCSP per i certificati intermediate presenti nel database.\n\n')
+    parser.add_argument('--intermediate_ocsp_analysis', action='store_true', help='Esegue l\'analisi OCSP per i certificati intermediate presenti nel database.')
+    parser.add_argument('--intermediate_zlint_check', action='store_true', help='Esegue l\'analisi Zlint sui certificati intermediate per verificare eventuali vulnerabilità e configurazioni errate.\n\n')
     
     parser.add_argument('--root_analysis', action='store_true', help='Rimuove il database esistente e analizza i certificati root nel file JSON generato da zgrab2.')
     parser.add_argument('--root_ocsp_analysis', action='store_true', help='Esegue l\'analisi OCSP per i certificati root presenti nel database.\n\n')
@@ -473,7 +520,8 @@ async def certificates_analysis_main():
         )
         return
     
-    if(args.leaf_analysis or args.intermediate_analysis or args.root_analysis):
+    if(args.leaf_analysis or args.intermediate_analysis or args.root_analysis 
+        or args.leaf_zlint_check or args.intermediate_zlint_check):
         logging.info("Inizio il conteggio delle righe del file JSON contenente i certificati.")
 
         """
@@ -499,17 +547,17 @@ async def certificates_analysis_main():
 
     # Analisi Certificati Leaf
     db_leaf_path = os.path.abspath(f'{leaf_path}/leaf_certificates.db')
-    if(args.delete_leaf_db and not (args.leaf_analysis or args.leaf_ocsp_analysis or args.plot_leaf_results)):
+    if(args.delete_leaf_db and not (args.leaf_analysis or args.leaf_ocsp_analysis or args.plot_leaf_results or args.leaf_zlint_check or args.leaf_chain_validation)):
         if os.path.exists(db_leaf_path):
             os.remove(db_leaf_path)
             logging.info("Database '%s' eliminato con successo.", db_leaf_path)
             
-    elif(args.delete_leaf_db or args.leaf_analysis or args.leaf_ocsp_analysis or args.plot_leaf_results):
-        if((args.leaf_ocsp_analysis or args.plot_leaf_results) and (not os.path.exists(db_leaf_path))):
+    elif(args.delete_leaf_db or args.leaf_analysis or args.leaf_ocsp_analysis or args.plot_leaf_results or args.leaf_zlint_check or args.leaf_chain_validation):
+        if((args.leaf_ocsp_analysis or args.plot_leaf_results or args.leaf_zlint_check or args.leaf_chain_validation) and (not os.path.exists(db_leaf_path))):
             logging.error(
                 "Il database leaf non è stato trovato nel percorso '%s'. "
-                "Per eseguire l'analisi OCSP o visualizzare i risultati, "
-                "è necessario eseguire prima l'analisi dei certificati dal file JSON per creare il database. "
+                "Per eseguire la seguente analisi è necessario eseguire prima l'analisi "
+                "dei certificati dal file JSON per creare il database. "
                 "In alternativa, assicurati di posizionare il database nel percorso corretto.",
                 db_leaf_path
             )
@@ -529,9 +577,9 @@ async def certificates_analysis_main():
 
         # Esegui l'analisi dei certificati
         if(args.leaf_analysis):
-            logging.info("Inizio analisi certificati Leaf.")
+            logging.info("Inizio analisi certificati 'Leaf'.")
             leaf_certificates_analysis(result_json_file, leaf_dao, leaf_database, total_lines)
-            logging.info("Analisi dei certificati Leaf completata con successo.")
+            logging.info("Analisi dei certificati 'Leaf' completata con successo.")
             
             # Rimuove i dati non necessari
             leaf_database.cleanup_unused_tables()
@@ -539,15 +587,25 @@ async def certificates_analysis_main():
 
         # Esegui l'analisi OCSP dei certificati
         if(args.leaf_ocsp_analysis):
-            logging.info("Inizio dell'analisi OCSP per i certificati.")  
+            logging.info("Inizio dell'analisi OCSP per i certificati 'Leaf'.")  
             await process_ocsp_check_status_request(leaf_dao, leaf_database, leaf_path)
+        
+        if(args.leaf_zlint_check):
+            logging.info("Inizio dell'analisi dei certificati 'Leaf' con Zlint.")
+            run_zlint_check(leaf_dao, total_lines)
+            logging.info("Controllo ZLint completato.")
+        
+        if(args.leaf_chain_validation):
+            logging.info("Inizio del controllo della validità delle catene dei certificati 'Leaf' con 'sslyze'.")
+            start_leaf_certificate_chain_check(leaf_dao, leaf_database)
+            logging.info("Controllo Validità completato.")
         
         # Esegui la generazione dei grafici per i certificati leaf
         if(args.plot_leaf_results):
             # Crea gli indici e applica delle correzioni ai dati
             leaf_database.create_indexes()
             leaf_database.apply_database_corrections()
-            logging.info("Inizio generazione grafici per certificati Leaf.")        
+            logging.info("Inizio generazione grafici per certificati 'Leaf'.")        
             plot_leaf_certificates(leaf_dao, args.verbose)
 
         # Chiude la connessione al database
@@ -555,13 +613,13 @@ async def certificates_analysis_main():
     
     # Analisi Certificati Intermediate
     db_intermediate_path = os.path.abspath(f'{intermediate_path}/intermediate_certificates.db')
-    if(args.delete_intermediate_db and not (args.intermediate_analysis or args.intermediate_ocsp_analysis or args.plot_intermediate_results)):
+    if(args.delete_intermediate_db and not (args.intermediate_analysis or args.intermediate_ocsp_analysis or args.plot_intermediate_results or args.intermediate_zlint_check)):
         if os.path.exists(db_intermediate_path):
             os.remove(db_intermediate_path)
             logging.info("Database '%s' eliminato con successo.", db_intermediate_path)
 
-    elif(args.delete_intermediate_db or args.intermediate_analysis or args.intermediate_ocsp_analysis or args.plot_intermediate_results):
-        if((args.intermediate_ocsp_analysis or args.plot_intermediate_results) and (not os.path.exists(db_intermediate_path))):
+    elif(args.delete_intermediate_db or args.intermediate_analysis or args.intermediate_ocsp_analysis or args.plot_intermediate_results or args.intermediate_zlint_check):
+        if((args.intermediate_ocsp_analysis or args.plot_intermediate_results or args.intermediate_zlint_check) and (not os.path.exists(db_intermediate_path))):
             logging.error(
                 "Il database intermedio non è stato trovato nel percorso '%s'. "
                 "Per eseguire l'analisi OCSP o visualizzare i risultati, "
@@ -585,9 +643,9 @@ async def certificates_analysis_main():
 
         # Esegui l'analisi dei certificati
         if(args.intermediate_analysis):
-            logging.info("Inizio analisi certificati Intermediate.")      
+            logging.info("Inizio analisi certificati 'Intermediate'.")      
             intermediate_certificates_analysis(result_json_file, intermediate_dao, intermediate_database, total_lines)
-            logging.info("Analisi dei certificati Intermediate completata con successo.")
+            logging.info("Analisi dei certificati 'Intermediate' completata con successo.")
             
             # Rimuove i dati non necessari, crea gli indici e applica delle correzioni ai dati
             intermediate_database.cleanup_unused_tables()
@@ -595,15 +653,20 @@ async def certificates_analysis_main():
 
         # Esegui l'analisi OCSP dei certificati
         if(args.intermediate_ocsp_analysis):
-            logging.info("Inizio dell'analisi OCSP per i certificati.")  
+            logging.info("Inizio dell'analisi OCSP per i certificati 'Intermediate'.")  
             await process_ocsp_check_status_request(intermediate_dao, intermediate_database, intermediate_path)
         
+        if(args.intermediate_zlint_check):
+            logging.info("Inizio dell'analisi dei certificati 'Intermediate' con Zlint.")
+            run_zlint_check(intermediate_dao, total_lines)
+            logging.info("Controllo ZLint completato.")
+            
         # Esegui la generazione dei grafici per i certificati Intermediate
         if(args.plot_intermediate_results):
             # Crea gli indici e applica delle correzioni ai dati
             intermediate_database.create_indexes()
             intermediate_database.apply_database_corrections()
-            logging.info("Inizio generazione grafici per certificati Intermediate.")        
+            logging.info("Inizio generazione grafici per certificati 'Intermediate'.")        
             plot_intermediate_certificates(intermediate_dao, args.verbose)
 
         # Chiude la connessione al database
@@ -641,9 +704,9 @@ async def certificates_analysis_main():
 
         # Esegui l'analisi dei certificati
         if(args.root_analysis):
-            logging.info("Inizio analisi certificati Root.")      
+            logging.info("Inizio analisi certificati 'Root'.")      
             root_certificates_analysis(result_json_file, root_dao, root_database, total_lines)
-            logging.info("Analisi dei certificati Root completata con successo.")
+            logging.info("Analisi dei certificati 'Root' completata con successo.")
             
             # Rimuove i dati non necessari, crea gli indici e applica delle correzioni ai dati
             root_database.cleanup_unused_tables()
@@ -651,7 +714,7 @@ async def certificates_analysis_main():
 
         # Esegui l'analisi OCSP dei certificati
         if(args.root_ocsp_analysis):
-            logging.info("Inizio dell'analisi OCSP per i certificati.")  
+            logging.info("Inizio dell'analisi OCSP per i certificati 'Root'.")  
             await process_ocsp_check_status_request(root_dao, root_database, root_path)
         
         # Esegui la generazione dei grafici per i certificati Root
@@ -659,7 +722,7 @@ async def certificates_analysis_main():
             # Crea gli indici e applica delle correzioni ai dati
             root_database.create_indexes()
             root_database.apply_database_corrections()
-            logging.info("Inizio generazione grafici per certificati Root.")        
+            logging.info("Inizio generazione grafici per certificati 'Root'.")
             plot_root_certificates(root_dao, args.verbose)
 
         # Chiude la connessione al database

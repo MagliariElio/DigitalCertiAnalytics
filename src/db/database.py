@@ -183,7 +183,10 @@ class Database:
             elif(self.db_type == DatabaseType.INTERMEDIATE):
                 columns = [
                     "ocsp_stapling",
-                    "ocsp_must_stapling"
+                    "ocsp_must_stapling",
+                    "signature_valid",
+                    "SAN",
+                    "domain_matches_san"
                 ]
                 self._restructure_table_remove_columns("Certificates", columns)
                 logging.info("Colonne specificate rimosse dalla tabella 'Certificates'.")
@@ -192,7 +195,9 @@ class Database:
                     "ocsp_stapling",
                     "ocsp_must_stapling",
                     "certificates_up_to_root_count",
-                    "has_root_certificate"
+                    "has_root_certificate",
+                    "SAN",
+                    "domain_matches_san"
                 ]
                 self._restructure_table_remove_columns("Certificates", columns)
                 logging.info("Colonne specificate rimosse dalla tabella 'Certificates'.")

@@ -266,7 +266,16 @@ def plot_general_certificates_analysis(dao: CertificateDAO, plotter:GraphPlotter
         filename = os.path.abspath(f'{plots_path}/ocsp_status_distribution.png')
         data = pd.DataFrame(list(result.items()), columns=['OCSP Status', 'Count'])
         data.set_index('OCSP Status', inplace=True)
-        plotter.plot_pie_chart(data, column='Count', title='Stato OCSP dei Certificati', filename=filename)
+        # plotter.plot_pie_chart(data, column='Count', title='Stato OCSP dei Certificati', filename=filename)
+        plotter.plot_bar_chart(
+            data=data, 
+            x=data.index, 
+            y='Count', 
+            title='Stato OCSP dei Certificati', 
+            xlabel='OCSP Status',
+            ylabel='Numero di Certificati', 
+            filename=filename
+        )
     except Exception as e:
         logging.error(f"Errore nella generazione di un grafico: {e}")
     

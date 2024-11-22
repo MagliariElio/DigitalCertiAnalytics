@@ -5,6 +5,7 @@ import warnings
 import argparse
 import csv
 import os
+import subprocess
 import aiohttp, asyncio
 from db.database import DatabaseType
 from typing import Optional, Tuple
@@ -137,6 +138,48 @@ def find_raw_cert_issuer(chain, issuer_dn) -> Optional[str]:
             raw = issuer.get("raw", "")
             return raw
     return None
+
+def check_certificate_chain(hostname: str) -> dict:
+    """
+        Esegue una scansione SSL utilizzando sslyze per ottenere le informazioni sul certificato e la catena,
+        restituendo i risultati come dizionario Python senza scrivere su file.    
+    """
+    try:
+        # Comando per eseguire sslyze con l'opzione --certinfo
+        command = ['sslyze', '--certinfo', '--json_out', '-', hostname]
+
+        # Esegui il comando con subprocess
+        result = subprocess.run(command, capture_output=True, text=True, check=True)
+
+        # Carica il risultato JSON direttamente dal stdout
+        scan_results = json.loads(result.stdout)
+        server_scan_results = scan_results.get("server_scan_results", [])
+        
+        if(len(server_scan_results) == 0):
+            return 'Error'
+        
+        certificate_deployments = server_scan_results[0].get("scan_result", {}).get("certificate_info", {}).get("result", {}).get("certificate_deployments", [])
+
+        if(len(certificate_deployments) == 0):
+            return 'Error'
+        
+        path_validation_results = certificate_deployments[0].get("path_validation_results", [])
+        
+        for result in path_validation_results:
+            if(result.get("was_validation_successful", False) == True):
+                return 'Valid'
+
+        return 'Not Valid'
+    except subprocess.CalledProcessError as e:
+        logging.error(f"Errore durante l'esecuzione di sslyze: {e.stderr}")
+        return 'Error'
+    except json.JSONDecodeError as e:
+        logging.error(f"Errore nel decodificare l'output JSON: {e}")
+        return 'Error'
+    except Exception as e:
+        logging.error(f"Si è verificato un errore durante la verifica del certificate chain per l'hostname {hostname} : {e}")
+        return 'Error'
+
 
 async def make_ocsp_query(raw, issuer_certificate, alg, ocsp_link):
     """Costruisce e invia una richiesta OCSP per verificare lo stato di un certificato."""

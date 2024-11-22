@@ -17,6 +17,9 @@ class CertificateDAO:
         self.conn = connection
         self.cursor = self.conn.cursor()
         self.certificate_type = certificate_type
+    
+    def get_certificate_type(self):
+        return self.certificate_type
 
     def insert_error_row(self, json_row):
         """Inserisce la riga di errore nel database. Vale solo per i certificati Leaf."""
@@ -34,6 +37,7 @@ class CertificateDAO:
             VALUES (?, ?, ?, ?, ?, ?)
         ''', (domain, status, protocol, timestamp, error_message, download_date))
         logging.debug(f"Errore inserito per dominio: {domain}")
+        return
 
     def insert_issuer(self, parsed, handshake_log) -> int:
         """Inserisce un issuer nel database e restituisce l'issuer_id."""
@@ -105,7 +109,10 @@ class CertificateDAO:
         validity_length = parsed.get("validity", {}).get("length", "")
         validation_level = parsed.get("validation_level", "")
         redacted = parsed.get("redacted", False)
-                
+        
+        san = ', '.join(parsed.get("names", []))
+        domain_matches_san = handshake_log.get("server_certificates", {}).get("validation", {}).get("matches_domain", False)
+        
         raw = handshake_log.get("server_certificates", {}).get("certificate", {}).get("raw", {})
         digital_certificate = Certificate(raw)
         
@@ -119,13 +126,11 @@ class CertificateDAO:
             # Il certificato root si autofirma
             signature_valid = verify_signature(cert=leaf_cert, ca_cert=leaf_cert)
         else:
-            if len(chain) > 0:
-                issuer_cert = digital_certificate.get_certificate_from_raw(find_raw_cert_issuer(chain, issuer_dn))
-                leaf_cert = digital_certificate.get_cert()
-                if(issuer_cert is None):
-                    signature_valid = "Issuer Not Found"
-                else:
-                    signature_valid = verify_signature(leaf_cert, issuer_cert)
+            signature_valid = parsed.get("signature", {}).get("valid", False)
+            if(signature_valid == 1):
+                signature_valid = "Valid"
+            else:
+                signature_valid = "Not Valid"
                     
         ocsp_must_stapling = digital_certificate.is_ocsp_must_staple()
         
@@ -143,14 +148,14 @@ class CertificateDAO:
         self.cursor.execute("""
             INSERT INTO Certificates (
                 serial_number, leaf_domain, version, signature_algorithm, key_algorithm, key_length, 
-                validity_start, validity_end, validity_length, issuer_id, 
+                validity_start, validity_end, validity_length, SAN, domain_matches_san, issuer_id, 
                 subject_id, validation_level, redacted, signature_valid, self_signed, download_date, 
                 ocsp_stapling, ocsp_must_stapling, authority_info_access_is_critical, authority_info_access, 
                 ocsp_check, certificates_emitted_up_to, certificates_up_to_root_count, has_root_certificate, raw
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             serial_number, leaf_domain, version, signature_algorithm, key_algorithm, key_length,
-            validity_start, validity_end, validity_length, issuer_id,
+            validity_start, validity_end, validity_length, san, domain_matches_san, issuer_id,
             subject_id, validation_level, redacted, signature_valid, self_signed, download_date, 
             ocsp_stapling, ocsp_must_stapling, authority_info_access_is_critical, json.dumps(authority_info_access), 
             ocsp_check, certificates_emitted_up_to, certificates_up_to_root_count, has_root_certificate, raw
@@ -1127,6 +1132,80 @@ class CertificateDAO:
             logging.error("Errore: %s", str(e))
             return {}
     
+    def get_raw_certificates(self, batch_size=1500, offset=0):
+        """Recupera una lista di certificati dal database, insieme al loro ID e dominio di origine."""
+        
+        try:
+            self.cursor.execute("""
+                SELECT c.certificate_id, c.leaf_domain, c.raw, i.common_name, i.organization, i.issuer_dn
+                FROM Certificates AS c INNER JOIN Issuers AS i ON c.issuer_id = i.issuer_id
+                LIMIT ? OFFSET ?
+            """, (batch_size, offset))
+            
+            # Prende tutti i record
+            rows = self.cursor.fetchall()
+            
+            if not rows or len(rows) == 0:
+                return []
+                    
+            return rows
+        except Exception as e:
+            logging.error(f"Errore generale durante il controllo dello stato OCSP: {e}")
+        return
+    
+    def get_leaf_domain_certificates_validation_count(self):
+        """Restituisce il numero di certificati."""
+        try:
+            self.cursor.execute("""
+                SELECT COUNT(certificate_id) AS count
+                FROM Certificates
+            """, ())
+            
+            row = self.cursor.fetchone()
+            
+            if row is None:
+                return 0
+
+            return row[0]
+        except Exception as e:
+            logging.error(f"Errore generale durante il conteggio dei certificati: {e}")
+        return 0
+    
+    def get_leaf_domain_certificates(self, batch_size=1500, offset=0):
+        """Recupera una lista di certificati dal database, insieme al loro ID e dominio di origine."""
+        
+        try:
+            self.cursor.execute("""
+                SELECT certificate_id, leaf_domain
+                FROM Certificates
+                LIMIT ? OFFSET ?
+            """, (batch_size, offset))
+            
+            # Prende tutti i record
+            rows = self.cursor.fetchall()
+            
+            if not rows or len(rows) == 0:
+                return []
+                    
+            return rows
+        except Exception as e:
+            logging.error(f"Errore generale durante il recupero della lista dei certificati: {e}")
+        return
+    
+    def update_leaf_certificate_validity(self, signature_valid, certificate_id) -> dict:
+        """Aggiorna la validità della firma di un certificato specificato dal suo ID."""
+        try:
+            self.cursor.execute('''
+                UPDATE Certificates
+                SET signature_valid = ?
+                WHERE certificate_id = ?
+            ''', (signature_valid, certificate_id))
+            logging.debug(f"Signature Validity aggiornato per il certificate ID: {certificate_id}")
+        
+        except Exception as e:
+            logging.error("Errore durante l'aggionamento della signature validity: %s", str(e))
+            return
+        
     """
     def get_count_per_entity(self) -> dict:
         "" Commento. ""
