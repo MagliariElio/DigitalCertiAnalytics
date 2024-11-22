@@ -19,7 +19,7 @@ from utils.zlint_utils import run_zlint_check
 
 async def close_connections():
     """Funzione per gestire la chiusura delle connessioni ai database."""
-    global pbar_ocsp_check, pbar_leaf_chain_check
+    global pbar_ocsp_check, pbar_zlint
     
     logging.info("Inizio chiusura delle connessioni ai database...")
     
@@ -42,8 +42,11 @@ async def close_connections():
         pbar_root.close()
     
     if 'pbar_zlint' in globals():
+        pbar_zlint.close()
+    
+    if 'pbar_leaf_chain_check' in globals():
         pbar_leaf_chain_check.close()
-        
+    
     if 'pbar_ocsp_check' in globals():
         pbar_ocsp_check.close()
     
@@ -389,22 +392,22 @@ def start_leaf_certificate_chain_check(dao: CertificateDAO, database: Database):
     try:
         logging.info("Inizio controllo della validità della catena sui certificati...")
         
-        total_lines = dao.get_leaf_domain_certificates_validation_count()
+        total_lines = dao.get_certificates_count()
         
         tqdm.write("")
         pbar_leaf_chain_check = tqdm(total=total_lines, desc=" 🔍  [magenta bold]Elaborazione Certificati[/magenta bold]", unit="cert.", 
                     colour="magenta", bar_format="{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} • ⚡ {rate_fmt}")
         
-        while(True):
-            batch_size = 5000
-            offset = 0
+        batch_size = 5000
+        offset = 0
             
+        while(True):
             certificates = dao.get_leaf_domain_certificates(batch_size, offset)
             
             offset += batch_size
                 
             if not certificates or len(certificates) == 0:
-                return
+                break
         
             for certificate in certificates:
                 # Aggiorna la barra di caricamento
@@ -453,12 +456,12 @@ async def certificates_analysis_main():
     
     parser.add_argument('--leaf_analysis', action='store_true', help='Rimuove il database esistente e analizza i certificati leaf nel file JSON generato da zgrab2.')
     parser.add_argument('--leaf_ocsp_analysis', action='store_true', help='Esegue l\'analisi OCSP per i certificati leaf presenti nel database.')
-    parser.add_argument('--leaf_zlint_check', action='store_true', help='Esegue l\'analisi Zlint sui certificati leaf per verificare eventuali vulnerabilità e configurazioni errate.')
+    parser.add_argument('--leaf_zlint_check', action='store_true', help='Esegue l\'analisi Zlint sui certificati leaf per verificare eventuali vulnerabilità e configurazioni errate secondo determinati requisiti ufficiali.')
     parser.add_argument('--leaf_chain_validation', action='store_true', help='Esegue la validazione della catena dei certificati leaf per verificare la conformità e l\'affidabilità della catena di trust.\n\n')
 
     parser.add_argument('--intermediate_analysis', action='store_true', help='Rimuove il database esistente e analizza ed analizza i certificati intermediate nel file JSON generato da zgrab2.')
     parser.add_argument('--intermediate_ocsp_analysis', action='store_true', help='Esegue l\'analisi OCSP per i certificati intermediate presenti nel database.')
-    parser.add_argument('--intermediate_zlint_check', action='store_true', help='Esegue l\'analisi Zlint sui certificati intermediate per verificare eventuali vulnerabilità e configurazioni errate.\n\n')
+    parser.add_argument('--intermediate_zlint_check', action='store_true', help='Esegue l\'analisi Zlint sui certificati intermediate per verificare eventuali vulnerabilità e configurazioni errate secondo determinati requisiti ufficiali.\n\n')
     
     parser.add_argument('--root_analysis', action='store_true', help='Rimuove il database esistente e analizza i certificati root nel file JSON generato da zgrab2.')
     parser.add_argument('--root_ocsp_analysis', action='store_true', help='Esegue l\'analisi OCSP per i certificati root presenti nel database.\n\n')
@@ -520,8 +523,7 @@ async def certificates_analysis_main():
         )
         return
     
-    if(args.leaf_analysis or args.intermediate_analysis or args.root_analysis 
-        or args.leaf_zlint_check or args.intermediate_zlint_check):
+    if(args.leaf_analysis or args.intermediate_analysis or args.root_analysis):
         logging.info("Inizio il conteggio delle righe del file JSON contenente i certificati.")
 
         """
@@ -541,7 +543,9 @@ async def certificates_analysis_main():
                     progress.update(task, description=f"[bold]{total_lines:,.0f}[/bold] certificati letti")
 
         """
-        total_lines = 10000000  # TODO: da rimuovere i commenti precedenti
+        # TODO: rimuovere i commenti precedenti se non si conoscono il numero delle righe del file output JSON di Zgrab2, 
+        # TODO: altrimenti scrivere qui sotto il numero esatto per risparmiare tempo
+        total_lines = 10000000
         
         logging.info(f"Conteggio completato: {total_lines:,.0f} certificati trovati.")
 
@@ -592,7 +596,7 @@ async def certificates_analysis_main():
         
         if(args.leaf_zlint_check):
             logging.info("Inizio dell'analisi dei certificati 'Leaf' con Zlint.")
-            run_zlint_check(leaf_dao, total_lines)
+            run_zlint_check(leaf_dao)
             logging.info("Controllo ZLint completato.")
         
         if(args.leaf_chain_validation):
@@ -658,7 +662,7 @@ async def certificates_analysis_main():
         
         if(args.intermediate_zlint_check):
             logging.info("Inizio dell'analisi dei certificati 'Intermediate' con Zlint.")
-            run_zlint_check(intermediate_dao, total_lines)
+            run_zlint_check(intermediate_dao)
             logging.info("Controllo ZLint completato.")
             
         # Esegui la generazione dei grafici per i certificati Intermediate

@@ -1145,15 +1145,15 @@ class CertificateDAO:
             # Prende tutti i record
             rows = self.cursor.fetchall()
             
-            if not rows or len(rows) == 0:
+            if not rows:
                 return []
                     
             return rows
         except Exception as e:
             logging.error(f"Errore generale durante il controllo dello stato OCSP: {e}")
-        return
+        return []
     
-    def get_leaf_domain_certificates_validation_count(self):
+    def get_certificates_count(self):
         """Restituisce il numero di certificati."""
         try:
             self.cursor.execute("""

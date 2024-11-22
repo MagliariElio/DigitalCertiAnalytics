@@ -1,3 +1,3 @@
-da vedere la signature verificando anche il trust store
+da vedere la signature verificando anche il trust store: fatto con sslyze
 
 verifica del SAN se il domionio è presente nell'elenco: e_subject_common_name_not_exactly_from_san

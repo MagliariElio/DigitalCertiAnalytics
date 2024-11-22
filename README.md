@@ -111,7 +111,44 @@ Per eseguire il programma, è necessario avere i seguenti software installati:
 ### 1. Python 3.x
 Scarica e installa l'ultima versione di Python dal [sito ufficiale](https://www.python.org/).
 
-### 2. Librerie Python
+### 2. **Zlint**
+**Zlint** è uno strumento di analisi per certificati TLS/SSL che verifica la conformità e la sicurezza dei certificati. Prima di eseguire il programma, è fondamentale installare Zlint e assicurarsi che l'eseguibile sia presente nella cartella del progetto **DigitalCertiAnalytics**. Pertanto, si consiglia di seguire questo passaggio dopo aver clonato il repository GitHub del progetto (consultare la sezione "Guida all'uso" per sapere come procedere).
+
+#### **Installazione di Zlint:**
+
+1. **Clona il repository di Zlint**:
+   Zlint può essere scaricato dal suo repository GitHub ufficiale:
+   ```bash
+   git clone https://github.com/zmap/zlint
+   ```
+
+2. **Compilazione di Zlint**:
+   Dopo aver clonato il repository, entra nella cartella del progetto Zlint e compila il progetto:
+   ```bash
+   cd zlint
+   make
+   ```
+   *Attenzione per eseguire questa azione è necessario che **Go** sia stato installato correttamente, per maggiori informazioni affidarsi al file **README** presente nel repository GitHub ufficiale del progetto Zlint.*
+
+3. **Posizione dell'eseguibile**:
+   Una volta completata la compilazione, l'eseguibile di Zlint sarà disponibile nella cartella `zlint/v3/zlint`. Assicurati che il percorso dell'eseguibile corrisponda al valore previsto nel programma, che cercherà l'eseguibile in:
+   ```python
+   base_dir = os.path.dirname(os.path.abspath(__file__))
+   zlint_path = os.path.join(base_dir, "../../zlint/v3/zlint")
+   ```
+
+4. **Verifica che Zlint sia correttamente installato**:
+   Puoi testare che Zlint funzioni correttamente eseguendo il seguente comando nel terminale:
+   ```bash
+   ./zlint/v3/zlint --help
+   ```
+
+   Se tutto è stato configurato correttamente, dovresti vedere l'output delle opzioni di Zlint.
+
+5. **Impostare il percorso di Zlint**:
+   Assicurati che l'eseguibile Zlint sia nella cartella `zlint/v3/`, come specificato nel codice. Se il percorso non è corretto, il programma non riuscirà a eseguire l'analisi Zlint. Se necessario, puoi modificare il percorso nel codice Python dove è definito `zlint_path` per riflettere la posizione esatta.
+
+### 3. Librerie Python
 Assicurati di installare le seguenti librerie Python utilizzando il comando `pip`. Puoi installare i pacchetti necessari utilizzando il file `requirements.txt`. Segui questi passi:
 
 1. Crea un ambiente virtuale (opzionale ma consigliato):
@@ -146,9 +183,12 @@ Il programma può essere eseguito tramite il terminale o la riga di comando, con
   
 - `--leaf_analysis`: esegue l'analisi dei certificati leaf.
 - `--leaf_ocsp_analysis`: esegue l'analisi OCSP per i certificati leaf.
+- `--leaf_zlint_check`: esegue l'analisi Zlint sui certificati leaf per verificare eventuali vulnerabilità e configurazioni errate secondo determinati requisiti ufficiali.
+- `--leaf_chain_validation`: esegue la validazione della catena dei certificati leaf per verificare la conformità e l'affidabilità della catena di trust.
 
 - `--intermediate_analysis`: esegue l'analisi dei certificati intermedi.
 - `--intermediate_ocsp_analysis`: esegue l'analisi OCSP per i certificati intermedi.
+- `--intermediate_zlint_check`: esegue l'analisi Zlint sui certificati intermedi per verificare eventuali vulnerabilità e configurazioni errate secondo determinati requisiti ufficiali.
 
 - `--root_analysis`: esegue l'analisi dei certificati root.
 - `--root_ocsp_analysis`: esegue l'analisi OCSP per i certificati root.
@@ -162,26 +202,30 @@ Il programma può essere eseguito tramite il terminale o la riga di comando, con
 
 1. **Eseguire solo l'analisi dei certificati leaf**:
    ```bash
-   python -m analysis.main --leaf_analysis
+    python -m analysis.main --leaf_analysis
    ```
 
 2. **Eliminare il database dei certificati intermedi e avviare l'analisi**:
    ```bash
-   python -m analysis.main --delete_intermediate_db --intermediate_analysis
+    python -m analysis.main --delete_intermediate_db --intermediate_analysis
    ```
 
 3. **Eseguire analisi OCSP per certificati root e generare grafici solo per i certificati root**:
    ```bash
-   python -m analysis.main --root_ocsp_analysis --plot_root_results
+    python -m analysis.main --root_ocsp_analysis --plot_root_results
    ```
 
 4. **Eliminare tutti i database, analizzare i certificati leaf e intermedi e visualizzare tutti i grafici**:
    ```bash
-   python -m analysis.main --delete_all_db --leaf_analysis --intermediate_analysis --plot_all_results
+    python -m analysis.main --delete_all_db --leaf_analysis --intermediate_analysis --plot_all_results
    ```
 5. **Attivare la modalità verbose per una registrazione dettagliata**:
    ```bash
-   python -m analysis.main --delete_leaf_db --leaf_analysis -v
+    python -m analysis.main --delete_leaf_db --leaf_analysis -v
+   ```
+6. **Eseguire l'analisi Zlint sui certificati leaf e validare la catena**:
+   ```bash
+    python -m analysis.main --leaf_zlint_check --leaf_chain_validation
    ```
 
 ### 3. Struttura dei File
