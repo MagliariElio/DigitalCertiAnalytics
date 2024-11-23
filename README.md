@@ -261,12 +261,59 @@ Il programma può essere eseguito tramite il terminale o la riga di comando, con
 
 ### 3. Struttura dei File
 
-- `certs_polito.json`: file JSON contenente i certificati da analizzare.
-- `leaf_certificates.db`: file di database SQLite dove sono memorizzati i risultati dell'analisi.
-- `schema_leaf_db.sql`: script SQL per creare lo schema del database.
-- `analysis/`: directory contenente il database e altri file di analisi.
-- `analysis/plots`: directory dove sono memorizzati i risultati grafici.
-- `scan/`: directory contenente un file di scan sul file JSON.
+- `res/queries.sql`: file SQL utilizzato per eseguire delle query di analisi sui database relazionali.
+- `res/queries_big_query.sql`: file SQL contenente la query utilizzata per ottenere un elenco di domini europei dal servizio BigQuery di Google.
+- `res/log_list.json`: file JSON che contiene l'elenco dei logger utilizzati dal programma per analizzare gli SCT.
+- `res/certs_polito.json`: file JSON contenente i certificati da analizzare, output del file Zgrab2 dell'analisi eseguita a partire dalla lista dei domini dati come input.
+- `src/analysis/`: directory contenente il database e altri file di analisi.
+- `src/analysis/leaf/leaf_certificates.db`: file di database SQLite dove sono memorizzati i risultati dell'analisi dei certificati leaf.
+- `src/analysis/intermediate/intermediate_certificates.db`: file di database SQLite dove sono memorizzati i risultati dell'analisi dei certificati intermediate.
+- `src/analysis/root/root_certificates.db`: file di database SQLite dove sono memorizzati i risultati dell'analisi dei certificati root.
+- `src/analysis/leaf/ocsp_certificates_backup.db`: file di backup in CSV dove sono memorizzati i risultati dell'analisi OCSP dei certificati leaf.
+- `src/analysis/intermediate/ocsp_certificates_backup.db`: file di backup in CSV dove sono memorizzati i risultati dell'analisi OCSP dei certificati intermediate.
+- `src/analysis/root/ocsp_certificates_backup.db`: file di backup in CSV dove sono memorizzati i risultati dell'analisi OCSP dei certificati root.
+- `src/analysis/leaf/plots`: directory dove sono memorizzati i risultati grafici dei certificati leaf.
+- `src/analysis/intermediate/plots`: directory dove sono memorizzati i risultati grafici dei certificati intermediate.
+- `src/analysis/root/plots`: directory dove sono memorizzati i risultati grafici dei certificati root.
+- `src/db/schema_db.sql`: script SQL per creare lo schema dei database leaf, intermediate e root.
+- `src/scan/`: directory contenente un file di scan sul file JSON.
 
 ### 4. Log
 Il programma genera un file di log `app.log` che registra l'andamento dell'applicazione e eventuali errori. Il log sarà disponibile nella directory di esecuzione del programma.
+
+## Visualizzare e Gestire il Database MongoDB
+
+Per visualizzare e gestire facilmente il database MongoDB, è consigliato utilizzare uno strumento di gestione MongoDB con un interfaccia grafica, come **MongoDB Compass**. Compass ti consente di esplorare i dati del database, eseguire query, analizzare la struttura del database, e molto altro.
+
+### Come installare MongoDB Compass:
+1. Vai al sito ufficiale di MongoDB Compass: [MongoDB Compass](https://www.mongodb.com/products/compass).
+2. Scarica e installa la versione compatibile con il tuo sistema operativo (Windows, macOS, Linux).
+3. Una volta installato, avvia Compass e connettiti al tuo server MongoDB utilizzando le credenziali appropriate.
+
+Compass offre un'interfaccia facile da usare per visualizzare i dati, analizzare le collezioni, e modificare i documenti. Puoi esplorare facilmente il tuo database e interagire con esso tramite l'interfaccia grafica.
+
+### Come eseguire il dump di un database MongoDB
+
+Se desideri creare un backup (dump) del database MongoDB, puoi farlo utilizzando il comando **`mongodump`**. Questo comando crea una copia dei dati del database in una directory specificata. Assicurati di avere **`mongodump`** installato sul tuo sistema. Se non lo hai, puoi scaricarlo insieme a MongoDB o come parte della distribuzione degli strumenti di MongoDB.
+
+#### I comandi per eseguire il dump dei database sono i seguenti:
+
+1. **Per il database "Leaf_Zlint_Checks"**:
+   ```bash
+   mongodump --db Leaf_Zlint_Checks --out Leaf_Zlint_Checks
+   ```
+
+2. **Per il database "Intermediate_Zlint_Checks"**:
+   ```bash
+   mongodump --db Intermediate_Zlint_Checks --out Intermediate_Zlint_Checks
+   ```
+
+Questi comandi creeranno una copia dei dati dei rispettivi database nella directory indicata come `--out`. Puoi quindi utilizzare questi file di dump per ripristinare i dati o per fare delle analisi.
+
+### Assicurarsi che `mongodump` sia installato:
+
+Per eseguire i comandi `mongodump`, devi avere MongoDB e gli strumenti di linea di comando installati sul tuo sistema. Ecco come fare:
+
+1. Se non hai già MongoDB, puoi scaricarlo dal sito ufficiale: [Download MongoDB](https://www.mongodb.com/try/download/community).
+2. Se hai già MongoDB, ma non gli strumenti di linea di comando, puoi scaricare il pacchetto degli strumenti separatamente. Puoi trovarlo nella sezione "MongoDB Database Tools" sulla stessa pagina di download di MongoDB.
+3. Una volta installato, assicurati che il comando `mongodump` sia disponibile nel tuo **PATH** di sistema. Puoi verificarlo eseguendo il comando `mongodump --version` nel terminale per vedere se viene restituita una versione.
