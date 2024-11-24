@@ -490,9 +490,9 @@ async def certificates_analysis_main():
     args.delete_root_db =         args.delete_root_db         or args.root_analysis         or args.delete_all_db
     
     # Imposta il plot dei risutalti    
-    args.plot_leaf_results =         args.plot_leaf_results                 or args.plot_all_results
-    args.plot_intermediate_results = args.plot_intermediate_results         or args.plot_all_results
-    args.plot_root_results =         args.plot_root_results                 or args.plot_all_results
+    args.plot_leaf_results =         args.plot_leaf_results           or args.plot_all_results
+    args.plot_intermediate_results = args.plot_intermediate_results   or args.plot_all_results
+    args.plot_root_results =         args.plot_root_results           or args.plot_all_results
     
     # Funzione lambda per creare una cartella se non esiste
     create_directory = lambda path: os.makedirs(path) if not os.path.exists(path) else None

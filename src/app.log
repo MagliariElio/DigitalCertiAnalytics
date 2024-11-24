@@ -1,0 +1,84 @@
+2024-11-24 02:03:19,239 - INFO - certificates_analysis.py:485 - certificates_analysis_main() - Inizio dell'applicazione.
+2024-11-24 02:03:19,243 - INFO - database.py:43 - _initialize_database() - Connessione al database esistente: 'file:///home/elion-man/TEST_TESI/src/analysis/leaf/leaf_certificates.db'
+2024-11-24 02:03:19,245 - INFO - certificates_analysis.py:594 - certificates_analysis_main() - Inizio dell'analisi OCSP per i certificati 'Leaf'.
+2024-11-24 02:03:19,246 - INFO - database.py:235 - drop_indexes_for_table() - Rimozione indici dal database in corso...
+2024-11-24 02:03:19,247 - INFO - database.py:254 - drop_indexes_for_table() - Tutti gli indici, eccetto quelli ignorati, sono stati rimossi dal database.
+2024-11-24 02:03:19,250 - INFO - utils.py:530 - update_certificates_ocsp_status_db() - Inizio aggiornamento dei dati dal file di backup al database.
+2024-11-24 02:37:22,019 - INFO - certificate_dao.py:310 - check_ocsp_status_for_certificates() - Inizio del controllo OCSP per i certificati. Tipo di certificati: DatabaseType.LEAF, Batch Size: 1500, Offset iniziale: 0.
+2024-11-24 02:44:49,342 - INFO - certificate_dao.py:337 - check_ocsp_status_for_certificates() - Conteggio del numero di certificati da elaborare...
+2024-11-24 03:29:46,115 - ERROR - utils.py:304 - get_issuer_certificate_from_issuer_link() - Errore nel recupero del certificato (http://aia.crlocsp.cn/WoTrusDVServerCA_2.crt). Stato: 500
+2024-11-24 04:53:06,051 - ERROR - utils.py:304 - get_issuer_certificate_from_issuer_link() - Errore nel recupero del certificato (http://CA.csm.nov.ru/CertEnroll/CA.csm.nov.ru_NCSM%20Root%20CA(1).crt). Stato: 404
+2024-11-24 04:53:06,422 - ERROR - utils.py:304 - get_issuer_certificate_from_issuer_link() - Errore nel recupero del certificato (http://CA.csm.nov.ru/CertEnroll/CA.csm.nov.ru_NCSM%20Root%20CA(1).crt). Stato: 404
+2024-11-24 04:53:06,750 - ERROR - utils.py:304 - get_issuer_certificate_from_issuer_link() - Errore nel recupero del certificato (http://CA.csm.nov.ru/CertEnroll/CA.csm.nov.ru_NCSM%20Root%20CA(1).crt). Stato: 404
+2024-11-24 04:53:06,882 - ERROR - utils.py:304 - get_issuer_certificate_from_issuer_link() - Errore nel recupero del certificato (http://CA.csm.nov.ru/CertEnroll/CA.csm.nov.ru_NCSM%20Root%20CA(1).crt). Stato: 404
+2024-11-24 05:11:18,959 - ERROR - utils.py:298 - get_issuer_certificate_from_issuer_link() - Errore nel parsing del PKCS #7 (http://repository.publicca.hinet.net/certs/IssuedToThisCA.p7b): list index out of range
+2024-11-24 05:11:20,339 - ERROR - utils.py:298 - get_issuer_certificate_from_issuer_link() - Errore nel parsing del PKCS #7 (http://repository.publicca.hinet.net/certs/IssuedToThisCA.p7b): list index out of range
+2024-11-24 05:11:21,383 - ERROR - utils.py:298 - get_issuer_certificate_from_issuer_link() - Errore nel parsing del PKCS #7 (http://repository.publicca.hinet.net/certs/IssuedToThisCA.p7b): list index out of range
+2024-11-24 05:11:22,029 - ERROR - utils.py:298 - get_issuer_certificate_from_issuer_link() - Errore nel parsing del PKCS #7 (http://repository.publicca.hinet.net/certs/IssuedToThisCA.p7b): list index out of range
+2024-11-24 05:43:38,516 - ERROR - utils.py:301 - get_issuer_certificate_from_issuer_link() - Formato del certificato sconosciuto (http://swisssign.net/cgi-bin/authority/download/3C9E527903636F4F9C811BD328700C245AEAA587): application/pkix-ca
+2024-11-24 05:43:42,734 - ERROR - utils.py:301 - get_issuer_certificate_from_issuer_link() - Formato del certificato sconosciuto (http://swisssign.net/cgi-bin/authority/download/3C9E527903636F4F9C811BD328700C245AEAA587): application/pkix-ca
+2024-11-24 05:43:42,832 - ERROR - utils.py:301 - get_issuer_certificate_from_issuer_link() - Formato del certificato sconosciuto (http://swisssign.net/cgi-bin/authority/download/3C9E527903636F4F9C811BD328700C245AEAA587): application/pkix-ca
+2024-11-24 05:43:42,937 - ERROR - utils.py:301 - get_issuer_certificate_from_issuer_link() - Formato del certificato sconosciuto (http://swisssign.net/cgi-bin/authority/download/3C9E527903636F4F9C811BD328700C245AEAA587): application/pkix-ca
+2024-11-24 05:43:43,068 - ERROR - utils.py:301 - get_issuer_certificate_from_issuer_link() - Formato del certificato sconosciuto (http://swisssign.net/cgi-bin/authority/download/3C9E527903636F4F9C811BD328700C245AEAA587): application/pkix-ca
+2024-11-24 05:44:56,619 - ERROR - utils.py:304 - get_issuer_certificate_from_issuer_link() - Errore nel recupero del certificato (http://cdp1.pca.dfn.de/stiftung-preussischer-kulturbesitz-ca/pub/cacert/cacert.crt). Stato: 404
+2024-11-24 05:44:57,762 - ERROR - utils.py:304 - get_issuer_certificate_from_issuer_link() - Errore nel recupero del certificato (http://cdp1.pca.dfn.de/stiftung-preussischer-kulturbesitz-ca/pub/cacert/cacert.crt). Stato: 404
+2024-11-24 05:44:58,151 - ERROR - utils.py:304 - get_issuer_certificate_from_issuer_link() - Errore nel recupero del certificato (http://cdp1.pca.dfn.de/stiftung-preussischer-kulturbesitz-ca/pub/cacert/cacert.crt). Stato: 404
+2024-11-24 05:44:58,290 - ERROR - utils.py:304 - get_issuer_certificate_from_issuer_link() - Errore nel recupero del certificato (http://cdp1.pca.dfn.de/stiftung-preussischer-kulturbesitz-ca/pub/cacert/cacert.crt). Stato: 404
+2024-11-24 05:44:58,436 - ERROR - utils.py:304 - get_issuer_certificate_from_issuer_link() - Errore nel recupero del certificato (http://cdp1.pca.dfn.de/stiftung-preussischer-kulturbesitz-ca/pub/cacert/cacert.crt). Stato: 404
+2024-11-24 06:27:07,211 - ERROR - utils.py:267 - get_issuer_certificate_from_issuer_link() - Errore nel parsing del certificato DER (http://www.sigov-ca.gov.si/crt/sigov-ca2-certs.p7c): error parsing asn1 value: ParseError { kind: UnexpectedTag { actual: Tag { value: 6, constructed: false, class: Universal } }, location: ["Certificate::tbs_cert"] }
+2024-11-24 06:27:08,708 - ERROR - utils.py:267 - get_issuer_certificate_from_issuer_link() - Errore nel parsing del certificato DER (http://www.sigov-ca.gov.si/crt/sigov-ca2-certs.p7c): error parsing asn1 value: ParseError { kind: UnexpectedTag { actual: Tag { value: 6, constructed: false, class: Universal } }, location: ["Certificate::tbs_cert"] }
+2024-11-24 06:27:21,003 - ERROR - utils.py:267 - get_issuer_certificate_from_issuer_link() - Errore nel parsing del certificato DER (http://www.sigov-ca.gov.si/crt/sigov-ca2-certs.p7c): error parsing asn1 value: ParseError { kind: UnexpectedTag { actual: Tag { value: 6, constructed: false, class: Universal } }, location: ["Certificate::tbs_cert"] }
+2024-11-24 06:27:21,195 - ERROR - utils.py:267 - get_issuer_certificate_from_issuer_link() - Errore nel parsing del certificato DER (http://www.sigov-ca.gov.si/crt/sigov-ca2-certs.p7c): error parsing asn1 value: ParseError { kind: UnexpectedTag { actual: Tag { value: 6, constructed: false, class: Universal } }, location: ["Certificate::tbs_cert"] }
+2024-11-24 06:27:21,339 - ERROR - utils.py:267 - get_issuer_certificate_from_issuer_link() - Errore nel parsing del certificato DER (http://www.sigov-ca.gov.si/crt/sigov-ca2-certs.p7c): error parsing asn1 value: ParseError { kind: UnexpectedTag { actual: Tag { value: 6, constructed: false, class: Universal } }, location: ["Certificate::tbs_cert"] }
+2024-11-24 09:54:16,571 - ERROR - utils.py:267 - get_issuer_certificate_from_issuer_link() - Errore nel parsing del certificato DER (http://cacert.actalis.it/certs/actalis-autdvg2): error parsing asn1 value: ParseError { kind: ShortData }
+2024-11-24 09:54:16,645 - ERROR - utils.py:267 - get_issuer_certificate_from_issuer_link() - Errore nel parsing del certificato DER (http://cacert.actalis.it/certs/actalis-autdvg2): error parsing asn1 value: ParseError { kind: ShortData }
+2024-11-24 09:54:16,730 - ERROR - utils.py:267 - get_issuer_certificate_from_issuer_link() - Errore nel parsing del certificato DER (http://cacert.actalis.it/certs/actalis-autdvg2): error parsing asn1 value: ParseError { kind: ShortData }
+2024-11-24 09:54:16,794 - ERROR - utils.py:267 - get_issuer_certificate_from_issuer_link() - Errore nel parsing del certificato DER (http://cacert.actalis.it/certs/actalis-autdvg2): error parsing asn1 value: ParseError { kind: ShortData }
+2024-11-24 10:21:36,650 - ERROR - utils.py:301 - get_issuer_certificate_from_issuer_link() - Formato del certificato sconosciuto (http://swisssign.net/cgi-bin/authority/download/3C9E527903636F4F9C811BD328700C245AEAA587): application/pkix-ca
+2024-11-24 10:21:36,795 - ERROR - utils.py:301 - get_issuer_certificate_from_issuer_link() - Formato del certificato sconosciuto (http://swisssign.net/cgi-bin/authority/download/3C9E527903636F4F9C811BD328700C245AEAA587): application/pkix-ca
+2024-11-24 10:21:36,895 - ERROR - utils.py:301 - get_issuer_certificate_from_issuer_link() - Formato del certificato sconosciuto (http://swisssign.net/cgi-bin/authority/download/3C9E527903636F4F9C811BD328700C245AEAA587): application/pkix-ca
+2024-11-24 10:21:36,995 - ERROR - utils.py:301 - get_issuer_certificate_from_issuer_link() - Formato del certificato sconosciuto (http://swisssign.net/cgi-bin/authority/download/3C9E527903636F4F9C811BD328700C245AEAA587): application/pkix-ca
+2024-11-24 11:35:22,817 - ERROR - utils.py:304 - get_issuer_certificate_from_issuer_link() - Errore nel recupero del certificato (http://www.microsoft.com/pki/mscorp/Microsoft%20IT%20TLS%20CA%201.crt). Stato: 403
+2024-11-24 11:35:22,961 - ERROR - utils.py:304 - get_issuer_certificate_from_issuer_link() - Errore nel recupero del certificato (http://www.microsoft.com/pki/mscorp/Microsoft%20IT%20TLS%20CA%201.crt). Stato: 403
+2024-11-24 11:35:23,158 - ERROR - utils.py:304 - get_issuer_certificate_from_issuer_link() - Errore nel recupero del certificato (http://www.microsoft.com/pki/mscorp/Microsoft%20IT%20TLS%20CA%201.crt). Stato: 403
+2024-11-24 11:35:23,290 - ERROR - utils.py:304 - get_issuer_certificate_from_issuer_link() - Errore nel recupero del certificato (http://www.microsoft.com/pki/mscorp/Microsoft%20IT%20TLS%20CA%201.crt). Stato: 403
+2024-11-24 13:03:50,133 - INFO - certificates_analysis.py:485 - certificates_analysis_main() - Inizio dell'applicazione.
+2024-11-24 13:03:50,138 - INFO - certificates_analysis.py:527 - certificates_analysis_main() - Inizio il conteggio delle righe del file JSON contenente i certificati.
+2024-11-24 13:03:50,139 - INFO - certificates_analysis.py:550 - certificates_analysis_main() - Conteggio completato: 10,000,000 certificati trovati.
+2024-11-24 13:03:50,144 - INFO - database.py:48 - create_tables() - Creazione tabelle nel database in corso...
+2024-11-24 13:03:50,630 - INFO - database.py:55 - create_tables() - Tabelle create con successo.
+2024-11-24 13:03:50,632 - INFO - database.py:43 - _initialize_database() - Connessione al database esistente: 'file:///media/elion-man/Seagate Expansion Drive/analysis/intermediate/intermediate_certificates.db'
+2024-11-24 13:03:52,995 - INFO - certificates_analysis.py:312 - process_insert_sct_logs() - SCT Operators e SCT Logs memorizzati con successo.
+2024-11-24 13:03:52,997 - INFO - certificates_analysis.py:650 - certificates_analysis_main() - Inizio analisi certificati 'Intermediate'.
+2024-11-24 13:04:45,377 - INFO - certificates_analysis.py:180 - intermediate_certificates_analysis() - Ricevuto segnale di interruzione (SIGINT). Inizio della procedura di chiusura...
+2024-11-24 13:04:45,382 - INFO - certificates_analysis.py:652 - certificates_analysis_main() - Analisi dei certificati 'Intermediate' completata con successo.
+2024-11-24 13:04:45,383 - INFO - database.py:214 - cleanup_unused_tables() - Rimozione tabelle non necessarie in corso...
+2024-11-24 13:04:45,909 - INFO - database.py:226 - cleanup_unused_tables() - Le tabelle 'Errors', 'SignedCertificateTimestamps', 'Logs' e 'LogsOperators' sono state eliminate con successo.
+2024-11-24 13:04:45,910 - INFO - database.py:174 - remove_columns() - Rimozione colonne non necessarie dal database in corso...
+2024-11-24 13:04:46,617 - INFO - database.py:192 - remove_columns() - Colonne specificate rimosse dalla tabella 'Certificates'.
+2024-11-24 13:04:46,619 - INFO - database.py:280 - close() - Connessione al database Intermediate chiusa con successo: 'file:///media/elion-man/Seagate Expansion Drive/analysis/intermediate/intermediate_certificates.db'
+2024-11-24 13:04:46,620 - INFO - certificates_analysis.py:735 - certificates_analysis_main() - Applicazione terminata correttamente.
+
+2024-11-24 13:04:46,622 - INFO - certificates_analysis.py:24 - close_connections() - Inizio chiusura delle connessioni ai database...
+2024-11-24 13:04:46,623 - INFO - database.py:280 - close() - Connessione al database Intermediate chiusa con successo: 'file:///media/elion-man/Seagate Expansion Drive/analysis/intermediate/intermediate_certificates.db'
+2024-11-24 13:04:46,624 - INFO - certificates_analysis.py:56 - close_connections() - Tutte le connessioni ai database sono state chiuse.
+2024-11-24 13:21:25,577 - INFO - certificates_analysis.py:485 - certificates_analysis_main() - Inizio dell'applicazione.
+2024-11-24 13:21:25,581 - INFO - certificates_analysis.py:527 - certificates_analysis_main() - Inizio il conteggio delle righe del file JSON contenente i certificati.
+2024-11-24 13:21:25,581 - INFO - certificates_analysis.py:550 - certificates_analysis_main() - Conteggio completato: 10,000,000 certificati trovati.
+2024-11-24 13:21:25,654 - INFO - database.py:28 - connect() - Database eliminato con successo: /home/elion-man/TEST_TESI/src/analysis/root/root_certificates.db
+2024-11-24 13:21:25,655 - INFO - database.py:48 - create_tables() - Creazione tabelle nel database in corso...
+2024-11-24 13:21:25,666 - INFO - database.py:55 - create_tables() - Tabelle create con successo.
+2024-11-24 13:21:25,667 - INFO - database.py:43 - _initialize_database() - Connessione al database esistente: 'file:///home/elion-man/TEST_TESI/src/analysis/root/root_certificates.db'
+2024-11-24 13:21:25,715 - INFO - certificates_analysis.py:312 - process_insert_sct_logs() - SCT Operators e SCT Logs memorizzati con successo.
+2024-11-24 13:21:25,716 - INFO - certificates_analysis.py:711 - certificates_analysis_main() - Inizio analisi certificati 'Root'.
+2024-11-24 13:26:12,692 - ERROR - certificate.py:151 - is_sub_alt_name_critical() - Errore imprevisto durante il controllo Sub Alt Name: error parsing asn1 value: ParseError { kind: EncodedDefault, location: ["BasicConstraints::ca"] }
+2024-11-24 13:26:12,694 - ERROR - certificate.py:168 - is_ocsp_must_staple() - Errore imprevisto durante il controllo OCSP must stapling: error parsing asn1 value: ParseError { kind: EncodedDefault, location: ["BasicConstraints::ca"] }
+2024-11-24 13:26:12,697 - ERROR - certificate.py:58 - is_aia_critical() - Errore imprevisto durante il controllo AIA (Default): error parsing asn1 value: ParseError { kind: EncodedDefault, location: ["BasicConstraints::ca"] }
+2024-11-24 13:26:12,702 - ERROR - certificate.py:100 - is_crl_distr_point_critical() - Errore imprevisto durante il controllo Crl Distr Point: error parsing asn1 value: ParseError { kind: EncodedDefault, location: ["BasicConstraints::ca"] }
+2024-11-24 13:26:12,704 - ERROR - certificate.py:117 - is_key_usage_critical() - Errore imprevisto durante il controllo Key Usage: error parsing asn1 value: ParseError { kind: EncodedDefault, location: ["BasicConstraints::ca"] }
+2024-11-24 13:26:12,707 - ERROR - certificate.py:134 - is_extended_key_usage_critical() - Errore imprevisto durante il controllo Extended Key Usage: error parsing asn1 value: ParseError { kind: EncodedDefault, location: ["BasicConstraints::ca"] }
+2024-11-24 13:26:12,710 - ERROR - certificate.py:83 - get_cp() - Errore imprevisto nel recupero delle CERTIFICATE_POLICIES: error parsing asn1 value: ParseError { kind: EncodedDefault, location: ["BasicConstraints::ca"] }
+2024-11-24 13:28:22,285 - ERROR - certificate.py:41 - get_certificate_from_raw() - Certificato non valido, errore nel parsing: error parsing asn1 value: ParseError { kind: EncodedDefault, location: ["Certificate::tbs_cert", "TbsCertificate::raw_extensions", 1, "Extension::critical"] }
+2024-11-24 13:28:22,288 - ERROR - certificate.py:41 - get_certificate_from_raw() - Certificato non valido, errore nel parsing: error parsing asn1 value: ParseError { kind: EncodedDefault, location: ["Certificate::tbs_cert", "TbsCertificate::raw_extensions", 1, "Extension::critical"] }
+2024-11-24 13:28:22,291 - ERROR - utils.py:84 - verify_signature() - Impossibile verificare la firma: il certificato non è presente
+2024-11-24 13:28:22,293 - ERROR - certificate.py:41 - get_certificate_from_raw() - Certificato non valido, errore nel parsing: error parsing asn1 value: ParseError { kind: EncodedDefault, location: ["Certificate::tbs_cert", "TbsCertificate::raw_extensions", 1, "Extension::critical"] }
