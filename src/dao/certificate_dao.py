@@ -7,7 +7,7 @@ from datetime import datetime
 from bean.certificate import Certificate
 from db.database import DatabaseType
 from cryptography.x509.extensions import UserNotice
-from utils.utils import verify_signature, find_raw_cert_issuer, check_ocsp_status_row, reorder_signature_algorithm, count_intermediate_up_to_root_and_root_certificates
+from utils.utils import verify_signature, find_raw_cert_issuer, check_is_revoked_from_crl, check_ocsp_status_row, reorder_signature_algorithm, count_intermediate_up_to_root_and_root_certificates
 
 # Admin: Anuar Elio Magliari 
 # Politecnico di Torino
@@ -181,6 +181,7 @@ class CertificateDAO:
         
         digital_certificate = Certificate(raw)
         crl_distr_point_is_critical = digital_certificate.is_crl_distr_point_critical()
+        crl_revocation_status = check_is_revoked_from_crl(digital_certificate.get_cert(), extensions.get("crl_distribution_points", []))
 
         key_usage_is_critical = digital_certificate.is_key_usage_critical()
         extended_key_usage_is_critical = digital_certificate.is_extended_key_usage_critical()
@@ -188,11 +189,11 @@ class CertificateDAO:
         self.cursor.execute("""
             INSERT INTO Extensions (
                 certificate_id, key_usage, key_usage_is_critical, extended_key_usage, extended_key_usage_is_critical, 
-                basic_constraints, max_path_length, crl_distribution_points, crl_distr_point_is_critical
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                basic_constraints, max_path_length, crl_distribution_points, crl_distr_point_is_critical, crl_revocation_status
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             certificate_id, key_usage, key_usage_is_critical, extended_key_usage, extended_key_usage_is_critical, json.dumps(basic_constraints),
-            max_path_length, crl_distribution_points, crl_distr_point_is_critical
+            max_path_length, crl_distribution_points, crl_distr_point_is_critical, crl_revocation_status
         ))
 
         logging.debug(f"Estensioni inserite per certificato ID: {certificate_id}")
@@ -302,12 +303,12 @@ class CertificateDAO:
                                     certificate_type, certificates_emitted_up_to)
         return
 
-    async def check_ocsp_status_for_certificates(self, certificate_type: DatabaseType, db, ocsp_temp_file_writer, batch_size=1500, offset=0):
+    async def check_ocsp_status_for_certificates(self, certificate_type: DatabaseType, db, ocsp_temp_file_writer, batch_size=50000, offset=0):
         """Controlla lo stato OCSP per ciascun certificato nel database e aggiorna il relativo stato."""
         global pbar_ocsp_check
         
         try:
-            logging.info(f"Inizio del controllo OCSP per i certificati. Tipo di certificati: {certificate_type}, "
+            logging.info(f"Inizio del controllo OCSP per i certificati. Tipo di certificati: '{certificate_type.name}', "
              f"Batch Size: {batch_size}, Offset iniziale: {offset}.")
             
             # Esclude tutte le righe che non hanno un ocsp url
@@ -381,9 +382,6 @@ class CertificateDAO:
                     if not rows or len(rows) == 0:
                         break
                     
-                    # Aggiorna la barra di caricamento
-                    pbar_ocsp_check.update(len(rows))
-                    
                     tasks = [check_ocsp_status_row(row_to_certificate(row), certificate_type) for row in rows]
                     results = await asyncio.gather(*tasks)
                 
@@ -394,6 +392,9 @@ class CertificateDAO:
 
                     # Incrementa l'offset per il prossimo batch
                     offset += batch_size
+                    
+                    # Aggiorna la barra di caricamento
+                    pbar_ocsp_check.update(len(rows))
 
                     # Aggiornamento in batch dell'OCSP status nel db
                     # await db.executemany("""

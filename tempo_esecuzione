@@ -1,5 +1,33 @@
 dom-cop-top-10m
 leaf:
-    tempo:                      19:46:43 
-    database:                   68.4 GB 
+    tempo analisi:              19:46:43 
+    database:                   68.4 GB
     certificati con successo:   7045024
+    tempo ocsp:			9:00:30
+    tempo zlint:		4 giorni 20:30:04 per 7,045,024 certificati
+intermediate:
+    tempo analisi:              13:27:55
+    database:                   45.6 GB
+    certificati con successo:   9428980
+    tempo ocsp:			2:28:26
+root:
+    tempo analisi:              00:57:36
+    database:                   1.8 GB
+    certificati con successo:   370592
+    tempo ocsp:			00:00:21
+
+google
+leaf:
+    tempo analisi:              22:21:01 
+    database:                   91.1 GB
+    certificati con successo:   9440561
+intermediate:
+    tempo analisi:              18:31:31 
+    database:                   82.6 GB
+    certificati con successo:   13155555
+    tempo_ocsp:                 06:46:22
+root:
+    tempo analisi:              1:52:38
+    database:                   3.6 GB
+    certificati con successo:   751932
+    tempo ocsp:			00:00:21

@@ -10,7 +10,7 @@ from db.database import Database, DatabaseType
 from dao.certificate_dao import CertificateDAO
 from utils.utils import find_next_intermediate_certificate, count_certificates_to_root, setup_logging, ArgparseFormatter 
 from utils.utils import update_certificates_ocsp_status_db, save_certificates_ocsp_status_file, check_certificate_chain
-from utils.plotter_utils import plot_general_certificates_analysis, plot_leaf_certificates_analysis
+from utils.plotter_utils import plot_general_certificates_analysis, plot_leaf_certificates_analysis, plot_leaf_and_root_certificates_analysis
 from utils.graph_plotter import GraphPlotter
 from utils.zlint_utils import run_zlint_check
 
@@ -334,6 +334,7 @@ def plot_leaf_certificates(dao: CertificateDAO, is_verbose: bool):
     # Generazione grafici
     plot_general_certificates_analysis(dao, plotter, plots_path)
     plot_leaf_certificates_analysis(dao, plotter, plots_path)
+    plot_leaf_and_root_certificates_analysis(dao, plotter, plots_path)
     
     logging.info("Generazione dei grafici per l'analisi dei certificati Leaf completata.")
     return
@@ -382,6 +383,7 @@ def plot_root_certificates(dao: CertificateDAO, is_verbose: bool):
     
     # Generazione grafici
     plot_general_certificates_analysis(dao, plotter, plots_path)
+    plot_leaf_and_root_certificates_analysis(dao, plotter, plots_path)
         
     logging.info("Generazione dei grafici per l'analisi dei certificati Root completata.")
     return
@@ -507,16 +509,16 @@ async def certificates_analysis_main():
     
     # File di output di Zgrab2 pronto per l'analisi
     result_json_file = os.path.abspath('../res/certs_polito.json')
-    if not os.path.exists(result_json_file):
+    if not os.path.exists(result_json_file) and (args.leaf_analysis or args.intermediate_analysis or args.root_analysis):
         logging.error(
-            f"Il file '{result_json_file}' non esiste. "
+            f"Il file '{result_json_file}' non esiste. Oppure il nome del file output non coincide! "
             "Si prega di consultare il README per istruzioni su come generare questo file utilizzando il programma Zgrab2."
         )
         return
     
     # File contenente la lista dei log SCT più utilizzati
     log_list_file = os.path.abspath('../res/log_list.json')
-    if not os.path.exists(log_list_file):
+    if not os.path.exists(log_list_file) and (args.leaf_analysis or args.intermediate_analysis or args.root_analysis):
         logging.error(
             f"Il file {log_list_file} non esiste. Puoi scaricarlo direttamente da questo link: "
             "https://www.gstatic.com/ct/log_list/v3/all_logs_list.json"
@@ -588,7 +590,7 @@ async def certificates_analysis_main():
             # Rimuove i dati non necessari
             leaf_database.cleanup_unused_tables()
             leaf_database.remove_columns()
-
+        
         # Esegui l'analisi OCSP dei certificati
         if(args.leaf_ocsp_analysis):
             logging.info("Inizio dell'analisi OCSP per i certificati 'Leaf'.")  

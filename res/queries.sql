@@ -6,6 +6,19 @@ SELECT COUNT(*) FROM Errors;
 
 SELECT COUNT(*) FROM Extensions;
 
+SELECT 
+    CASE 
+        WHEN authority_info_access = '{}' AND json_array_length(crl_distribution_points) = 0 THEN 'Without Crl Distr. Point and OCSP Uri'
+        WHEN (authority_info_access LIKE '%ocsp_urls%' OR authority_info_access LIKE '%issuer_urls%') AND json_array_length(crl_distribution_points) > 0 THEN 'Crl Distr. Point and OCSP Uri'
+        WHEN (authority_info_access LIKE '%ocsp_urls%' OR authority_info_access LIKE '%issuer_urls%') AND json_array_length(crl_distribution_points) = 0 THEN 'OCSP Uri Only'
+        WHEN json_array_length(crl_distribution_points) > 0 AND authority_info_access = '{}' THEN 'Crl Distr. Point Only'
+        ELSE 'Other'
+    END AS aia_category,
+    COUNT(*) AS count
+FROM Certificates AS c 
+JOIN Extensions AS e ON c.certificate_id = e.certificate_id
+GROUP BY aia_category;
+
 SELECT c.certificate_id, c.leaf_domain
 FROM Certificates AS c LEFT JOIN SignedCertificateTimestamps AS s ON c.certificate_id = s.certificate_id
 WHERE s.certificate_id IS NULL;

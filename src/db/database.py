@@ -70,7 +70,6 @@ class Database:
             CREATE INDEX IF NOT EXISTS idx_certificates_authority_info_access ON Certificates(authority_info_access);
             CREATE INDEX IF NOT EXISTS idx_certificates_validity_end ON Certificates(validity_end);
             CREATE INDEX IF NOT EXISTS idx_certificates_version ON Certificates(version);
-            CREATE INDEX IF NOT EXISTS idx_certificates_signature_valid ON Certificates(signature_valid);
 
             -- Indici per la tabella Issuers
             CREATE INDEX IF NOT EXISTS idx_issuers_common_name ON Issuers(common_name);
@@ -91,6 +90,7 @@ class Database:
             cursor.executescript("""
                 -- Indici per la tabella Certificates
                 CREATE INDEX IF NOT EXISTS idx_certificates_self_signed ON Certificates(self_signed);
+            CREATE INDEX IF NOT EXISTS idx_certificates_signature_valid ON Certificates(signature_valid);
 
                 -- Indici per la tabella SignedCertificateTimestamps
                 CREATE INDEX IF NOT EXISTS idx_signed_cert_timestamps_certificate_id ON SignedCertificateTimestamps(certificate_id);
@@ -112,7 +112,10 @@ class Database:
             """)
         elif self.db_type == DatabaseType.ROOT:
             # Inserisci qui gli indici specifici solo per il database root
-            pass
+            cursor.executescript("""
+                -- Indici per la tabella Certificates
+                CREATE INDEX IF NOT EXISTS idx_certificates_signature_valid ON Certificates(signature_valid);
+            """)
         
         self.conn.commit()
         logging.info("Indici creati con successo.")
@@ -218,12 +221,9 @@ class Database:
             if self.db_type in {DatabaseType.INTERMEDIATE, DatabaseType.ROOT}:
                 cursor.executescript("""
                     DROP TABLE IF EXISTS Errors;
-                    DROP TABLE IF EXISTS SignedCertificateTimestamps;
-                    DROP TABLE IF EXISTS Logs;
-                    DROP TABLE IF EXISTS LogsOperators;
                 """)
                 self.conn.commit()
-                logging.info("Le tabelle 'Errors', 'SignedCertificateTimestamps', 'Logs' e 'LogsOperators' sono state eliminate con successo.")
+                logging.info("La tabella 'Errors' è stata eliminata con successo.")
         
         except Exception as e:
             logging.error("Errore durante la pulizia delle tabelle non utilizzate: %s", e)

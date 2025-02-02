@@ -72,6 +72,7 @@ La tabella `Extensions` memorizza le estensioni dei certificati, che includono i
 - **max_path_length**: Lunghezza massima della catena di certificati.
 - **crl_distribution_points**: Punti di distribuzione delle liste CRL.
 - **crl_distr_point_is_critical**: Indica se i punti di distribuzione CRL sono critici.
+- **crl_revocation_status**: Indica lo stato di revoca del certificato associato consultando le liste CRL.
 
 #### 5. **CertificatePolicies**
 La tabella `CertificatePolicies` memorizza le politiche del certificato, inclusi i qualificatori della politica, i riferimenti alla CPS (Certificate Policy Statement) e se la politica è critica.

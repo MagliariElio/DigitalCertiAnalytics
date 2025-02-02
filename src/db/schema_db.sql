@@ -89,6 +89,7 @@ CREATE TABLE IF NOT EXISTS Extensions (
     max_path_length INT DEFAULT NULL,
     crl_distribution_points TEXT[],
     crl_distr_point_is_critical VARCHAR(12) CHECK (crl_distr_point_is_critical IN ('Critical', 'Not Critical', 'Not Found', 'Error')),
+    crl_revocation_status VARCHAR(26) CHECK (crl_revocation_status IN ('Good', 'Revoked', 'No CRL Distribution Points', 'Error')),
     FOREIGN KEY (certificate_id) REFERENCES Certificates(certificate_id)
 );
 
@@ -97,7 +98,7 @@ CREATE TABLE IF NOT EXISTS Extensions (
 -- -----------------------------------------------------
 DROP TABLE IF EXISTS `SignedCertificateTimestamps`;
 
-CREATE TABLE SignedCertificateTimestamps (
+CREATE TABLE IF NOT EXISTS SignedCertificateTimestamps (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     certificate_id INTEGER NOT NULL, 
     log_id TEXT NOT NULL,
@@ -128,7 +129,7 @@ CREATE TABLE IF NOT EXISTS CertificatePolicies (
 -- -----------------------------------------------------
 DROP TABLE IF EXISTS `Errors`;
 
-CREATE TABLE Errors (
+CREATE TABLE IF NOT EXISTS Errors (
     error_id INTEGER PRIMARY KEY AUTOINCREMENT,    
     domain VARCHAR,
     status VARCHAR,
@@ -142,7 +143,7 @@ CREATE TABLE Errors (
 -- Table `certificates_db`.`LogsOperators`
 -- -----------------------------------------------------
 DROP TABLE IF EXISTS `LogsOperators`;
-CREATE TABLE LogsOperators (
+CREATE TABLE IF NOT EXISTS LogsOperators (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name VARCHAR(255) NOT NULL,
     email TEXT
@@ -152,7 +153,7 @@ CREATE TABLE LogsOperators (
 -- Table `certificates_db`.`Logs`
 -- -----------------------------------------------------
 DROP TABLE IF EXISTS `Logs`;
-CREATE TABLE Logs (
+CREATE TABLE IF NOT EXISTS Logs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     operator_id INT NOT NULL,
     description VARCHAR(255) NOT NULL,

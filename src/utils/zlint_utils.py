@@ -67,12 +67,14 @@ def run_zlint_check(dao: CertificateDAO):
         
         total_lines = dao.get_certificates_count()
         
+        remaining = total_lines - 8895002 # TODO: da rimuovere e rimettere total_lines in total        
+        
         tqdm.write("")
-        pbar_zlint = tqdm(total=total_lines, desc=" 🔍  [magenta bold]Elaborazione Certificati[/magenta bold]", unit="cert.", 
+        pbar_zlint = tqdm(total=remaining, desc=" 🔍  [magenta bold]Elaborazione Certificati[/magenta bold]", unit="cert.", 
                     colour="magenta", bar_format="{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} • ⚡ {rate_fmt}")
         
         batch_size = 5000
-        offset = 0
+        offset = 8895002 # TODO: da rimettere a 0
         
         # Percorso di zlint relativo alla directory del file
         base_dir = os.path.dirname(os.path.abspath(__file__))
@@ -105,12 +107,13 @@ def run_zlint_check(dao: CertificateDAO):
                     if result.returncode != 0:
                         error_message = f"Errore durante l'esecuzione di ZLint: {result.stderr}"
                         save_to_mongodb(None, certificate_id, leaf_domain, None, None, None, db, error=True, error_message=error_message)
-                        return None
+                        continue
                     
                     # Analizza l'output JSON di ZLint
                     try:
                         zlint_result = json.loads(result.stdout)
                         save_to_mongodb(zlint_result, certificate_id, leaf_domain, common_name, organization, issuer_dn, db)
+                        continue
                     except json.JSONDecodeError:
                         error_message = f"Errore nel decodificare l'output JSON di ZLint."
                         save_to_mongodb(None, certificate_id, leaf_domain, None, None, None, db, error=True, error_message=error_message)

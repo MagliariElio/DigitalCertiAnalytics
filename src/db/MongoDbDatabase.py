@@ -11,10 +11,11 @@ class MongoDbDatabase:
         self.client = None
         self.db = None
         
+        # TODO: da cambiare i nomi
         if(db_name == DatabaseType.LEAF):
-            self.db_name = 'Leaf_Zlint_Checks'
+            self.db_name = 'Leaf_Zlint_Checks_Google_3'
         elif(db_name == DatabaseType.INTERMEDIATE):
-            self.db_name = 'Intermediate_Zlint_Checks'
+            self.db_name = 'Intermediate_Zlint_Checks_Google_3'
         else:
             self.db_name = 'Root_Zlint_Checks'
     

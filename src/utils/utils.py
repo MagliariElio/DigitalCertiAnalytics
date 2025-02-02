@@ -6,7 +6,7 @@ import argparse
 import csv
 import os
 import subprocess
-import aiohttp, asyncio
+import aiohttp, asyncio, requests
 from db.database import DatabaseType
 from typing import Optional, Tuple
 from bean.certificate import Certificate
@@ -180,6 +180,27 @@ def check_certificate_chain(hostname: str) -> dict:
         logging.error(f"Si è verificato un errore durante la verifica del certificate chain per l'hostname {hostname} : {e}")
         return 'Error'
 
+
+def check_is_revoked_from_crl(cert: x509.Certificate, crl_distribution_points_urls):
+    """Dalla lista di URL in input, invia una o più richieste per verificare lo stato di revoca."""
+
+    try:
+        if(len(crl_distribution_points_urls) == 0):
+            return 'No CRL Distribution Points'
+        
+        for crl_url in crl_distribution_points_urls:
+            response = requests.get(crl_url, timeout=10)
+            response.raise_for_status()
+            crl = x509.load_der_x509_crl(response.content, default_backend())
+            serial_number = cert.serial_number
+
+            for revoked in crl:
+                if revoked.serial_number == serial_number:
+                    return 'Revoked' 
+            return 'Good'
+    except Exception as e:
+        logging.error(f"Errore durante la verifica nel CRL list: {e}")
+        return 'Error'
 
 async def make_ocsp_query(raw, issuer_certificate, alg, ocsp_link):
     """Costruisce e invia una richiesta OCSP per verificare lo stato di un certificato."""
@@ -518,9 +539,8 @@ def count_intermediate_up_to_root_and_root_certificates(chain_list:list, current
         else:
             return (count_intermediate, False)
 
-async def update_certificates_ocsp_status_db(db, ocsp_temp_file, is_backup_file: bool = False, batch_size=1000):
+async def update_certificates_ocsp_status_db(db, ocsp_temp_file, is_backup_file: bool = False):
     """Aggiorna lo stato OCSP dei certificati nel database."""
-    update_values = []
 
     with open(ocsp_temp_file, mode="r", newline="") as ocsp_temp_file_csv:
         ocsp_temp_file_reader = csv.reader(ocsp_temp_file_csv)
@@ -532,28 +552,64 @@ async def update_certificates_ocsp_status_db(db, ocsp_temp_file, is_backup_file:
         else:
             logging.info("Inizio aggiornamento dei dati dal file temporaneo al database.")
         
-        async with db.cursor() as cursor:
-            for row in ocsp_temp_file_reader:
-                update_values.append((row[0], int(row[1]), row[2]))
+        try:
+            await db.execute("PRAGMA journal_mode = OFF")
+            await db.execute("PRAGMA synchronous = OFF")
+            await db.execute("PRAGMA temp_store = MEMORY")
                 
-                if len(update_values) >= batch_size:
-                    await cursor.executemany("""
-                        UPDATE Certificates
-                        SET ocsp_check = ?
-                        WHERE certificate_id = ? AND leaf_domain = ?
-                    """, update_values)
-                    update_values.clear()
+            async with db.cursor() as cursor:
+                await cursor.execute("BEGIN TRANSACTION")
+
+                logging.info("Creazione Indice per l'aggiornamento massiccio!")
+                await cursor.executescript("""
+                    CREATE INDEX IF NOT EXISTS idx_certificate_id_leaf_domain ON Certificates(certificate_id, leaf_domain);
+                """)
+                
+                logging.info("Creazione Tabella temporanea")
+                await cursor.execute("""
+                    CREATE TEMPORARY TABLE IF NOT EXISTS TempOCSP (
+                        certificate_id INT,
+                        ocsp_check VARCHAR(36),
+                        leaf_domain VARCHAR
+                    );
+                """)
+                
+                logging.info("Inizio inserimento nel database!")
+                for row in ocsp_temp_file_reader:
+                    await cursor.execute("""
+                        INSERT INTO TempOCSP (certificate_id, ocsp_check, leaf_domain)
+                        VALUES (?, ?, ?)
+                    """, (int(row[1]), row[0], row[2]))
             
-            # Inserisce eventuali righe rimanenti
-            if update_values:
-                await cursor.executemany("""
+                logging.info("Inizio aggiornamento dei dati nella tabella!")
+                await cursor.execute("""
                     UPDATE Certificates
-                    SET ocsp_check = ?
-                    WHERE certificate_id = ? AND leaf_domain = ?
-                """, update_values)
-        
-        await db.commit()
-    
+                    SET ocsp_check = (
+                        SELECT ocsp_check
+                        FROM TempOCSP
+                        WHERE Certificates.certificate_id = TempOCSP.certificate_id
+                        AND Certificates.leaf_domain = TempOCSP.leaf_domain
+                    )
+                    WHERE EXISTS (
+                        SELECT 1
+                        FROM TempOCSP
+                        WHERE Certificates.certificate_id = TempOCSP.certificate_id
+                        AND Certificates.leaf_domain = TempOCSP.leaf_domain
+                    )
+                """)
+                
+                logging.info("Eliminazione della tabella temporanea!")
+                await cursor.execute("DROP TABLE IF EXISTS TempOCSP")
+                
+                await db.commit()
+                
+                await db.execute("PRAGMA journal_mode = DELETE")
+                await db.execute("PRAGMA synchronous = FULL")
+                await db.execute("PRAGMA temp_store = FILE")
+        except Exception as e:
+            await db.rollback()
+            raise e
+            
     # Cancella il file temporaneo
     os.remove(ocsp_temp_file)
     return
