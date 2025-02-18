@@ -66,6 +66,63 @@ GROUP BY ocsp_check, authority_info_access;
 UPDATE Certificates
 SET ocsp_check = 'No Request Done';
 
+SELECT SAN, domain_matches_san, COUNT(DISTINCT(subject_dn)) AS count
+FROM Certificates AS c JOIN Subjects AS s ON c.subject_id = s.subject_id
+GROUP BY domain_matches_san
+ORDER BY count;
+
+SELECT SAN, domain_matches_san, LENGTH(SAN) AS count_san, COUNT(DISTINCT(subject_dn)) AS count
+FROM Certificates AS c JOIN Subjects AS s ON c.subject_id = s.subject_id
+GROUP BY count_san, domain_matches_san
+ORDER BY count_san, domain_matches_san;
+
+
+
+
+
+
+
+-- TODO: DA DISCUTERE
+-- Distribuzione del numero di certificati intermedi nella catena
+SELECT certificates_up_to_root_count, COUNT(DISTINCT(subject_dn)) AS count
+FROM Certificates AS c INNER JOIN Subjects AS s ON c.subject_id = s.subject_id
+GROUP BY certificates_up_to_root_count
+ORDER BY count DESC;
+
+
+
+
+
+
+
+
+
+
+-- Distribuzione delle Signature Algorithm tra i certificati 
+SELECT signature_algorithm, COUNT(DISTINCT(subject_dn)) AS count
+FROM Certificates AS c INNER JOIN Subjects AS s ON c.subject_id = s.subject_id
+GROUP BY signature_algorithm;
+
+-- Conta il numero di policy comuni tra tutti i certificati univoci
+SELECT policy_qualifiers, COUNT(DISTINCT(subject_dn)) AS count
+FROM CertificatePolicies AS c JOIN Extensions AS e ON c.extension_id = e.extension_id 
+JOIN Certificates AS cc ON e.certificate_id = cc.certificate_id
+JOIN Subjects AS s ON cc.subject_id = s.subject_id
+GROUP BY policy_qualifiers
+ORDER BY count DESC;
+
+-- Conta il numero di issuer con una determinata lunghezza AKI
+SELECT LENGTH(DISTINCT authority_key_id) AS key_length, COUNT(DISTINCT issuer_dn) AS key_count
+FROM Issuers
+GROUP BY key_length
+ORDER BY key_length;
+
+-- Conta il numero di subjects con una determinata lunghezza SKI
+SELECT LENGTH(DISTINCT subject_key_id) AS key_length, COUNT(DISTINCT subject_dn) AS key_count
+FROM Subjects
+GROUP BY key_length
+ORDER BY key_length;
+
 -- Controsenso tra max_path_length pari a 0 e la presenza di certificati intermedi emessi dal certificato nella catena (CONTROLLARE, SI PUÒ FARE UN GRAFICO).
 SELECT c.certificate_id, e.max_path_length, c.certificates_emitted_up_to, c.has_root_certificate, e.basic_constraints
 FROM Certificates AS c INNER JOIN Extensions AS e ON c.certificate_id = e.certificate_id
@@ -130,7 +187,7 @@ LIMIT 1000
 
 -- Conta quanti Issuer hanno emesso un certificato
 WITH IssuersCounts AS (
-	SELECT Issuers.organization, COUNT(*) AS certificate_count
+	SELECT Issuers.organization, COUNT(DISTINCT(Issuers.issuer_dn)) AS certificate_count
 	FROM Certificates 
 	INNER JOIN Issuers ON Certificates.issuer_id = Issuers.issuer_id 
 	WHERE Issuers.organization IS NOT NULL AND TRIM(Issuers.organization) <> ''
@@ -179,23 +236,27 @@ UNION ALL
 SELECT * FROM Others;
 
 -- Mostra la distribuzione della durata di validità
-SELECT validity_length, COUNT(*) AS count
-FROM Certificates
-WHERE validity_length IS NOT NULL AND validity_length >= 0 AND validity_length <= 630720000
+SELECT validity_length, COUNT(DISTINCT(subject_dn)) AS count
+FROM Certificates AS c JOIN Subjects AS s ON c.subject_id = s.subject_id
+WHERE validity_length IS NOT NULL AND validity_length < 0
+UNION ALL
+SELECT validity_length, COUNT(DISTINCT(subject_dn)) AS count
+FROM Certificates AS c JOIN Subjects AS s ON c.subject_id = s.subject_id
+WHERE validity_length IS NOT NULL AND validity_length >= 0
 GROUP BY validity_length
-ORDER BY validity_length ASC;
+HAVING count >= 20;
 
 -- Trend di Scadenza dei Certificati
-SELECT strftime('%Y-%m', validity_end) AS month, COUNT(*) AS count
-FROM Certificates
+SELECT strftime('%Y-%m', validity_end) AS month, COUNT(DISTINCT(subject_dn)) AS count
+FROM Certificates AS c JOIN Subjects AS s ON c.subject_id = s.subject_id
 WHERE validity_end IS NOT NULL
 GROUP BY month
 HAVING count > 1800
 ORDER BY month ASC;
 
 -- Algoritmi di Firma Utilizzati
-SELECT signature_algorithm, COUNT(*) AS sign_algorithm_count
-FROM Certificates
+SELECT signature_algorithm, COUNT(DISTINCT(subject_dn)) AS sign_algorithm_count
+FROM Certificates AS c INNER JOIN Subjects AS s ON c.subject_id = s.subject_id
 WHERE signature_algorithm IS NOT NULL
 GROUP BY signature_algorithm
 ORDER BY sign_algorithm_count DESC;
@@ -204,9 +265,9 @@ ORDER BY sign_algorithm_count DESC;
 SELECT 
     key_algorithm, 
     key_length, 
-    COUNT(*) AS certificate_count
+    COUNT(DISTINCT(subject_dn)) AS certificate_count
 FROM 
-    Certificates
+    Certificates AS c INNER JOIN Subjects AS s ON c.subject_id = s.subject_id
 WHERE 
     key_algorithm IS NOT NULL AND key_algorithm <> '' AND
     key_length IS NOT NULL AND key_length <> ''
@@ -216,7 +277,7 @@ GROUP BY
 ORDER BY 
     key_algorithm, 
     key_length;
-
+	
 -- Stato OCSP dei Certificati
 SELECT ocsp_check, COUNT(*) AS count
 FROM Certificates
@@ -234,13 +295,13 @@ SELECT
         WHEN self_signed = 1 THEN 'True' 
         ELSE 'False' 
     END AS is_self_signed,
-    COUNT(*) AS count
-FROM Certificates
+    COUNT(DISTINCT(subject_dn)) AS count
+FROM Certificates AS c JOIN Subjects AS s ON c.subject_id = s.subject_id
 GROUP BY self_signed;
 
 -- Livelli di Validazione dei Certificati
-SELECT validation_level, COUNT(*) AS count
-FROM Certificates
+SELECT validation_level, COUNT(DISTINCT(subject_dn)) AS count
+FROM Certificates AS c JOIN Subjects AS s ON c.subject_id = s.subject_id
 GROUP BY validation_level;
 
 -- Distribuzione delle Versioni dei Certificati
@@ -249,8 +310,8 @@ FROM Certificates
 GROUP BY version;
 
 -- Validità delle Firme dei Certificati
-SELECT signature_valid AS is_valid_signature, COUNT(*) AS count
-FROM Certificates
+SELECT signature_valid AS is_valid_signature, COUNT(DISTINCT(subject_dn)) AS count
+FROM Certificates AS c INNER JOIN Subjects AS s ON c.subject_id = s.subject_id
 GROUP BY signature_valid
 ORDER BY count DESC;
 
@@ -263,34 +324,64 @@ FROM Errors
 GROUP BY status;
 
 -- Utilizzo del Key Usage nelle Estensioni
-SELECT key_usage, COUNT(*) AS count
-FROM Extensions
-GROUP BY key_usage
+SELECT e.key_usage, COUNT(DISTINCT(s.subject_dn)) AS count
+FROM Extensions AS e JOIN Certificates AS c ON e.certificate_id = c.certificate_id 
+JOIN Subjects AS s ON c.subject_id = s.subject_id
+GROUP BY e.key_usage
 ORDER BY count DESC;
 
+-- SELECT e.key_usage, COUNT(DISTINCT(s.subject_dn)) AS count
+-- FROM Extensions AS e INNER JOIN Subjects AS s ON e.certificate_id = s.subject_id
+-- GROUP BY e.key_usage
+-- ORDER BY count DESC;
+
 -- Estensioni Critiche vs Non Critiche del Key Usage nelle Estensioni
-SELECT key_usage_is_critical, COUNT(*) AS count
-FROM Extensions
+SELECT key_usage_is_critical, COUNT(DISTINCT(subject_dn)) AS count
+FROM Extensions AS e JOIN Certificates AS c ON e.certificate_id = c.certificate_id
+JOIN Subjects AS s ON c.subject_id = s.subject_id
 GROUP BY key_usage_is_critical
 ORDER BY count DESC;
 
+-- SELECT e.key_usage_is_critical, COUNT(DISTINCT(s.subject_dn)) AS count
+-- FROM Extensions AS e INNER JOIN Subjects AS s ON e.certificate_id = s.subject_id
+-- GROUP BY e.key_usage_is_critical
+-- ORDER BY count DESC;
+
 -- Utilizzo dell'Extended Key Usage nelle Estensioni
-SELECT extended_key_usage, COUNT(*) AS count
-FROM Extensions
-GROUP BY extended_key_usage
+SELECT e.extended_key_usage, COUNT(DISTINCT(s.subject_dn)) AS count
+FROM Extensions AS e JOIN Certificates AS c ON e.certificate_id = c.certificate_id 
+JOIN Subjects AS s ON c.subject_id = s.subject_id
+GROUP BY e.extended_key_usage
 ORDER BY count DESC;
+
+-- SELECT e.extended_key_usage, COUNT(DISTINCT(s.subject_dn)) AS count
+-- FROM Extensions AS e JOIN Subjects AS s ON e.certificate_id = s.subject_id 
+-- GROUP BY e.extended_key_usage
+-- ORDER BY count DESC;
 
 -- Estensioni Critiche vs Non Critiche dell'Extended Key Usage nelle Estensioni
-SELECT extended_key_usage_is_critical, COUNT(*) AS count
-FROM Extensions
-GROUP BY extended_key_usage_is_critical
+SELECT e.extended_key_usage_is_critical, COUNT(DISTINCT(s.subject_dn)) AS count
+FROM Extensions AS e JOIN Certificates AS c ON e.certificate_id = c.certificate_id 
+JOIN Subjects AS s ON c.subject_id = s.subject_id
+GROUP BY e.extended_key_usage_is_critical
 ORDER BY count DESC;
 
+-- SELECT e.extended_key_usage_is_critical, COUNT(DISTINCT(s.subject_dn)) AS count
+-- FROM Extensions AS e JOIN Subjects AS s ON e.certificate_id = s.subject_id 
+-- GROUP BY e.extended_key_usage_is_critical
+-- ORDER BY count DESC;
+
 -- Distribuzione del Basic Costraints nelle Estensioni
-SELECT basic_constraints, COUNT(*) AS count
-FROM Extensions
-GROUP BY basic_constraints
+SELECT e.basic_constraints, COUNT(DISTINCT(s.subject_dn)) AS count
+FROM Extensions AS e JOIN Certificates AS c ON e.certificate_id = c.certificate_id
+JOIN Subjects AS s ON c.subject_id = s.subject_id
+GROUP BY e.basic_constraints
 ORDER BY count DESC;
+
+-- SELECT e.basic_constraints, COUNT(DISTINCT(s.subject_dn)) AS count
+-- FROM Extensions AS e JOIN Subjects AS s ON e.certificate_id = s.subject_id
+-- GROUP BY e.basic_constraints
+-- ORDER BY count DESC;
 
 -- Estensioni Critiche vs Non Critiche del CRL distribution nelle Estensioni
 SELECT crl_distr_point_is_critical, COUNT(*) AS count
@@ -332,13 +423,15 @@ GROUP BY lo.name
 ORDER BY count DESC;
 
 -- Estensioni Critiche vs Non Critiche delle Subject Alternative Name nelle Subjects
-SELECT subject_alt_name_is_critical, COUNT(*) AS count
+SELECT subject_alt_name_is_critical, COUNT(DISTINCT(subject_dn)) AS count
 FROM Subjects
 GROUP BY subject_alt_name_is_critical
 ORDER BY count DESC;
 
 -- Estensioni Critiche vs Non Critiche del Certificate Policies
-SELECT is_cp_critical, COUNT(*) AS count
-FROM CertificatePolicies
+SELECT is_cp_critical, COUNT(DISTINCT(subject_dn)) AS count
+FROM CertificatePolicies AS c JOIN Extensions AS e ON c.extension_id = e.extension_id 
+JOIN Certificates AS cc ON e.certificate_id = cc.certificate_id
+JOIN Subjects AS s ON cc.subject_id = s.subject_id
 GROUP BY is_cp_critical
 ORDER BY count DESC;

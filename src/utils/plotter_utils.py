@@ -59,22 +59,6 @@ def plot_general_certificates_analysis(dao: CertificateDAO, plotter:GraphPlotter
         data.set_index('Country', inplace=True)
         plotter.plot_pie_chart(data, column='Certificate Count', title='Number of Certificates Issued in Different Countries', filename=filename)
         
-        # Distribuzione della Durata di Validità
-        logging.info("Generazione grafico 'Distribution of Validity Duration'")
-        result = dao.get_validity_duration_distribution()
-        data = pd.DataFrame(list(result.items()), columns=['Validity Length', 'Certificate Count'])
-        filename = os.path.abspath(f'{plots_path}/validity_duration_distribution.png')
-        data.set_index('Validity Length', inplace=True)
-        plotter.plot_bar_chart(
-            data=data,
-            x=data.index,
-            y='Certificate Count',
-            title='Distribution of Validity Duration', 
-            xlabel='Duration (years)',
-            ylabel='Number of Certificates', 
-            filename=filename
-        )
-        
         # Trend di Scadenza dei Certificati
         logging.info("Generazione grafico 'Maturity Trends of the Certificates'")
         result = dao.get_certificate_expiration_trend()
@@ -86,7 +70,7 @@ def plot_general_certificates_analysis(dao: CertificateDAO, plotter:GraphPlotter
             x=data.index,
             y='Certificate Count',
             title='Maturity Trends of the Certificates', 
-            xlabel='Month',
+            xlabel='Months',
             ylabel='Number of Certificates', 
             filename=filename
         )
@@ -102,8 +86,8 @@ def plot_general_certificates_analysis(dao: CertificateDAO, plotter:GraphPlotter
             x=data.index, 
             y='Count', 
             title='Signature Algorithms Used', 
-            xlabel='Number of Certificates', 
-            ylabel='Signature Algorithm', 
+            xlabel='Signature Algorithm', 
+            ylabel='Number of Certificates', 
             filename=filename
         )
         
@@ -259,6 +243,7 @@ def plot_general_certificates_analysis(dao: CertificateDAO, plotter:GraphPlotter
             ylabel='Number of Certificates', 
             filename=filename
         )
+        
     except Exception as e:
         logging.error(f"Errore nella generazione di un grafico: {e}")
     
@@ -268,6 +253,22 @@ def plot_leaf_certificates_analysis(dao: CertificateDAO, plotter:GraphPlotter, p
     """Genera e salva grafici specifici per l'analisi dei certificati leaf."""
     
     try:
+        # Distribuzione della Durata di Validità
+        logging.info("Generazione grafico 'Distribution of Validity Duration'")
+        result = dao.get_validity_duration_distribution()
+        data = pd.DataFrame(list(result.items()), columns=['Validity Length', 'Certificate Count'])
+        filename = os.path.abspath(f'{plots_path}/validity_duration_distribution.png')
+        data.set_index('Validity Length', inplace=True)
+        plotter.plot_bar_chart(
+            data=data,
+            x=data.index,
+            y='Certificate Count',
+            title='Distribution of Validity Duration', 
+            xlabel='Duration (years)',
+            ylabel='Number of Certificates', 
+            filename=filename
+        )
+        
         # Analisi Status Certificati
         logging.info("Generazione grafico 'Analysis Status Certificates'")
         result = dao.get_status_analysis()
@@ -338,7 +339,7 @@ def plot_leaf_certificates_analysis(dao: CertificateDAO, plotter:GraphPlotter, p
         logging.info("Generazione grafico 'Trend of Signed Certificate Timestamps (SCT) by Month and Year'")
         result = dao.get_signed_certificate_timestamp_trend()
         data = pd.DataFrame(list(result.items()), columns=['Date', 'Certificate Count'])
-        filename = os.path.abspath(f'{plots_path}/certificate_expiration_trend.png')
+        filename = os.path.abspath(f'{plots_path}/sct_trend.png')
         data.set_index('Date', inplace=True)
         plotter.plot_line_chart(
             data=data, 
@@ -387,8 +388,8 @@ def plot_leaf_and_root_certificates_analysis(dao: CertificateDAO, plotter:GraphP
             x=data.index, 
             y='Count', 
             title='Validity of Certificate Signatures', 
-            xlabel='Number of Certificates', 
-            ylabel='Signature Validity', 
+            xlabel='Signature Validity', 
+            ylabel='Number of Certificates', 
             filename=filename
         )
         # plotter.plot_pie_chart(data, column='Count', title='Validity of Certificate Signatures', filename=filename)

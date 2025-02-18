@@ -493,7 +493,7 @@ class CertificateDAO:
             
             self.cursor.execute("""
                 WITH IssuersCounts AS (
-                    SELECT Issuers.organization, COUNT(*) AS certificate_count
+                    SELECT Issuers.organization, COUNT(DISTINCT(Issuers.issuer_dn)) AS certificate_count
                     FROM Certificates 
                     INNER JOIN Issuers ON Certificates.issuer_id = Issuers.issuer_id 
                     WHERE Issuers.organization IS NOT NULL AND TRIM(Issuers.organization) <> ''
@@ -569,15 +569,24 @@ class CertificateDAO:
             return {}
 
     def get_validity_duration_distribution(self) -> dict:
-        """Mostra la distribuzione delle durate di validità dei certificati nei 20 anni (dopo è solo rumore)."""
+        """Mostra la distribuzione delle durate di validità dei certificati."""
         try:
+            count_certs = 20
+            
+            if(self.certificate_type == DatabaseType.ROOT):
+                count_certs = 0
+            
             self.cursor.execute("""
-                SELECT validity_length, COUNT(*) AS count
-                FROM Certificates
+                SELECT validity_length, COUNT(DISTINCT(subject_dn)) AS count
+                FROM Certificates AS c JOIN Subjects AS s ON c.subject_id = s.subject_id
+                WHERE validity_length IS NOT NULL AND validity_length < 0
+                UNION ALL
+                SELECT validity_length, COUNT(DISTINCT(subject_dn)) AS count
+                FROM Certificates AS c JOIN Subjects AS s ON c.subject_id = s.subject_id
                 WHERE validity_length IS NOT NULL AND validity_length >= 0
                 GROUP BY validity_length
-                ORDER BY validity_length ASC;
-            """)
+                HAVING count >= ?;
+            """, (count_certs,))
             
             # AND validity_length <= 630720000
             
@@ -604,14 +613,14 @@ class CertificateDAO:
     def get_certificate_expiration_trend(self) -> dict:
         """Rappresenta il numero di certificati che scadranno nel tempo."""
         try:
-            count_certs = 1800
+            count_certs = 1100
             
             if(self.certificate_type == DatabaseType.ROOT):
-                count_certs = 50
+                count_certs = 0
             
             self.cursor.execute("""
-                SELECT strftime('%Y-%m', validity_end) AS month, COUNT(*) AS count
-                FROM Certificates
+                SELECT strftime('%Y-%m', validity_end) AS month, COUNT(DISTINCT(subject_dn)) AS count
+                FROM Certificates AS c JOIN Subjects AS s ON c.subject_id = s.subject_id
                 WHERE validity_end IS NOT NULL
                 GROUP BY month
                 HAVING count > ?
@@ -634,8 +643,8 @@ class CertificateDAO:
         """Mostra la distribuzione degli algoritmi di firma utilizzati."""
         try:
             self.cursor.execute("""
-                SELECT signature_algorithm, COUNT(*) AS sign_algorithm_count
-                FROM Certificates
+                SELECT signature_algorithm, COUNT(DISTINCT(subject_dn)) AS sign_algorithm_count
+                FROM Certificates AS c INNER JOIN Subjects AS s ON c.subject_id = s.subject_id
                 WHERE signature_algorithm IS NOT NULL
                 GROUP BY signature_algorithm
                 ORDER BY sign_algorithm_count DESC;
@@ -660,9 +669,9 @@ class CertificateDAO:
                 SELECT 
                     key_algorithm, 
                     key_length, 
-                    COUNT(*) AS certificate_count
+                    COUNT(DISTINCT(subject_dn)) AS certificate_count
                 FROM 
-                    Certificates
+                    Certificates AS c INNER JOIN Subjects AS s ON c.subject_id = s.subject_id
                 WHERE 
                     key_algorithm IS NOT NULL AND key_algorithm <> '' AND
                     key_length IS NOT NULL AND key_length <> ''
@@ -746,8 +755,8 @@ class CertificateDAO:
                         WHEN self_signed = 1 THEN 'True' 
                         ELSE 'False' 
                     END AS is_self_signed,
-                    COUNT(*) AS count
-                FROM Certificates
+                    COUNT(DISTINCT(subject_dn)) AS count
+                FROM Certificates AS c JOIN Subjects AS s ON c.subject_id = s.subject_id
                 GROUP BY self_signed;
             """)
             
@@ -767,8 +776,8 @@ class CertificateDAO:
         """Mostra la distribuzione dei diversi validation_level dei certificati."""
         try:
             self.cursor.execute("""
-                SELECT validation_level, COUNT(*) AS count
-                FROM Certificates
+                SELECT validation_level, COUNT(DISTINCT(subject_dn)) AS count
+                FROM Certificates AS c JOIN Subjects AS s ON c.subject_id = s.subject_id
                 GROUP BY validation_level;
             """)
             
@@ -809,8 +818,8 @@ class CertificateDAO:
         """Rappresenta la proporzione di firme valide rispetto a quelle non valide."""
         try:
             self.cursor.execute("""
-                SELECT signature_valid AS is_valid_signature, COUNT(*) AS count
-                FROM Certificates
+                SELECT signature_valid AS is_valid_signature, COUNT(DISTINCT(subject_dn)) AS count
+                FROM Certificates AS c INNER JOIN Subjects AS s ON c.subject_id = s.subject_id
                 GROUP BY signature_valid
                 ORDER BY count DESC;
             """)
@@ -855,9 +864,10 @@ class CertificateDAO:
         """Mostra quali key_usage sono più comunemente utilizzati nei certificati."""
         try:
             self.cursor.execute("""
-                SELECT key_usage, COUNT(*) AS count
-                FROM Extensions
-                GROUP BY key_usage
+                SELECT e.key_usage, COUNT(DISTINCT(s.subject_dn)) AS count
+                FROM Extensions AS e JOIN Certificates AS c ON e.certificate_id = c.certificate_id 
+                JOIN Subjects AS s ON c.subject_id = s.subject_id
+                GROUP BY e.key_usage
                 ORDER BY count DESC;
             """)
             
@@ -881,8 +891,9 @@ class CertificateDAO:
         """Mostra la proporzione di key_usage critici rispetto a quelli non critici."""
         try:
             self.cursor.execute("""
-                SELECT key_usage_is_critical, COUNT(*) AS count
-                FROM Extensions
+                SELECT key_usage_is_critical, COUNT(DISTINCT(subject_dn)) AS count
+                FROM Extensions AS e JOIN Certificates AS c ON e.certificate_id = c.certificate_id
+                JOIN Subjects AS s ON c.subject_id = s.subject_id
                 GROUP BY key_usage_is_critical
                 ORDER BY count DESC;
             """)
@@ -903,9 +914,10 @@ class CertificateDAO:
         """Visualizza quali extended_key_usage sono più comuni nei certificati."""
         try:
             self.cursor.execute("""
-                SELECT extended_key_usage, COUNT(*) AS count
-                FROM Extensions
-                GROUP BY extended_key_usage
+                SELECT e.extended_key_usage, COUNT(DISTINCT(s.subject_dn)) AS count
+                FROM Extensions AS e JOIN Certificates AS c ON e.certificate_id = c.certificate_id 
+                JOIN Subjects AS s ON c.subject_id = s.subject_id
+                GROUP BY e.extended_key_usage
                 ORDER BY count DESC;
             """)
             
@@ -928,9 +940,10 @@ class CertificateDAO:
         """Mostra la proporzione di extended_key_usage critici rispetto a quelli non critici."""
         try:
             self.cursor.execute("""
-                SELECT extended_key_usage_is_critical, COUNT(*) AS count
-                FROM Extensions
-                GROUP BY extended_key_usage_is_critical
+                SELECT e.extended_key_usage_is_critical, COUNT(DISTINCT(s.subject_dn)) AS count
+                FROM Extensions AS e JOIN Certificates AS c ON e.certificate_id = c.certificate_id 
+                JOIN Subjects AS s ON c.subject_id = s.subject_id
+                GROUP BY e.extended_key_usage_is_critical
                 ORDER BY count DESC;
             """)
             
@@ -950,9 +963,10 @@ class CertificateDAO:
         """Mostra la distribuzione dei Basic Constraints nei certificati."""
         try:
             self.cursor.execute("""
-                SELECT basic_constraints, COUNT(*) AS count
-                FROM Extensions
-                GROUP BY basic_constraints
+                SELECT e.basic_constraints, COUNT(DISTINCT(s.subject_dn)) AS count
+                FROM Extensions AS e JOIN Certificates AS c ON e.certificate_id = c.certificate_id
+                JOIN Subjects AS s ON c.subject_id = s.subject_id
+                GROUP BY e.basic_constraints
                 ORDER BY count DESC;
             """)
             
@@ -1093,7 +1107,7 @@ class CertificateDAO:
         """Mostra la proporzione di estensioni critiche vs non critiche nelle Subject Alternative Name."""
         try:
             self.cursor.execute("""
-                SELECT subject_alt_name_is_critical, COUNT(*) AS count
+                SELECT subject_alt_name_is_critical, COUNT(DISTINCT(subject_dn)) AS count
                 FROM Subjects
                 GROUP BY subject_alt_name_is_critical
                 ORDER BY count DESC;
@@ -1115,8 +1129,10 @@ class CertificateDAO:
         """Mostra la proporzione di certificate policies critici rispetto a quelli non critici."""
         try:
             self.cursor.execute("""
-                SELECT is_cp_critical, COUNT(*) AS count
-                FROM CertificatePolicies
+                SELECT is_cp_critical, COUNT(DISTINCT(subject_dn)) AS count
+                FROM CertificatePolicies AS c JOIN Extensions AS e ON c.extension_id = e.extension_id 
+                JOIN Certificates AS cc ON e.certificate_id = cc.certificate_id
+                JOIN Subjects AS s ON cc.subject_id = s.subject_id
                 GROUP BY is_cp_critical
                 ORDER BY count DESC;
             """)

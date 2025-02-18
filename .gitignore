@@ -16,3 +16,5 @@ domini_italiani_google.txt
 # BACKUP files
 *ocsp_certificates_backup.csv
 *ocsp_check_results_temp.csv
+
+CARTELLA/

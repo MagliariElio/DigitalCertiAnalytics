@@ -89,7 +89,7 @@ CREATE TABLE IF NOT EXISTS Extensions (
     max_path_length INT DEFAULT NULL,
     crl_distribution_points TEXT[],
     crl_distr_point_is_critical VARCHAR(12) CHECK (crl_distr_point_is_critical IN ('Critical', 'Not Critical', 'Not Found', 'Error')),
-    crl_revocation_status VARCHAR(26) CHECK (crl_revocation_status IN ('Good', 'Revoked', 'No CRL Distribution Points', 'Error')),
+    crl_revocation_status VARCHAR(26) CHECK (crl_revocation_status IN ('Good', 'Revoked', 'No CRL Distribution Points', 'CRL expired', 'Error')),
     FOREIGN KEY (certificate_id) REFERENCES Certificates(certificate_id)
 );
 

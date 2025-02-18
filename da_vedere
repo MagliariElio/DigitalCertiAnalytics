@@ -1,8 +1,0 @@
-da vedere la signature verificando anche il trust store: fatto con sslyze
-
-verifica del SAN se il domionio è presente nell'elenco: e_subject_common_name_not_exactly_from_san
-
-
-
-da verificare da dove prende i trust store ssylze
-nella tesi fare una ricerca approfondita sull'intermediate parlando della loro presenza nel SCT

@@ -229,6 +229,8 @@ Il programma può essere eseguito tramite il terminale o la riga di comando, con
 - `--plot_intermediate_results`: genera e visualizza i grafici per i risultati dell'analisi dei certificati intermedi.
 - `--plot_root_results`: genera e visualizza i grafici per i risultati dell'analisi dei certificati root.
 
+- `-v, --verbose`: attiva la modalità verbose per una registrazione dettagliata.
+
 #### Esempi di utilizzo:
 
 1. **Eseguire solo l'analisi dei certificati leaf**:

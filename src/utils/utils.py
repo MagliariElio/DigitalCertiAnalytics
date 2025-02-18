@@ -6,6 +6,7 @@ import argparse
 import csv
 import os
 import subprocess
+from datetime import datetime
 import aiohttp, asyncio, requests
 from db.database import DatabaseType
 from typing import Optional, Tuple
@@ -192,6 +193,11 @@ def check_is_revoked_from_crl(cert: x509.Certificate, crl_distribution_points_ur
             response = requests.get(crl_url, timeout=10)
             response.raise_for_status()
             crl = x509.load_der_x509_crl(response.content, default_backend())
+            
+            # Controllo della scadenza della CRL
+            if crl.next_update < datetime.utcnow():
+                return 'CRL expired'
+            
             serial_number = cert.serial_number
 
             for revoked in crl:
