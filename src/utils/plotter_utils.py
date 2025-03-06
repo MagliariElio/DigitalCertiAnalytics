@@ -74,7 +74,23 @@ def plot_general_certificates_analysis(dao: CertificateDAO, plotter:GraphPlotter
             ylabel='Number of Certificates', 
             filename=filename
         )
-
+        
+        # Distribuzione della Durata di Validità
+        logging.info("Generazione grafico 'Distribution of Validity Duration'")
+        result = dao.get_validity_duration_distribution()
+        data = pd.DataFrame(list(result.items()), columns=['Validity Length', 'Certificate Count'])
+        filename = os.path.abspath(f'{plots_path}/validity_duration_distribution.png')
+        data.set_index('Validity Length', inplace=True)
+        plotter.plot_bar_chart(
+            data=data,
+            x=data.index,
+            y='Certificate Count',
+            title='Distribution of Validity Duration', 
+            xlabel='Duration (years)',
+            ylabel='Number of Certificates', 
+            filename=filename
+        )
+        
         # Algoritmi di Firma Utilizzati    
         logging.info("Generazione grafico 'Signature Algorithms Used'")
         result = dao.get_signature_algorithm_distribution()
@@ -88,6 +104,24 @@ def plot_general_certificates_analysis(dao: CertificateDAO, plotter:GraphPlotter
             title='Signature Algorithms Used', 
             xlabel='Signature Algorithm', 
             ylabel='Number of Certificates', 
+            filename=filename
+        )
+        
+        # Distribuzione degli Algoritmi di Chiave e Lunghezza
+        logging.info("Generazione grafico 'Distribution of Key and Length Algorithms'")
+        result = dao.get_key_algorithm_length_distribution()
+        filename = os.path.abspath(f'{plots_path}/key_algorithm_length_distribution.png')
+        data = pd.DataFrame.from_dict(
+            {alg: dict(lengths) for alg, lengths in result.items()},
+            orient='index'
+        ).fillna(0)  # Sostituisce i NaN con 0
+        data = data.astype(int)  
+        data = data.transpose()
+        plotter.plot_stacked_bar_chart(
+            data=data, 
+            title='Distribution of Key and Length Algorithms', 
+            xlabel='Key Length',
+            ylabel='Number of Certificates',
             filename=filename
         )
         
@@ -252,23 +286,7 @@ def plot_general_certificates_analysis(dao: CertificateDAO, plotter:GraphPlotter
 def plot_leaf_certificates_analysis(dao: CertificateDAO, plotter:GraphPlotter, plots_path: str):
     """Genera e salva grafici specifici per l'analisi dei certificati leaf."""
     
-    try:
-        # Distribuzione della Durata di Validità
-        logging.info("Generazione grafico 'Distribution of Validity Duration'")
-        result = dao.get_validity_duration_distribution()
-        data = pd.DataFrame(list(result.items()), columns=['Validity Length', 'Certificate Count'])
-        filename = os.path.abspath(f'{plots_path}/validity_duration_distribution.png')
-        data.set_index('Validity Length', inplace=True)
-        plotter.plot_bar_chart(
-            data=data,
-            x=data.index,
-            y='Certificate Count',
-            title='Distribution of Validity Duration', 
-            xlabel='Duration (years)',
-            ylabel='Number of Certificates', 
-            filename=filename
-        )
-        
+    try:        
         # Analisi Status Certificati
         logging.info("Generazione grafico 'Analysis Status Certificates'")
         result = dao.get_status_analysis()
@@ -292,24 +310,6 @@ def plot_leaf_certificates_analysis(dao: CertificateDAO, plotter:GraphPlotter, p
         data = pd.DataFrame(list(result.items()), columns=['Flag', 'Count'])
         data.set_index('Flag', inplace=True)
         plotter.plot_pie_chart(data, column='Count', title='Self-Signed vs CA-Signed Certificates', filename=filename)
-        
-        # Distribuzione degli Algoritmi di Chiave e Lunghezza
-        logging.info("Generazione grafico 'Distribution of Key and Length Algorithms'")
-        result = dao.get_key_algorithm_length_distribution()
-        filename = os.path.abspath(f'{plots_path}/key_algorithm_length_distribution.png')
-        data = pd.DataFrame.from_dict(
-            {alg: dict(lengths) for alg, lengths in result.items()},
-            orient='index'
-        ).fillna(0)  # Sostituisce i NaN con 0
-        data = data.astype(int)  
-        data = data.transpose()
-        plotter.plot_stacked_bar_chart(
-            data=data, 
-            title='Distribution of Key and Length Algorithms', 
-            xlabel='Key Length',
-            ylabel='Number of Certificates',
-            filename=filename
-        )
         
         # Top SCT Logs
         logging.info("Generazione grafico 'Top SCT Logs'")
@@ -350,7 +350,7 @@ def plot_leaf_certificates_analysis(dao: CertificateDAO, plotter:GraphPlotter, p
             ylabel='Number of Certificates', 
             filename=filename
         )
-        
+             
         # Numero dei Signed Certificate Timestamps (SCT) per Certificato
         logging.info("Generazione grafico 'Number of Signed Certificate Timestamps (SCT) per Certificate'")
         result = dao.get_sct_count_per_certificate()

@@ -35,7 +35,7 @@ class GraphPlotter:
 
         sns.barplot(x=x, y=y, data=data, palette='viridis', ax=ax)
 
-        ax.set_title(title, fontsize=16, fontweight='bold', pad=20)
+        # ax.set_title(title, fontsize=16, fontweight='bold', pad=30)
         ax.set_xlabel(xlabel, fontsize=14)
         ax.set_ylabel(ylabel, fontsize=14)
 
@@ -99,7 +99,7 @@ class GraphPlotter:
             autotext.set_fontweight('medium')
             autotext.set_color('black')
         
-        ax.set_title(title, pad=20)
+        # ax.set_title(title, pad=20)
         ax.axis('equal')
         
         legend = ax.legend(
@@ -130,7 +130,7 @@ class GraphPlotter:
         colors = sns.color_palette("Set2")
         counts, bins, patches = plt.hist(data[y], bins=20, color=colors[0], edgecolor='black', alpha=0.7)
 
-        plt.title(title, fontsize=16, fontweight='bold', pad=20)
+        # plt.title(title, fontsize=16, fontweight='bold', pad=20)
         plt.xlabel(xlabel, fontsize=14)
         plt.ylabel(ylabel, fontsize=14)
         plt.xticks(fontsize=12)
@@ -159,7 +159,7 @@ class GraphPlotter:
 
         sns.lineplot(x=x, y=y, data=data, marker='o', linewidth=2, markersize=6, color='blue')
 
-        plt.title(title, fontsize=18, fontweight='bold', pad=20)  
+        # plt.title(title, fontsize=18, fontweight='bold', pad=20)  
 
         plt.xlabel(xlabel, fontsize=16, labelpad=10)
         plt.ylabel(ylabel, fontsize=16, labelpad=10)
@@ -186,7 +186,7 @@ class GraphPlotter:
 
         sns.scatterplot(x=x, y=y, data=data, alpha=0.8, s=100, edgecolor='w')  
 
-        plt.title(title, fontsize=18, fontweight='bold', pad=20)
+        # plt.title(title, fontsize=18, fontweight='bold', pad=20)
         plt.xlabel(xlabel, fontsize=16)
         plt.ylabel(ylabel, fontsize=16)
         plt.xticks(fontsize=14)
@@ -210,7 +210,7 @@ class GraphPlotter:
         """Crea un box plot ottimizzato per la visualizzazione dei dati."""
         plt.figure(figsize=(12, 6))
         sns.boxplot(x=x, y=y, data=data, palette='Set2')
-        plt.title(title, fontsize=16, fontweight='bold')
+        # plt.title(title, fontsize=16, fontweight='bold')
         plt.xlabel(xlabel, fontsize=14)
         plt.ylabel(ylabel, fontsize=14)
         plt.xticks(rotation=45, fontsize=12)
@@ -231,7 +231,7 @@ class GraphPlotter:
         colors = sns.color_palette('Set2', n_colors=len(data.columns))
         data.plot(kind='bar', stacked=True, ax=plt.gca(), color=colors)
 
-        plt.title(title, fontsize=16, fontweight='bold')
+        # plt.title(title, fontsize=16, fontweight='bold')
         plt.xlabel(xlabel, fontsize=14)
         plt.ylabel(ylabel, fontsize=14)
         plt.xticks(rotation=45, ha='right', fontsize=12)
@@ -265,7 +265,7 @@ class GraphPlotter:
 
         plt.legend(handles=handles, title='Legend', bbox_to_anchor=(-0.5, -0.1), loc='upper center', ncol=3, borderpad=1, labelspacing=1.2, handletextpad=1)
 
-        plt.title(title, fontsize=20, fontweight='bold', pad=20)
+        # plt.title(title, fontsize=20, fontweight='bold', pad=20)
         plt.xlabel(xlabel, fontsize=16)
 
         plt.yticks(ticks=range(len(unique_key_usages)), labels=range(1, len(unique_key_usages) + 1), fontsize=14)
@@ -308,7 +308,7 @@ class GraphPlotter:
         sns.barplot(x=x, y=y, data=data, hue=data.index, dodge=False,
                     palette=color_mapping, ci=None, ax=ax)
 
-        ax.set_title(title, pad=20)
+        # ax.set_title(title, pad=20)
         ax.set_xlabel(xlabel, fontsize=16)
         ax.set_ylabel(ylabel, fontsize=16)
 

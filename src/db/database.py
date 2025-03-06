@@ -78,6 +78,7 @@ class Database:
             -- Indici per la tabella Subjects
             CREATE INDEX IF NOT EXISTS idx_subjects_subject_dn ON Subjects(subject_dn);
             CREATE INDEX IF NOT EXISTS idx_subjects_common_name ON Subjects(common_name);
+            CREATE INDEX IF NOT EXISTS idx_subjects_subject_key_id ON Subjects(subject_key_id);
 
             -- Indici per la tabella Extensions
             CREATE INDEX IF NOT EXISTS idx_extensions_certificate_id ON Extensions(certificate_id);
@@ -90,7 +91,7 @@ class Database:
             cursor.executescript("""
                 -- Indici per la tabella Certificates
                 CREATE INDEX IF NOT EXISTS idx_certificates_self_signed ON Certificates(self_signed);
-            CREATE INDEX IF NOT EXISTS idx_certificates_signature_valid ON Certificates(signature_valid);
+                CREATE INDEX IF NOT EXISTS idx_certificates_signature_valid ON Certificates(signature_valid);
 
                 -- Indici per la tabella SignedCertificateTimestamps
                 CREATE INDEX IF NOT EXISTS idx_signed_cert_timestamps_certificate_id ON SignedCertificateTimestamps(certificate_id);

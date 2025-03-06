@@ -4,7 +4,9 @@ SELECT COUNT(DISTINCT leaf_domain) FROM Certificates;
 
 SELECT COUNT(*) FROM Errors;
 
-SELECT COUNT(*) FROM Extensions;
+SELECT COUNT(DISTINCT(subject_db)) 
+FROM Certificates AS c INNER JOIN Extensions AS e c.certificate_id = e.certificate_id INNER JOIN Subject AS s ON c.subject_id = s.subject_id
+WHERE key_usage IS NOT NULL;
 
 SELECT 
     CASE 
@@ -14,21 +16,16 @@ SELECT
         WHEN json_array_length(crl_distribution_points) > 0 AND authority_info_access = '{}' THEN 'Crl Distr. Point Only'
         ELSE 'Other'
     END AS aia_category,
-    COUNT(*) AS count
-FROM Certificates AS c 
-JOIN Extensions AS e ON c.certificate_id = e.certificate_id
+    COUNT(DISTINCT(subject_dn)) AS count
+FROM Certificates AS c JOIN Extensions AS e ON c.certificate_id = e.certificate_id INNER JOIN Subjects AS s ON c.subject_id = s.subject_id
 GROUP BY aia_category;
 
 SELECT c.certificate_id, c.leaf_domain
 FROM Certificates AS c LEFT JOIN SignedCertificateTimestamps AS s ON c.certificate_id = s.certificate_id
 WHERE s.certificate_id IS NULL;
 
-SELECT COUNT(*) AS count, *
-FROM Certificates
-GROUP BY ocsp_must_stapling
-
-SELECT COUNT(*) AS count, ocsp_check
-FROM Certificates
+SELECT ocsp_check, COUNT(DISTINCT(subject_dn)) AS count
+FROM Certificates AS c JOIN Subjects AS s ON c.subject_id = s.subject_id
 GROUP BY ocsp_check;
 
 SELECT COUNT(*) AS count, ocsp_check, authority_info_access
@@ -76,27 +73,54 @@ FROM Certificates AS c JOIN Subjects AS s ON c.subject_id = s.subject_id
 GROUP BY count_san, domain_matches_san
 ORDER BY count_san, domain_matches_san;
 
+SELECT e.crl_distr_point_is_critical, COUNT(DISTINCT(s.subject_dn)) AS count
+FROM Certificates AS c INNER JOIN Extensions AS e ON c.certificate_id = e.certificate_id INNER JOIN Subjects AS s ON c.subject_id = s.subject_id
+GROUP BY e.crl_distr_point_is_critical
+ORDER BY count DESC;
+
+SELECT ocsp_must_stapling, COUNT(DISTINCT(subject_dn)) AS count
+FROM Certificates AS c JOIN Subjects AS s ON c.subject_id = s.subject_id
+GROUP BY ocsp_must_stapling
+ORDER BY count;
+
+SELECT
+    SUBSTR(
+        subject_dn,
+        INSTR(subject_dn, 'O=') + 2,
+        INSTR(SUBSTR(subject_dn, INSTR(subject_dn, 'O=') + 2), ',') - 1
+    ) AS organization,
+	(COUNT(*) * 100.0 / 9428980) AS percentage,
+	COUNT(*) AS certificate_count
+FROM
+    Subjects
+WHERE
+    subject_dn LIKE '%O=%'
+GROUP BY
+    organization
+ORDER BY
+    certificate_count DESC;
+
+SELECT COUNT(DISTINCT(subject_key_id)) AS count
+FROM Subjects;
+
+SELECT COUNT(subject_key_id) AS count
+FROM Subjects;
 
 
 
 
 
 
--- TODO: DA DISCUTERE
+
+
+
+
+
 -- Distribuzione del numero di certificati intermedi nella catena
 SELECT certificates_up_to_root_count, COUNT(DISTINCT(subject_dn)) AS count
 FROM Certificates AS c INNER JOIN Subjects AS s ON c.subject_id = s.subject_id
 GROUP BY certificates_up_to_root_count
 ORDER BY count DESC;
-
-
-
-
-
-
-
-
-
 
 -- Distribuzione delle Signature Algorithm tra i certificati 
 SELECT signature_algorithm, COUNT(DISTINCT(subject_dn)) AS count
@@ -112,7 +136,7 @@ GROUP BY policy_qualifiers
 ORDER BY count DESC;
 
 -- Conta il numero di issuer con una determinata lunghezza AKI
-SELECT LENGTH(DISTINCT authority_key_id) AS key_length, COUNT(DISTINCT issuer_dn) AS key_count
+SELECT LENGTH(DISTINCT authority_key_id) AS key_length, COUNT(DISTINCT issuer_key_id) AS key_count
 FROM Issuers
 GROUP BY key_length
 ORDER BY key_length;
@@ -166,12 +190,7 @@ CREATE INDEX IF NOT EXISTS idx_logs_log_id ON Logs(log_id);
 
 
 
--- Controlla se esistono differenze tra i dati del subject e issuer (Query per i certificati ROOT)
--- Da eliminare la tabella Issuer una volta caricati tutti i root
-SELECT COUNT(*)
-FROM Certificates AS c INNER JOIN Subjects AS s ON c.subject_id = s.subject_id 
-INNER JOIN Issuers AS i ON c.issuer_id = i.issuer_id
-WHERE s.common_name = i.common_name AND s.subject_dn = i.issuer_dn
+
 
 --------------
 
@@ -187,7 +206,7 @@ LIMIT 1000
 
 -- Conta quanti Issuer hanno emesso un certificato
 WITH IssuersCounts AS (
-	SELECT Issuers.organization, COUNT(DISTINCT(Issuers.issuer_dn)) AS certificate_count
+	SELECT Issuers.organization, COUNT(*) AS certificate_count
 	FROM Certificates 
 	INNER JOIN Issuers ON Certificates.issuer_id = Issuers.issuer_id 
 	WHERE Issuers.organization IS NOT NULL AND TRIM(Issuers.organization) <> ''
@@ -236,22 +255,22 @@ UNION ALL
 SELECT * FROM Others;
 
 -- Mostra la distribuzione della durata di validità
-SELECT validity_length, COUNT(DISTINCT(subject_dn)) AS count
+SELECT validity_length/31536000, COUNT(DISTINCT(s.subject_key_id)) AS count
 FROM Certificates AS c JOIN Subjects AS s ON c.subject_id = s.subject_id
-WHERE validity_length IS NOT NULL AND validity_length < 0
+WHERE validity_length < 0
 UNION ALL
-SELECT validity_length, COUNT(DISTINCT(subject_dn)) AS count
+SELECT validity_length/31536000, COUNT(DISTINCT(s.subject_key_id)) AS count
 FROM Certificates AS c JOIN Subjects AS s ON c.subject_id = s.subject_id
-WHERE validity_length IS NOT NULL AND validity_length >= 0
-GROUP BY validity_length
-HAVING count >= 20;
+WHERE c.validity_length IS NOT NULL AND validity_length >= 0
+GROUP BY validity_length/31536000
+HAVING count >= 0;
 
 -- Trend di Scadenza dei Certificati
-SELECT strftime('%Y-%m', validity_end) AS month, COUNT(DISTINCT(subject_dn)) AS count
+SELECT strftime('%Y-%m', validity_end) AS month, COUNT(DISTINCT(subject_key_id)) AS count
 FROM Certificates AS c JOIN Subjects AS s ON c.subject_id = s.subject_id
 WHERE validity_end IS NOT NULL
 GROUP BY month
-HAVING count > 1800
+HAVING count > 10
 ORDER BY month ASC;
 
 -- Algoritmi di Firma Utilizzati
@@ -265,7 +284,7 @@ ORDER BY sign_algorithm_count DESC;
 SELECT 
     key_algorithm, 
     key_length, 
-    COUNT(DISTINCT(subject_dn)) AS certificate_count
+    COUNT(DISTINCT(subject_key_id)) AS certificate_count
 FROM 
     Certificates AS c INNER JOIN Subjects AS s ON c.subject_id = s.subject_id
 WHERE 
@@ -324,7 +343,7 @@ FROM Errors
 GROUP BY status;
 
 -- Utilizzo del Key Usage nelle Estensioni
-SELECT e.key_usage, COUNT(DISTINCT(s.subject_dn)) AS count
+SELECT e.key_usage, COUNT(DISTINCT(s.subject_key_id)) AS count
 FROM Extensions AS e JOIN Certificates AS c ON e.certificate_id = c.certificate_id 
 JOIN Subjects AS s ON c.subject_id = s.subject_id
 GROUP BY e.key_usage
@@ -336,7 +355,7 @@ ORDER BY count DESC;
 -- ORDER BY count DESC;
 
 -- Estensioni Critiche vs Non Critiche del Key Usage nelle Estensioni
-SELECT key_usage_is_critical, COUNT(DISTINCT(subject_dn)) AS count
+SELECT key_usage_is_critical, COUNT(DISTINCT(subject_key_id)) AS count
 FROM Extensions AS e JOIN Certificates AS c ON e.certificate_id = c.certificate_id
 JOIN Subjects AS s ON c.subject_id = s.subject_id
 GROUP BY key_usage_is_critical
@@ -348,7 +367,7 @@ ORDER BY count DESC;
 -- ORDER BY count DESC;
 
 -- Utilizzo dell'Extended Key Usage nelle Estensioni
-SELECT e.extended_key_usage, COUNT(DISTINCT(s.subject_dn)) AS count
+SELECT e.extended_key_usage, COUNT(DISTINCT(s.subject_key_id)) AS count
 FROM Extensions AS e JOIN Certificates AS c ON e.certificate_id = c.certificate_id 
 JOIN Subjects AS s ON c.subject_id = s.subject_id
 GROUP BY e.extended_key_usage
@@ -408,11 +427,26 @@ FROM (
 GROUP BY count_sct
 ORDER BY count_sct ASC;
 
+-- SELECT average_count_sct, COUNT(*) AS certificate_count
+-- FROM (
+--	SELECT CAST(AVG(count_sct) AS INT) AS average_count_sct
+--	FROM (
+--		SELECT c.certificate_id, COUNT(c.certificate_id) AS count_sct
+--		FROM Certificates AS c LEFT JOIN SignedCertificateTimestamps s ON s.certificate_id = c.certificate_id
+--		GROUP BY c.certificate_id
+--	) AS counts INNER JOIN Subjects AS su ON counts.certificate_id = su.subject_id
+--	GROUP BY subject_dn
+-- ) AS sct_counts
+-- GROUP BY average_count_sct
+-- ORDER BY average_count_sct ASC;
+
 -- Top SCT Logs
-SELECT l.description, COUNT(*) AS count
+SELECT l.description, COUNT(DISTINCT(subject_dn)) AS count
 FROM SignedCertificateTimestamps AS s INNER JOIN Logs AS l ON s.log_id = l.id
+INNER JOIN Certificates AS c ON s.certificate_id = c.certificate_id
+INNER JOIN Subjects AS su ON c.subject_id = su.subject_id
 GROUP BY l.description
-HAVING count > 5
+HAVING count > 12000
 ORDER BY count DESC;
 
 -- Top SCT Log Operators
