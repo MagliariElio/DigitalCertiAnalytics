@@ -333,8 +333,8 @@ def plot_leaf_certificates(dao: CertificateDAO, is_verbose: bool):
     
     # Generazione grafici
     plot_general_certificates_analysis(dao, plotter, plots_path)
-    # plot_leaf_certificates_analysis(dao, plotter, plots_path)
-    # plot_leaf_and_root_certificates_analysis(dao, plotter, plots_path)
+    plot_leaf_certificates_analysis(dao, plotter, plots_path)
+    plot_leaf_and_root_certificates_analysis(dao, plotter, plots_path)
     
     logging.info("Generazione dei grafici per l'analisi dei certificati Leaf completata.")
     return

@@ -7600,3 +7600,38 @@
 2025-03-05 18:06:03,496 - INFO - database.py:279 - close() - Connessione al database Leaf chiusa con successo: 'file:///home/elion-man/TEST_TESI/src/analysis/leaf/leaf_certificates.db'
 2025-03-05 18:06:03,496 - INFO - graph_plotter.py:10 - close_all_plots() - Chiusura di tutti i grafici aperti...
 2025-03-05 18:06:03,497 - INFO - certificates_analysis.py:56 - close_connections() - Tutte le connessioni ai database sono state chiuse.
+2025-03-09 17:27:30,624 - INFO - certificates_analysis.py:487 - certificates_analysis_main() - Inizio dell'applicazione.
+2025-03-09 17:27:30,634 - INFO - database.py:43 - _initialize_database() - Connessione al database esistente: 'file:///home/elion-man/TEST_TESI/src/analysis/leaf/leaf_certificates.db'
+2025-03-09 17:27:30,635 - INFO - database.py:61 - create_indexes() - Creazione indici nel database in corso...
+2025-03-09 17:29:01,784 - INFO - database.py:122 - create_indexes() - Indici creati con successo.
+2025-03-09 17:29:01,786 - INFO - database.py:127 - apply_database_corrections() - Inizio delle correzioni al database.
+2025-03-09 17:29:01,788 - INFO - database.py:139 - apply_database_corrections() - Correzioni al database applicate.
+2025-03-09 17:29:01,790 - INFO - certificates_analysis.py:614 - certificates_analysis_main() - Inizio generazione grafici per certificati 'Leaf'.
+2025-03-09 17:29:01,794 - INFO - certificates_analysis.py:328 - plot_leaf_certificates() - La cartella 'analysis/leaf/plots' è stata rimossa.
+2025-03-09 17:29:01,796 - INFO - certificates_analysis.py:332 - plot_leaf_certificates() - La cartella 'analysis/leaf/plots' è stata creata.
+2025-03-09 17:29:01,797 - INFO - plotter_utils.py:67 - plot_general_certificates_analysis() - Generazione grafico 'Maturity Trends of the Certificates'
+2025-03-09 17:32:10,868 - INFO - graph_plotter.py:180 - plot_line_chart() - Grafico 'Maturity Trends of the Certificates' generato con successo e salvato in file:///home/elion-man/TEST_TESI/src/analysis/leaf/plots/certificate_expiration_trend.png.
+2025-03-09 17:32:10,910 - INFO - plotter_utils.py:298 - plot_leaf_certificates_analysis() - Generazione grafico 'Analysis Status Certificates'
+2025-03-09 17:32:12,379 - INFO - graph_plotter.py:64 - plot_bar_chart() - Grafico 'Analysis Status Certificates' generato con successo e salvato in file:///home/elion-man/TEST_TESI/src/analysis/leaf/plots/status_analysis.png.
+2025-03-09 17:32:12,398 - INFO - plotter_utils.py:314 - plot_leaf_certificates_analysis() - Generazione grafico 'Self-Signed vs CA-Signed Certificates'
+2025-03-09 17:34:56,449 - INFO - graph_plotter.py:124 - plot_pie_chart() - Grafico 'Self-Signed vs CA-Signed Certificates' generato con successo e salvato in file:///home/elion-man/TEST_TESI/src/analysis/leaf/plots/self_signed_vs_ca_signed.png.
+2025-03-09 17:34:56,469 - INFO - plotter_utils.py:322 - plot_leaf_certificates_analysis() - Generazione grafico 'Top SCT Logs'
+2025-03-09 17:42:39,989 - INFO - certificates_analysis.py:487 - certificates_analysis_main() - Inizio dell'applicazione.
+2025-03-09 17:42:39,998 - INFO - database.py:43 - _initialize_database() - Connessione al database esistente: 'file:///home/elion-man/TEST_TESI/src/analysis/leaf/leaf_certificates.db'
+2025-03-09 17:42:39,999 - INFO - database.py:61 - create_indexes() - Creazione indici nel database in corso...
+2025-03-09 17:42:40,001 - INFO - database.py:122 - create_indexes() - Indici creati con successo.
+2025-03-09 17:42:40,002 - INFO - database.py:127 - apply_database_corrections() - Inizio delle correzioni al database.
+2025-03-09 17:42:40,004 - INFO - database.py:139 - apply_database_corrections() - Correzioni al database applicate.
+2025-03-09 17:42:40,006 - INFO - certificates_analysis.py:614 - certificates_analysis_main() - Inizio generazione grafici per certificati 'Leaf'.
+2025-03-09 17:42:40,010 - INFO - certificates_analysis.py:328 - plot_leaf_certificates() - La cartella 'analysis/leaf/plots' è stata rimossa.
+2025-03-09 17:42:40,011 - INFO - certificates_analysis.py:332 - plot_leaf_certificates() - La cartella 'analysis/leaf/plots' è stata creata.
+2025-03-09 17:42:40,012 - INFO - plotter_utils.py:67 - plot_general_certificates_analysis() - Generazione grafico 'Maturity Trends of the Certificates'
+2025-03-09 17:45:39,608 - INFO - graph_plotter.py:180 - plot_line_chart() - Grafico 'Maturity Trends of the Certificates' generato con successo e salvato in file:///home/elion-man/TEST_TESI/src/analysis/leaf/plots/certificate_expiration_trend.png.
+2025-03-09 17:45:39,637 - INFO - certificates_analysis.py:339 - plot_leaf_certificates() - Generazione dei grafici per l'analisi dei certificati Leaf completata.
+2025-03-09 17:45:39,639 - INFO - database.py:279 - close() - Connessione al database Leaf chiusa con successo: 'file:///home/elion-man/TEST_TESI/src/analysis/leaf/leaf_certificates.db'
+2025-03-09 17:45:39,640 - INFO - certificates_analysis.py:737 - certificates_analysis_main() - Applicazione terminata correttamente.
+
+2025-03-09 17:45:39,642 - INFO - certificates_analysis.py:24 - close_connections() - Inizio chiusura delle connessioni ai database...
+2025-03-09 17:45:39,643 - INFO - database.py:279 - close() - Connessione al database Leaf chiusa con successo: 'file:///home/elion-man/TEST_TESI/src/analysis/leaf/leaf_certificates.db'
+2025-03-09 17:45:39,644 - INFO - graph_plotter.py:10 - close_all_plots() - Chiusura di tutti i grafici aperti...
+2025-03-09 17:45:39,646 - INFO - certificates_analysis.py:56 - close_connections() - Tutte le connessioni ai database sono state chiuse.
