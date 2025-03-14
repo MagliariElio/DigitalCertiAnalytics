@@ -181,7 +181,11 @@ class CertificateDAO:
         
         digital_certificate = Certificate(raw)
         crl_distr_point_is_critical = digital_certificate.is_crl_distr_point_critical()
-        crl_revocation_status = check_is_revoked_from_crl(digital_certificate.get_cert(), extensions.get("crl_distribution_points", []))
+        
+        
+        # TODO: richiesta funzionante ma è da velocizzare altrimenti si può fare un comando a parte per eseguire solo queste richieste
+        # crl_revocation_status = check_is_revoked_from_crl(digital_certificate.get_cert(), extensions.get("crl_distribution_points", []))
+        crl_revocation_status = 'No Request Done'
 
         key_usage_is_critical = digital_certificate.is_key_usage_critical()
         extended_key_usage_is_critical = digital_certificate.is_extended_key_usage_critical()

@@ -7635,3 +7635,82 @@
 2025-03-09 17:45:39,643 - INFO - database.py:279 - close() - Connessione al database Leaf chiusa con successo: 'file:///home/elion-man/TEST_TESI/src/analysis/leaf/leaf_certificates.db'
 2025-03-09 17:45:39,644 - INFO - graph_plotter.py:10 - close_all_plots() - Chiusura di tutti i grafici aperti...
 2025-03-09 17:45:39,646 - INFO - certificates_analysis.py:56 - close_connections() - Tutte le connessioni ai database sono state chiuse.
+2025-03-14 19:35:48,626 - INFO - certificates_analysis.py:487 - certificates_analysis_main() - Inizio dell'applicazione.
+2025-03-14 19:35:48,630 - ERROR - certificates_analysis.py:513 - certificates_analysis_main() - Il file '/home/elion-man/TEST_TESI/res/certs_polito.json' non esiste. Oppure il nome del file output non coincide! Si prega di consultare il README per istruzioni su come generare questo file utilizzando il programma Zgrab2.
+2025-03-14 19:35:48,631 - INFO - certificates_analysis.py:24 - close_connections() - Inizio chiusura delle connessioni ai database...
+2025-03-14 19:35:48,632 - INFO - certificates_analysis.py:56 - close_connections() - Tutte le connessioni ai database sono state chiuse.
+2025-03-14 19:36:47,884 - INFO - certificates_analysis.py:487 - certificates_analysis_main() - Inizio dell'applicazione.
+2025-03-14 19:36:47,887 - INFO - certificates_analysis.py:529 - certificates_analysis_main() - Inizio il conteggio delle righe del file JSON contenente i certificati.
+2025-03-14 19:36:47,888 - INFO - certificates_analysis.py:552 - certificates_analysis_main() - Conteggio completato: 10,000,000 certificati trovati.
+2025-03-14 19:36:47,900 - INFO - database.py:48 - create_tables() - Creazione tabelle nel database in corso...
+2025-03-14 19:36:47,905 - INFO - database.py:55 - create_tables() - Tabelle create con successo.
+2025-03-14 19:36:47,906 - INFO - database.py:43 - _initialize_database() - Connessione al database esistente: 'file:///home/elion-man/TEST_TESI/src/analysis/leaf/leaf_certificates.db'
+2025-03-14 19:36:47,955 - INFO - certificates_analysis.py:312 - process_insert_sct_logs() - SCT Operators e SCT Logs memorizzati con successo.
+2025-03-14 19:36:47,956 - INFO - certificates_analysis.py:586 - certificates_analysis_main() - Inizio analisi certificati 'Leaf'.
+2025-03-14 19:37:10,361 - INFO - certificates_analysis.py:112 - leaf_certificates_analysis() - Ricevuto segnale di interruzione (SIGINT). Inizio della procedura di chiusura...
+2025-03-14 19:37:10,369 - INFO - certificates_analysis.py:588 - certificates_analysis_main() - Analisi dei certificati 'Leaf' completata con successo.
+2025-03-14 19:37:10,370 - INFO - database.py:218 - cleanup_unused_tables() - Rimozione tabelle non necessarie in corso...
+2025-03-14 19:37:10,371 - INFO - database.py:178 - remove_columns() - Rimozione colonne non necessarie dal database in corso...
+2025-03-14 19:37:10,381 - INFO - database.py:186 - remove_columns() - Colonne specificate rimosse dalla tabella 'Certificates'.
+2025-03-14 19:37:10,382 - INFO - database.py:279 - close() - Connessione al database Leaf chiusa con successo: 'file:///home/elion-man/TEST_TESI/src/analysis/leaf/leaf_certificates.db'
+2025-03-14 19:37:10,383 - INFO - certificates_analysis.py:737 - certificates_analysis_main() - Applicazione terminata correttamente.
+
+2025-03-14 19:37:10,384 - INFO - certificates_analysis.py:24 - close_connections() - Inizio chiusura delle connessioni ai database...
+2025-03-14 19:37:10,384 - INFO - database.py:279 - close() - Connessione al database Leaf chiusa con successo: 'file:///home/elion-man/TEST_TESI/src/analysis/leaf/leaf_certificates.db'
+2025-03-14 19:37:10,385 - INFO - certificates_analysis.py:56 - close_connections() - Tutte le connessioni ai database sono state chiuse.
+2025-03-14 19:39:15,894 - INFO - certificates_analysis.py:487 - certificates_analysis_main() - Inizio dell'applicazione.
+2025-03-14 19:39:15,897 - INFO - certificates_analysis.py:529 - certificates_analysis_main() - Inizio il conteggio delle righe del file JSON contenente i certificati.
+2025-03-14 19:39:15,898 - INFO - certificates_analysis.py:552 - certificates_analysis_main() - Conteggio completato: 10,000,000 certificati trovati.
+2025-03-14 19:39:15,899 - INFO - database.py:28 - connect() - Database eliminato con successo: /home/elion-man/TEST_TESI/src/analysis/leaf/leaf_certificates.db
+2025-03-14 19:39:15,900 - INFO - database.py:48 - create_tables() - Creazione tabelle nel database in corso...
+2025-03-14 19:39:15,911 - INFO - database.py:55 - create_tables() - Tabelle create con successo.
+2025-03-14 19:39:15,912 - INFO - database.py:43 - _initialize_database() - Connessione al database esistente: 'file:///home/elion-man/TEST_TESI/src/analysis/leaf/leaf_certificates.db'
+2025-03-14 19:39:15,958 - INFO - certificates_analysis.py:312 - process_insert_sct_logs() - SCT Operators e SCT Logs memorizzati con successo.
+2025-03-14 19:39:15,960 - INFO - certificates_analysis.py:586 - certificates_analysis_main() - Inizio analisi certificati 'Leaf'.
+2025-03-14 19:40:12,849 - ERROR - utils.py:208 - check_is_revoked_from_crl() - Errore durante la verifica nel CRL list: error parsing asn1 value: ParseError { kind: UnexpectedTag { actual: Tag { value: 13, constructed: false, class: Universal } } }
+2025-03-14 19:40:13,258 - ERROR - utils.py:208 - check_is_revoked_from_crl() - Errore durante la verifica nel CRL list: error parsing asn1 value: ParseError { kind: UnexpectedTag { actual: Tag { value: 13, constructed: false, class: Universal } } }
+2025-03-14 19:40:19,507 - ERROR - utils.py:208 - check_is_revoked_from_crl() - Errore durante la verifica nel CRL list: error parsing asn1 value: ParseError { kind: UnexpectedTag { actual: Tag { value: 13, constructed: false, class: Universal } } }
+2025-03-14 19:40:45,389 - ERROR - utils.py:208 - check_is_revoked_from_crl() - Errore durante la verifica nel CRL list: error parsing asn1 value: ParseError { kind: UnexpectedTag { actual: Tag { value: 13, constructed: false, class: Universal } } }
+2025-03-14 19:40:46,185 - ERROR - utils.py:208 - check_is_revoked_from_crl() - Errore durante la verifica nel CRL list: error parsing asn1 value: ParseError { kind: UnexpectedTag { actual: Tag { value: 13, constructed: false, class: Universal } } }
+2025-03-14 19:40:49,616 - ERROR - utils.py:208 - check_is_revoked_from_crl() - Errore durante la verifica nel CRL list: error parsing asn1 value: ParseError { kind: UnexpectedTag { actual: Tag { value: 13, constructed: false, class: Universal } } }
+2025-03-14 19:41:12,884 - ERROR - utils.py:208 - check_is_revoked_from_crl() - Errore durante la verifica nel CRL list: HTTPConnectionPool(host='crl3.digicert.com', port=80): Read timed out.
+2025-03-14 19:41:13,372 - ERROR - utils.py:208 - check_is_revoked_from_crl() - Errore durante la verifica nel CRL list: error parsing asn1 value: ParseError { kind: UnexpectedTag { actual: Tag { value: 13, constructed: false, class: Universal } } }
+2025-03-14 19:41:13,508 - ERROR - utils.py:208 - check_is_revoked_from_crl() - Errore durante la verifica nel CRL list: error parsing asn1 value: ParseError { kind: UnexpectedTag { actual: Tag { value: 13, constructed: false, class: Universal } } }
+2025-03-14 19:41:18,836 - ERROR - utils.py:208 - check_is_revoked_from_crl() - Errore durante la verifica nel CRL list: error parsing asn1 value: ParseError { kind: UnexpectedTag { actual: Tag { value: 13, constructed: false, class: Universal } } }
+2025-03-14 19:41:28,807 - ERROR - utils.py:208 - check_is_revoked_from_crl() - Errore durante la verifica nel CRL list: error parsing asn1 value: ParseError { kind: UnexpectedTag { actual: Tag { value: 13, constructed: false, class: Universal } } }
+2025-03-14 19:41:37,845 - ERROR - utils.py:208 - check_is_revoked_from_crl() - Errore durante la verifica nel CRL list: error parsing asn1 value: ParseError { kind: UnexpectedTag { actual: Tag { value: 13, constructed: false, class: Universal } } }
+2025-03-14 19:41:50,273 - ERROR - utils.py:208 - check_is_revoked_from_crl() - Errore durante la verifica nel CRL list: error parsing asn1 value: ParseError { kind: UnexpectedTag { actual: Tag { value: 13, constructed: false, class: Universal } } }
+2025-03-14 19:42:34,660 - ERROR - utils.py:208 - check_is_revoked_from_crl() - Errore durante la verifica nel CRL list: error parsing asn1 value: ParseError { kind: UnexpectedTag { actual: Tag { value: 13, constructed: false, class: Universal } } }
+2025-03-14 19:42:49,440 - ERROR - utils.py:208 - check_is_revoked_from_crl() - Errore durante la verifica nel CRL list: error parsing asn1 value: ParseError { kind: UnexpectedTag { actual: Tag { value: 13, constructed: false, class: Universal } } }
+2025-03-14 19:42:50,213 - ERROR - utils.py:208 - check_is_revoked_from_crl() - Errore durante la verifica nel CRL list: error parsing asn1 value: ParseError { kind: UnexpectedTag { actual: Tag { value: 13, constructed: false, class: Universal } } }
+2025-03-14 19:44:01,717 - INFO - certificates_analysis.py:112 - leaf_certificates_analysis() - Ricevuto segnale di interruzione (SIGINT). Inizio della procedura di chiusura...
+2025-03-14 19:44:01,721 - INFO - certificates_analysis.py:588 - certificates_analysis_main() - Analisi dei certificati 'Leaf' completata con successo.
+2025-03-14 19:44:01,722 - INFO - database.py:218 - cleanup_unused_tables() - Rimozione tabelle non necessarie in corso...
+2025-03-14 19:44:01,723 - INFO - database.py:178 - remove_columns() - Rimozione colonne non necessarie dal database in corso...
+2025-03-14 19:44:01,772 - INFO - database.py:186 - remove_columns() - Colonne specificate rimosse dalla tabella 'Certificates'.
+2025-03-14 19:44:01,775 - INFO - database.py:279 - close() - Connessione al database Leaf chiusa con successo: 'file:///home/elion-man/TEST_TESI/src/analysis/leaf/leaf_certificates.db'
+2025-03-14 19:44:01,776 - INFO - certificates_analysis.py:737 - certificates_analysis_main() - Applicazione terminata correttamente.
+
+2025-03-14 19:44:01,777 - INFO - certificates_analysis.py:24 - close_connections() - Inizio chiusura delle connessioni ai database...
+2025-03-14 19:44:01,778 - INFO - database.py:279 - close() - Connessione al database Leaf chiusa con successo: 'file:///home/elion-man/TEST_TESI/src/analysis/leaf/leaf_certificates.db'
+2025-03-14 19:44:01,779 - INFO - certificates_analysis.py:56 - close_connections() - Tutte le connessioni ai database sono state chiuse.
+2025-03-14 19:44:06,223 - INFO - certificates_analysis.py:487 - certificates_analysis_main() - Inizio dell'applicazione.
+2025-03-14 19:44:06,227 - INFO - certificates_analysis.py:529 - certificates_analysis_main() - Inizio il conteggio delle righe del file JSON contenente i certificati.
+2025-03-14 19:44:06,228 - INFO - certificates_analysis.py:552 - certificates_analysis_main() - Conteggio completato: 10,000,000 certificati trovati.
+2025-03-14 19:44:06,232 - INFO - database.py:28 - connect() - Database eliminato con successo: /home/elion-man/TEST_TESI/src/analysis/leaf/leaf_certificates.db
+2025-03-14 19:44:06,235 - INFO - database.py:48 - create_tables() - Creazione tabelle nel database in corso...
+2025-03-14 19:44:06,245 - INFO - database.py:55 - create_tables() - Tabelle create con successo.
+2025-03-14 19:44:06,246 - INFO - database.py:43 - _initialize_database() - Connessione al database esistente: 'file:///home/elion-man/TEST_TESI/src/analysis/leaf/leaf_certificates.db'
+2025-03-14 19:44:06,293 - INFO - certificates_analysis.py:312 - process_insert_sct_logs() - SCT Operators e SCT Logs memorizzati con successo.
+2025-03-14 19:44:06,294 - INFO - certificates_analysis.py:586 - certificates_analysis_main() - Inizio analisi certificati 'Leaf'.
+2025-03-14 19:44:12,695 - INFO - certificates_analysis.py:112 - leaf_certificates_analysis() - Ricevuto segnale di interruzione (SIGINT). Inizio della procedura di chiusura...
+2025-03-14 19:44:12,700 - INFO - certificates_analysis.py:588 - certificates_analysis_main() - Analisi dei certificati 'Leaf' completata con successo.
+2025-03-14 19:44:12,700 - INFO - database.py:218 - cleanup_unused_tables() - Rimozione tabelle non necessarie in corso...
+2025-03-14 19:44:12,701 - INFO - database.py:178 - remove_columns() - Rimozione colonne non necessarie dal database in corso...
+2025-03-14 19:44:12,800 - INFO - database.py:186 - remove_columns() - Colonne specificate rimosse dalla tabella 'Certificates'.
+2025-03-14 19:44:12,801 - INFO - database.py:279 - close() - Connessione al database Leaf chiusa con successo: 'file:///home/elion-man/TEST_TESI/src/analysis/leaf/leaf_certificates.db'
+2025-03-14 19:44:12,802 - INFO - certificates_analysis.py:737 - certificates_analysis_main() - Applicazione terminata correttamente.
+
+2025-03-14 19:44:12,803 - INFO - certificates_analysis.py:24 - close_connections() - Inizio chiusura delle connessioni ai database...
+2025-03-14 19:44:12,804 - INFO - database.py:279 - close() - Connessione al database Leaf chiusa con successo: 'file:///home/elion-man/TEST_TESI/src/analysis/leaf/leaf_certificates.db'
+2025-03-14 19:44:12,804 - INFO - certificates_analysis.py:56 - close_connections() - Tutte le connessioni ai database sono state chiuse.

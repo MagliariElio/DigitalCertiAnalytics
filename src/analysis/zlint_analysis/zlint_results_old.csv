@@ -1,0 +1,997 @@
+result,field,total,top_issuer,top_count
+NA,e_adobe_extensions_legacy_multipurpose_criticality,7044967,Let's Encrypt,3264105
+NA,e_adobe_extensions_strict_presence,7044967,Let's Encrypt,3264105
+NA,e_authority_key_identifier_correct,7044967,Let's Encrypt,3264105
+NA,e_commonname_mailbox_validated,7044967,Let's Encrypt,3264105
+NA,e_cs_crl_distribution_points,7044967,Let's Encrypt,3264105
+NA,e_cs_eku_required,7044967,Let's Encrypt,3264105
+NA,e_cs_key_usage_required,7044967,Let's Encrypt,3264105
+NA,e_cs_rsa_key_size,7044967,Let's Encrypt,3264105
+NA,e_dsa_correct_order_in_subgroup,7044967,Let's Encrypt,3264105
+NA,e_dsa_improper_modulus_or_divisor_size,7044967,Let's Encrypt,3264105
+NA,e_dsa_params_missing,7044967,Let's Encrypt,3264105
+NA,e_dsa_shorter_than_2048_bits,7044967,Let's Encrypt,3264105
+NA,e_dsa_unique_correct_representation,7044967,Let's Encrypt,3264105
+NA,e_ec_other_key_usages,7044967,Let's Encrypt,3264105
+NA,e_ecpublickey_key_usages,7044967,Let's Encrypt,3264105
+NA,e_edwardspublickey_key_usages,7044967,Let's Encrypt,3264105
+NA,e_ext_policy_constraints_empty,7044967,Let's Encrypt,3264105
+NA,e_ext_policy_constraints_not_critical,7044967,Let's Encrypt,3264105
+NA,e_ext_policy_map_any_policy,7044967,Let's Encrypt,3264105
+NA,e_ext_tor_service_descriptor_hash_invalid,7044967,Let's Encrypt,3264105
+NA,e_inhibit_any_policy_not_critical,7044967,Let's Encrypt,3264105
+NA,e_key_usage_presence,7044967,Let's Encrypt,3264105
+NA,e_legal_entity_identifier,7044967,Let's Encrypt,3264105
+NA,e_mailbox_address_shall_contain_an_rfc822_name,7044967,Let's Encrypt,3264105
+NA,e_mailbox_validated_enforce_subject_field_restrictions,7044967,Let's Encrypt,3264105
+NA,e_mp_rsassa-pss_parameters_encoding_in_signature_algorithm_correct,7044967,Let's Encrypt,3264105
+NA,e_precert_with_sct_list,7044967,Let's Encrypt,3264105
+NA,e_qcstatem_qcsscd_valid,7044967,Let's Encrypt,3264105
+NA,e_registration_scheme_id_matches_subject_country,7044967,Let's Encrypt,3264105
+NA,e_rsa_key_usage_legacy_multipurpose,7044967,Let's Encrypt,3264105
+NA,e_rsa_key_usage_strict,7044967,Let's Encrypt,3264105
+NA,e_rsa_other_key_usages,7044967,Let's Encrypt,3264105
+NA,e_san_dns_name_onion_not_ev_cert,7044967,Let's Encrypt,3264105
+NA,e_san_shall_be_present,7044967,Let's Encrypt,3264105
+NA,e_single_email_if_present,7044967,Let's Encrypt,3264105
+NA,e_single_email_subject_if_present,7044967,Let's Encrypt,3264105
+NA,e_smime_legacy_aia_shall_have_one_http,7044967,Let's Encrypt,3264105
+NA,e_smime_legacy_multipurpose_eku_check,7044967,Let's Encrypt,3264105
+NA,e_smime_qc_statements_must_not_be_critical,7044967,Let's Encrypt,3264105
+NA,e_smime_strict_aia_shall_have_http_only,7044967,Let's Encrypt,3264105
+NA,e_smime_strict_eku_check,7044967,Let's Encrypt,3264105
+NA,e_strict_multipurpose_smime_ext_subject_directory_attr,7044967,Let's Encrypt,3264105
+NA,e_sub_ca_aia_marked_critical,7044967,Let's Encrypt,3264105
+NA,e_sub_ca_crl_distribution_points_does_not_contain_url,7044967,Let's Encrypt,3264105
+NA,e_sub_ca_crl_distribution_points_marked_critical,7044967,Let's Encrypt,3264105
+NA,e_subject_contains_reserved_arpa_ip,7044967,Let's Encrypt,3264105
+NA,e_subject_country_name,7044967,Let's Encrypt,3264105
+NA,e_subject_info_access_marked_critical,7044967,Let's Encrypt,3264105
+NA,e_subscribers_crl_distribution_points_are_http,7044967,Let's Encrypt,3264105
+NA,e_subscribers_shall_have_crl_distribution_points,7044967,Let's Encrypt,3264105
+NA,w_ext_policy_map_not_critical,7044967,Let's Encrypt,3264105
+NA,w_ext_policy_map_not_in_cert_policy,7044967,Let's Encrypt,3264105
+NA,w_key_usage_criticality,7044967,Let's Encrypt,3264105
+NA,w_san_should_not_be_critical,7044967,Let's Encrypt,3264105
+NA,w_smime_aia_contains_internal_names,7044967,Let's Encrypt,3264105
+NA,w_sub_ca_certificate_policies_marked_critical,7044967,Let's Encrypt,3264105
+NA,w_sub_ca_name_constraints_not_critical,7044967,Let's Encrypt,3264105
+NA,w_subject_contains_malformed_arpa_ip,7044967,Let's Encrypt,3264105
+NA,e_ext_name_constraints_not_critical,7044966,Let's Encrypt,3264105
+NA,e_ext_name_constraints_not_in_ca,7044966,Let's Encrypt,3264105
+NA,e_ext_nc_intersects_reserved_ip,7044966,Let's Encrypt,3264105
+NA,e_name_constraint_empty,7044966,Let's Encrypt,3264105
+NA,e_name_constraint_maximum_not_absent,7044966,Let's Encrypt,3264105
+NA,e_name_constraint_minimum_non_zero,7044966,Let's Encrypt,3264105
+NA,e_name_constraint_not_fqdn,7044966,Let's Encrypt,3264105
+NA,e_sub_cert_given_name_surname_contains_correct_policy,7044966,Let's Encrypt,3264105
+NA,e_subject_given_name_max_length,7044966,Let's Encrypt,3264105
+NA,w_name_constraint_on_edi_party_name,7044966,Let's Encrypt,3264105
+NA,w_name_constraint_on_registered_id,7044966,Let's Encrypt,3264105
+NA,w_name_constraint_on_x400,7044966,Let's Encrypt,3264105
+NA,w_subject_given_name_recommended_max_length,7044966,Let's Encrypt,3264105
+NA,e_onion_subject_validity_time_too_large,7044965,Let's Encrypt,3264105
+NA,e_san_dns_name_onion_invalid,7044965,Let's Encrypt,3264105
+NA,e_ca_invalid_eku,7044964,Let's Encrypt,3264105
+NA,e_subject_surname_max_length,7044964,Let's Encrypt,3264105
+NA,n_sub_ca_eku_not_technically_constrained,7044964,Let's Encrypt,3264105
+NA,w_sub_ca_eku_critical,7044964,Let's Encrypt,3264105
+NA,w_subject_surname_recommended_max_length,7044964,Let's Encrypt,3264105
+NA,e_ext_cert_policy_disallowed_any_policy_qualifier,7044963,Let's Encrypt,3264105
+NA,e_qcstatem_qclimitvalue_valid,7044963,Let's Encrypt,3264105
+NA,e_ext_freshest_crl_marked_critical,7044960,Let's Encrypt,3264105
+NA,e_cab_iv_requires_personal_name,7044952,Let's Encrypt,3264105
+NA,e_cert_policy_iv_requires_country,7044952,Let's Encrypt,3264105
+NA,e_cert_policy_iv_requires_province_or_locality,7044952,Let's Encrypt,3264105
+NA,e_ext_subject_directory_attr_critical,7044945,Let's Encrypt,3264105
+NA,e_old_sub_ca_rsa_mod_less_than_1024_bits,7044926,Let's Encrypt,3264105
+NA,e_ocsp_id_pkix_ocsp_nocheck_ext_not_included_server_auth,7044897,Let's Encrypt,3264105
+NA,e_ev_organization_id_missing,7044883,Let's Encrypt,3264105
+NA,e_ev_orgid_inconsistent_subj_and_ext,7044883,Let's Encrypt,3264105
+NA,e_ev_valid_time_too_long,7044871,Let's Encrypt,3264105
+NA,e_invalid_ca_certificate_policies,7044850,Let's Encrypt,3264105
+NA,e_sub_ca_aia_missing,7044850,Let's Encrypt,3264105
+NA,e_sub_ca_certificate_policies_missing,7044850,Let's Encrypt,3264105
+NA,e_sub_ca_crl_distribution_points_missing,7044850,Let's Encrypt,3264105
+NA,n_mp_allowed_eku,7044850,Let's Encrypt,3264105
+NA,n_sub_ca_eku_missing,7044850,Let's Encrypt,3264105
+NA,w_sub_ca_aia_does_not_contain_issuing_ca_url,7044850,Let's Encrypt,3264105
+NA,w_sub_ca_aia_missing,7044850,Let's Encrypt,3264105
+NA,e_qcstatem_qccompliance_valid,7044706,Let's Encrypt,3264105
+NA,e_cabf_org_identifier_psd_vat_has_state,7044531,Let's Encrypt,3264105
+NA,e_rsa_allowed_ku_ca,7044385,Let's Encrypt,3264105
+NA,e_rsa_allowed_ku_no_encipherment_ca,7044385,Let's Encrypt,3264105
+NA,e_root_ca_key_usage_must_be_critical,7044253,Let's Encrypt,3264105
+NA,e_ca_crl_sign_not_set,7044246,Let's Encrypt,3264105
+NA,e_ca_key_cert_sign_not_set,7044246,Let's Encrypt,3264105
+NA,e_ca_key_usage_not_critical,7044246,Let's Encrypt,3264105
+NA,n_ca_digital_signature_not_set,7044246,Let's Encrypt,3264105
+NA,e_ca_is_ca,7044197,Let's Encrypt,3264105
+NA,e_qcstatem_qcretentionperiod_valid,7044166,Let's Encrypt,3264105
+NA,e_old_root_ca_rsa_mod_less_than_2048_bits,7044164,Let's Encrypt,3264105
+NA,e_qcstatem_qcpds_valid,7044141,Let's Encrypt,3264105
+NA,w_qcstatem_qcpds_lang_case,7044141,Let's Encrypt,3264105
+NA,e_qcstatem_etsi_present_qcs_critical,7044098,Let's Encrypt,3264105
+NA,e_qcstatem_etsi_type_as_statem,7044098,Let's Encrypt,3264105
+NA,e_qcstatem_mandatory_etsi_statems,7044098,Let's Encrypt,3264105
+NA,e_qcstatem_qctype_valid,7044098,Let's Encrypt,3264105
+NA,w_qcstatem_qctype_web,7044098,Let's Encrypt,3264105
+NA,e_old_sub_cert_rsa_mod_less_than_1024_bits,7043192,Let's Encrypt,3264105
+NA,e_ext_cert_policy_explicit_text_ia5_string,7043124,Let's Encrypt,3263256
+NA,e_ext_cert_policy_explicit_text_too_long,7043124,Let's Encrypt,3263256
+NA,w_ext_cert_policy_explicit_text_includes_control,7043124,Let's Encrypt,3263256
+NA,w_ext_cert_policy_explicit_text_not_nfc,7043124,Let's Encrypt,3263256
+NA,w_ext_cert_policy_explicit_text_not_utf8,7043124,Let's Encrypt,3263256
+NA,e_subject_postal_code_max_length,7043034,Let's Encrypt,3264105
+NA,e_subject_street_address_max_length,7042321,Let's Encrypt,3264105
+NA,w_sub_cert_sha1_expiration_too_long,7038520,Let's Encrypt,3264105
+NA,e_generalized_time_does_not_include_seconds,7035489,Let's Encrypt,3264105
+NA,e_generalized_time_includes_fraction_seconds,7035489,Let's Encrypt,3264105
+NA,e_generalized_time_not_in_zulu,7035489,Let's Encrypt,3264105
+NA,e_ext_ian_dns_not_ia5_string,7032418,Let's Encrypt,3264105
+NA,e_ext_ian_empty_name,7032418,Let's Encrypt,3264105
+NA,e_ext_ian_no_entries,7032418,Let's Encrypt,3264105
+NA,e_ext_ian_rfc822_format_invalid,7032418,Let's Encrypt,3264105
+NA,e_ext_ian_space_dns_name,7032418,Let's Encrypt,3264105
+NA,e_ext_ian_uri_format_invalid,7032418,Let's Encrypt,3264105
+NA,e_ext_ian_uri_host_not_fqdn_or_ip,7032418,Let's Encrypt,3264105
+NA,e_ext_ian_uri_not_ia5,7032418,Let's Encrypt,3264105
+NA,e_ext_ian_uri_relative,7032418,Let's Encrypt,3264105
+NA,e_ian_bare_wildcard,7032418,Let's Encrypt,3264105
+NA,e_ian_dns_name_includes_null_char,7032418,Let's Encrypt,3264105
+NA,e_ian_dns_name_starts_with_period,7032418,Let's Encrypt,3264105
+NA,e_ian_wildcard_not_first,7032418,Let's Encrypt,3264105
+NA,w_ext_ian_critical,7032418,Let's Encrypt,3264105
+NA,w_ian_iana_pub_suffix_empty,7032418,Let's Encrypt,3264105
+NA,e_ev_invalid_business_category,7025693,Let's Encrypt,3264105
+NA,e_ev_business_category_missing,7025692,Let's Encrypt,3264105
+NA,e_ev_country_name_missing,7025692,Let's Encrypt,3264105
+NA,e_ev_not_wildcard,7025692,Let's Encrypt,3264105
+NA,e_ev_organization_name_missing,7025692,Let's Encrypt,3264105
+NA,e_ev_san_ip_address_present,7025692,Let's Encrypt,3264105
+NA,e_ev_serial_number_missing,7025692,Let's Encrypt,3264105
+NA,e_subject_dn_serial_number_max_length,7022330,Let's Encrypt,3264105
+NA,e_subject_dn_serial_number_not_printable_string,7022330,Let's Encrypt,3264105
+NA,e_subject_email_max_length,7005614,Let's Encrypt,3264105
+NA,e_ca_country_name_invalid,6999790,Let's Encrypt,3264105
+NA,e_root_ca_extended_key_usage_present,6995020,Let's Encrypt,3264105
+NA,e_root_ca_key_usage_present,6995020,Let's Encrypt,3264105
+NA,w_root_ca_basic_constraints_path_len_constraint_field_present,6995020,Let's Encrypt,3264105
+NA,w_root_ca_contains_cert_policy,6995020,Let's Encrypt,3264105
+NA,e_basic_constraints_not_critical,6994903,Let's Encrypt,3264105
+NA,e_ca_common_name_missing,6994903,Let's Encrypt,3264105
+NA,e_ca_country_name_missing,6994903,Let's Encrypt,3264105
+NA,e_ca_key_usage_missing,6994903,Let's Encrypt,3264105
+NA,e_ca_organization_name_missing,6994903,Let's Encrypt,3264105
+NA,e_ca_subject_field_empty,6994903,Let's Encrypt,3264105
+NA,e_ext_subject_key_identifier_missing_ca,6994903,Let's Encrypt,3264105
+NA,e_subj_orgunit_in_ca_cert,6994903,Let's Encrypt,3264105
+NA,e_subject_contains_organizational_unit_name_and_no_organization_name,6983030,Let's Encrypt,3264105
+NA,e_subject_organizational_unit_name_max_length,6983017,Let's Encrypt,3264105
+NA,e_subject_locality_name_max_length,6407818,Let's Encrypt,3264105
+NA,e_cert_policy_ov_requires_province_or_locality,6360319,Let's Encrypt,3264105
+NA,e_cab_ov_requires_org,6360318,Let's Encrypt,3264105
+NA,e_cert_policy_ov_requires_country,6360318,Let's Encrypt,3264105
+NA,e_subject_state_name_max_length,6309234,Let's Encrypt,3264105
+NA,e_subject_dn_country_not_printable_string,6263424,Let's Encrypt,3264105
+NA,e_subject_organization_name_max_length,6260889,Let's Encrypt,3264105
+NA,e_mp_ecdsa_signature_encoding_correct,4920103,Let's Encrypt,2702680
+NA,n_ecdsa_ee_invalid_ku,4699575,Let's Encrypt,2700062
+NA,e_ecdsa_allowed_ku,4699431,Let's Encrypt,2700062
+NA,e_ec_improper_curves,4699348,Let's Encrypt,2700062
+NA,e_mp_ecdsa_pub_key_encoding_correct,4699347,Let's Encrypt,2700062
+NA,e_crl_distrib_points_not_http,3849034,Let's Encrypt,3264105
+NA,e_crlissuer_must_not_be_present_in_cdp,3849034,Let's Encrypt,3264105
+NA,e_sub_cert_crl_distribution_points_does_not_contain_url,3849030,Let's Encrypt,3264105
+NA,e_sub_cert_crl_distribution_points_marked_critical,3849030,Let's Encrypt,3264105
+NA,e_distribution_point_incomplete,3848975,Let's Encrypt,3264105
+NA,w_distribution_point_missing_ldap_or_uri,3848975,Let's Encrypt,3264105
+NA,w_ext_crl_distribution_marked_critical,3848975,Let's Encrypt,3264105
+NA,e_rsa_allowed_ku_ee,2459455,Google Trust Services,1448630
+NA,e_rsa_mod_less_than_2048_bits,2348668,Google Trust Services,1448630
+NA,e_rsa_public_exponent_not_odd,2345687,Google Trust Services,1448630
+NA,e_rsa_public_exponent_too_small,2345687,Google Trust Services,1448630
+NA,w_rsa_mod_factors_smaller_than_752,2345687,Google Trust Services,1448630
+NA,w_rsa_mod_not_odd,2345687,Google Trust Services,1448630
+NA,w_rsa_public_exponent_not_in_range,2345687,Google Trust Services,1448630
+NA,e_mp_exponent_cannot_be_one,2345620,Google Trust Services,1448630
+NA,e_mp_modulus_must_be_2048_bits_or_more,2345620,Google Trust Services,1448630
+NA,e_mp_modulus_must_be_divisible_by_8,2345620,Google Trust Services,1448630
+NA,e_rsa_exp_negative,2345620,Google Trust Services,1448630
+NA,e_rsa_fermat_factorization,2345620,Google Trust Services,1448630
+NA,e_rsa_no_public_key,2345620,Google Trust Services,1448630
+NA,e_spki_rsa_encryption_parameter_not_null,2345620,Google Trust Services,1448630
+NA,e_tbs_signature_rsa_encryption_parameter_not_null,2124928,Google Trust Services,1395247
+NA,e_cab_dv_conflicts_with_locality,824767,DigiCert Inc,378769
+NA,e_cab_dv_conflicts_with_org,824767,DigiCert Inc,378769
+NA,e_cab_dv_conflicts_with_postal,824767,DigiCert Inc,378769
+NA,e_cab_dv_conflicts_with_province,824767,DigiCert Inc,378769
+NA,e_cab_dv_conflicts_with_street,824767,DigiCert Inc,378769
+NA,e_cab_dv_subject_invalid_values,824767,DigiCert Inc,378769
+NA,e_sub_cert_basic_constraints_not_critical,139792,,37906
+NA,e_sub_cert_not_is_ca,134630,,36980
+NA,e_ext_cert_policy_duplicate,119500,,38280
+NA,e_invalid_cps_uri,119500,,38280
+NA,e_policy_qualifiers_other_than_cps_not_permitted,119500,,38280
+NA,w_ext_cert_policy_contains_noticeref,119500,,38280
+NA,w_sub_cert_certificate_policies_marked_critical,119500,,38280
+NA,e_aia_ca_issuers_must_have_http_only,119117,,38031
+NA,w_ext_aia_access_location_missing,119116,,38031
+NA,e_aia_ocsp_must_have_http_only,118921,,38253
+NA,e_aia_must_contain_permitted_access_method,118161,,38030
+NA,e_aia_unique_access_locations,118161,,38030
+NA,e_sub_cert_aia_marked_critical,118161,,38030
+NA,w_sub_cert_aia_contains_internal_names,118161,,38030
+NA,e_ext_aia_marked_critical,118160,,38030
+NA,e_key_usage_and_extended_key_usage_inconsistent,114739,,37695
+NA,e_eku_critical,114530,,37691
+NA,e_sub_cert_eku_check,114530,,37691
+NA,w_sub_cert_eku_extra_values,114530,,37691
+NA,e_underscore_present_with_too_long_validity,113376,,37506
+NA,e_dnsname_hyphen_in_sld,112901,,37821
+NA,e_dnsname_underscore_in_sld,112901,,37821
+NA,w_dnsname_underscore_in_trd,112901,,37821
+NA,n_dnsname_wildcard_left_of_public_suffix,112846,,37819
+NA,e_rfc_dnsname_hyphen_in_sld,111725,,37774
+NA,e_rfc_dnsname_underscore_in_sld,111725,,37774
+NA,w_rfc_dnsname_underscore_in_trd,111725,,37774
+NA,e_dnsname_bad_character_in_label,110901,,37499
+NA,e_dnsname_contains_bare_iana_suffix,110901,,37499
+NA,e_dnsname_contains_prohibited_reserved_label,110901,,37499
+NA,e_dnsname_empty_label,110901,,37499
+NA,e_dnsname_label_too_long,110901,,37499
+NA,e_dnsname_not_valid_tld,110901,,37499
+NA,e_no_underscores_before_1_6_2,110901,,37499
+NA,e_underscore_not_permissible_in_dnsname,110901,,37499
+NA,e_underscore_permissible_in_dnsname_if_valid_when_replaced,110901,,37499
+NA,e_invalid_subject_rdn_order,110891,,37499
+NA,e_sub_cert_country_name_must_appear,110891,,37499
+NA,e_sub_cert_locality_name_must_appear,110891,,37499
+NA,e_sub_cert_locality_name_must_not_appear,110891,,37499
+NA,e_sub_cert_postal_code_must_not_appear,110891,,37499
+NA,e_sub_cert_province_must_appear,110891,,37499
+NA,e_sub_cert_province_must_not_appear,110891,,37499
+NA,e_sub_cert_street_address_should_not_exist,110891,,37499
+NA,e_sub_cert_valid_time_longer_than_39_months,110891,,37499
+NA,e_sub_cert_valid_time_longer_than_825_days,110891,,37499
+NA,w_ext_subject_key_identifier_not_recommended_subscriber,110891,,37499
+NA,w_extra_subject_common_names,110891,,37499
+NA,w_sub_cert_aia_does_not_contain_issuing_ca_url,110891,,37499
+NA,w_subject_common_name_included,110891,,37499
+NA,e_rfc_dnsname_empty_label,110833,,37497
+NA,e_rfc_dnsname_label_too_long,110833,,37497
+NA,e_empty_sct_list,110823,,37497
+NA,n_contains_redacted_dnsname,110823,,37497
+NA,w_ct_sct_policy_count_unsatisfied,110823,,37497
+NA,e_sub_cert_key_usage_cert_sign_bit_set,107147,,35801
+NA,e_sub_cert_key_usage_crl_sign_bit_set,107147,,35801
+NA,e_ext_key_usage_cert_sign_without_ca,106418,,35769
+NA,e_ext_key_usage_without_bits,106418,,35769
+NA,e_incorrect_ku_encoding,106418,,35769
+NA,e_key_usage_incorrect_length,106418,,35769
+NA,e_superfluous_ku_encoding,106418,,35769
+NA,w_ext_key_usage_not_critical,106418,,35769
+NA,e_sub_cert_eku_server_auth_client_auth_missing,89719,,18034
+NA,w_eku_critical_improperly,89651,,18032
+NA,e_ext_san_dns_name_too_long,82480,testexample,15579
+NA,e_ext_san_directory_name_present,81788,testexample,15579
+NA,e_ext_san_edi_party_name_present,81788,testexample,15579
+NA,e_ext_san_other_name_present,81788,testexample,15579
+NA,e_ext_san_registered_id_present,81788,testexample,15579
+NA,e_ext_san_rfc822_name_present,81788,testexample,15579
+NA,e_ext_san_uniform_resource_identifier_present,81788,testexample,15579
+NA,w_ext_san_critical_with_subject_dn,81788,testexample,15579
+NA,e_ext_san_dns_not_ia5_string,81786,testexample,15579
+NA,e_ext_san_empty_name,81786,testexample,15579
+NA,e_ext_san_no_entries,81786,testexample,15579
+NA,e_ext_san_not_critical_without_subject,81786,testexample,15579
+NA,e_ext_san_rfc822_format_invalid,81786,testexample,15579
+NA,e_ext_san_space_dns_name,81786,testexample,15579
+NA,e_ext_san_uri_format_invalid,81786,testexample,15579
+NA,e_ext_san_uri_host_not_fqdn_or_ip,81786,testexample,15579
+NA,e_ext_san_uri_not_ia5,81786,testexample,15579
+NA,e_ext_san_uri_relative,81786,testexample,15579
+NA,e_international_dns_name_not_nfc,81786,testexample,15579
+NA,e_international_dns_name_not_unicode,81786,testexample,15579
+NA,e_san_bare_wildcard,81786,testexample,15579
+NA,e_san_dns_name_includes_null_char,81786,testexample,15579
+NA,e_san_dns_name_starts_with_period,81786,testexample,15579
+NA,e_san_wildcard_not_first,81786,testexample,15579
+NA,n_san_dns_name_duplicate,81786,testexample,15579
+NA,n_san_iana_pub_suffix_empty,81786,testexample,15579
+NA,e_path_len_constraint_improperly_included,55488,"Japan Registry Services Co., Ltd.",11440
+NA,e_path_len_constraint_zero_or_less,55488,"Japan Registry Services Co., Ltd.",11440
+NA,e_subject_common_name_not_from_san,55433,testexample,15579
+NA,e_subject_common_name_not_exactly_from_san,55431,testexample,15579
+NA,e_ext_san_missing,50132,testexample,15579
+NA,e_organizational_unit_name_prohibited,50132,testexample,15579
+NA,e_sub_cert_aia_does_not_contain_ocsp_url,50132,testexample,15579
+NA,e_sub_cert_aia_missing,50132,testexample,15579
+NA,e_sub_cert_cert_policy_empty,50132,testexample,15579
+NA,e_sub_cert_certificate_policies_missing,50132,testexample,15579
+NA,e_sub_cert_eku_missing,50132,testexample,15579
+NA,e_tls_server_cert_valid_time_longer_than_398_days,50132,testexample,15579
+NA,n_subject_common_name_included,50132,testexample,15579
+NA,w_tls_server_cert_valid_time_longer_than_397_days,50132,testexample,15579
+NA,w_ext_subject_key_identifier_missing_sub_cert,50064,testexample,15579
+NA,e_ext_subject_key_identifier_critical,41285,,9170
+NA,e_issuer_dn_country_not_printable_string,40893,,37752
+NA,e_ext_authority_key_identifier_critical,39199,,10002
+NA,e_mp_authority_key_identifier_correct,39199,,10002
+NA,e_ext_duplicate_extension,22075,,3201
+NA,e_subject_common_name_max_length,9918,Internet Widgits Pty Ltd,4030
+NA,e_ext_san_contains_reserved_ip,4791,SomeOrganization,1110
+NA,e_subject_contains_reserved_ip,4791,SomeOrganization,1110
+NA,e_algorithm_identifier_improper_encoding,68,"Cloudflare, Inc.",53
+NA,e_br_prohibit_dsa_usage,68,"Cloudflare, Inc.",53
+NA,e_dnsname_left_label_wildcard_correct,68,"Cloudflare, Inc.",53
+NA,e_dnsname_wildcard_only_in_left_label,68,"Cloudflare, Inc.",53
+NA,e_duplicate_subject_attribs,68,"Cloudflare, Inc.",53
+NA,e_invalid_certificate_version,68,"Cloudflare, Inc.",53
+NA,e_public_key_type_not_allowed,68,"Cloudflare, Inc.",53
+NA,e_signature_algorithm_not_supported,68,"Cloudflare, Inc.",53
+NA,e_sub_cert_or_sub_ca_using_sha1,68,"Cloudflare, Inc.",53
+NA,e_subject_contains_noninformational_value,68,"Cloudflare, Inc.",53
+NA,e_subject_country_not_iso,68,"Cloudflare, Inc.",53
+NA,e_subject_rdns_correct_encoding,68,"Cloudflare, Inc.",53
+NA,e_utc_time_does_not_include_seconds,19,Dell Inc.,4
+NA,e_utc_time_not_in_zulu,19,Dell Inc.,4
+pass,w_multiple_issuer_rdn,7044962,Let's Encrypt,3264105
+pass,n_multiple_subject_rdn,7044953,Let's Encrypt,3264105
+pass,e_subject_not_dn,7044930,Let's Encrypt,3264105
+pass,e_utc_time_does_not_include_seconds,7044911,Let's Encrypt,3264105
+pass,e_utc_time_not_in_zulu,7044911,Let's Encrypt,3264105
+pass,e_wrong_time_format_pre2050,7044884,Let's Encrypt,3264105
+pass,e_subject_dn_not_printable_characters,7044871,Let's Encrypt,3264105
+pass,w_issuer_dn_leading_whitespace,7044855,Let's Encrypt,3264105
+pass,w_subject_dn_leading_whitespace,7044850,Let's Encrypt,3264105
+pass,w_subject_dn_trailing_whitespace,7044838,Let's Encrypt,3264105
+pass,w_issuer_dn_trailing_whitespace,7044836,Let's Encrypt,3264105
+pass,e_subject_printable_string_badalpha,7044758,Let's Encrypt,3264105
+pass,e_cert_extensions_version_not_3,7044741,Let's Encrypt,3264105
+pass,e_serial_number_longer_than_20_octets,7044718,Let's Encrypt,3264105
+pass,e_validity_time_not_positive,7044045,Let's Encrypt,3264105
+pass,e_subject_empty_without_san,7043787,Let's Encrypt,3264105
+pass,e_issuer_field_empty,7043782,Let's Encrypt,3264105
+pass,e_cert_contains_unique_identifier,7043776,Let's Encrypt,3264105
+pass,e_cert_ext_invalid_der,7043776,Let's Encrypt,3264105
+pass,e_cert_unique_identifier_version_not_2_or_3,7043776,Let's Encrypt,3264105
+pass,e_cert_sig_alg_not_match_tbs_sig_alg,7043748,Let's Encrypt,3264105
+pass,e_public_key_type_not_allowed,7040927,Let's Encrypt,3264105
+pass,e_dnsname_left_label_wildcard_correct,7040922,Let's Encrypt,3264105
+pass,e_dnsname_wildcard_only_in_left_label,7040832,Let's Encrypt,3264105
+pass,e_signature_algorithm_not_supported,7040476,Let's Encrypt,3264105
+pass,e_serial_number_not_positive,7040449,Let's Encrypt,3264105
+pass,e_subj_country_not_uppercase,7038645,Let's Encrypt,3264105
+pass,e_subject_contains_reserved_ip,7038611,Let's Encrypt,3264105
+pass,e_ext_san_contains_reserved_ip,7038455,Let's Encrypt,3264105
+pass,e_subject_country_not_iso,7035390,Let's Encrypt,3264105
+pass,e_subject_common_name_max_length,7035017,Let's Encrypt,3264102
+pass,e_subject_contains_noninformational_value,7034694,Let's Encrypt,3264105
+pass,e_sub_cert_or_sub_ca_using_sha1,7030972,Let's Encrypt,3264094
+pass,e_prohibit_dsa_usage,7025509,Let's Encrypt,3263946
+pass,e_ext_duplicate_extension,7022858,Let's Encrypt,3264105
+pass,e_invalid_certificate_version,7016316,Let's Encrypt,3264105
+pass,e_ext_authority_key_identifier_no_key_identifier,7006445,Let's Encrypt,3264105
+pass,e_ext_authority_key_identifier_critical,7005756,Let's Encrypt,3264105
+pass,e_issuer_dn_country_not_printable_string,7004052,Let's Encrypt,3264105
+pass,e_ext_subject_key_identifier_critical,7003671,Let's Encrypt,3264105
+pass,e_mp_rsassa-pss_in_spki,6994423,Let's Encrypt,3261868
+pass,e_path_len_constraint_zero_or_less,6989468,Let's Encrypt,3264105
+pass,e_path_len_constraint_improperly_included,6989334,Let's Encrypt,3264105
+pass,e_mp_authority_key_identifier_correct,6983247,Let's Encrypt,3264105
+pass,e_algorithm_identifier_improper_encoding,6965873,Let's Encrypt,3260387
+pass,e_br_prohibit_dsa_usage,6965873,Let's Encrypt,3260387
+pass,e_san_dns_name_includes_null_char,6963181,Let's Encrypt,3264105
+pass,e_san_dns_name_starts_with_period,6963181,Let's Encrypt,3264105
+pass,e_ext_san_empty_name,6963170,Let's Encrypt,3264105
+pass,e_ext_san_not_critical_without_subject,6963170,Let's Encrypt,3264105
+pass,e_ext_san_rfc822_format_invalid,6963170,Let's Encrypt,3264105
+pass,e_ext_san_space_dns_name,6963170,Let's Encrypt,3264105
+pass,e_ext_san_dns_not_ia5_string,6963169,Let's Encrypt,3264105
+pass,e_ext_san_no_entries,6963167,Let's Encrypt,3264105
+pass,e_san_bare_wildcard,6963165,Let's Encrypt,3264105
+pass,e_san_wildcard_not_first,6963162,Let's Encrypt,3264105
+pass,n_san_dns_name_duplicate,6963083,Let's Encrypt,3264105
+pass,e_international_dns_name_not_unicode,6963058,Let's Encrypt,3264105
+pass,e_ext_san_uri_format_invalid,6962988,Let's Encrypt,3264105
+pass,e_ext_san_uri_not_ia5,6962988,Let's Encrypt,3264105
+pass,e_ext_san_uri_relative,6962988,Let's Encrypt,3264105
+pass,e_ext_san_uri_host_not_fqdn_or_ip,6962986,Let's Encrypt,3264105
+pass,w_ext_san_critical_with_subject_dn,6962979,Let's Encrypt,3264105
+pass,e_ext_san_directory_name_present,6962619,Let's Encrypt,3264105
+pass,e_ext_san_edi_party_name_present,6962619,Let's Encrypt,3264105
+pass,e_ext_san_registered_id_present,6962619,Let's Encrypt,3264105
+pass,e_ext_san_uniform_resource_identifier_present,6962614,Let's Encrypt,3264105
+pass,e_ext_san_rfc822_name_present,6962522,Let's Encrypt,3264105
+pass,e_ext_san_other_name_present,6962512,Let's Encrypt,3264105
+pass,e_ext_san_dns_name_too_long,6962443,Let's Encrypt,3264105
+pass,e_ext_san_missing,6961170,Let's Encrypt,3264105
+pass,n_san_iana_pub_suffix_empty,6960234,Let's Encrypt,3264104
+pass,w_eku_critical_improperly,6955309,Let's Encrypt,3264105
+pass,w_ext_subject_key_identifier_missing_sub_cert,6954236,Let's Encrypt,3264105
+pass,e_sub_cert_eku_missing,6954137,Let's Encrypt,3264105
+pass,e_international_dns_name_not_nfc,6952719,Let's Encrypt,3263594
+pass,e_ext_key_usage_without_bits,6938503,Let's Encrypt,3264105
+pass,e_ext_key_usage_cert_sign_without_ca,6938394,Let's Encrypt,3264105
+pass,e_superfluous_ku_encoding,6938267,Let's Encrypt,3264105
+pass,e_key_usage_incorrect_length,6938235,Let's Encrypt,3264105
+pass,e_incorrect_ku_encoding,6938210,Let's Encrypt,3264105
+pass,e_sub_cert_key_usage_crl_sign_bit_set,6937303,Let's Encrypt,3264105
+pass,e_sub_cert_key_usage_cert_sign_bit_set,6937176,Let's Encrypt,3264105
+pass,e_tls_server_cert_valid_time_longer_than_398_days,6934294,Let's Encrypt,3260351
+pass,n_contains_redacted_dnsname,6934144,Let's Encrypt,3264105
+pass,e_rfc_dnsname_label_too_long,6933648,Let's Encrypt,3264105
+pass,e_rfc_dnsname_empty_label,6933647,Let's Encrypt,3264105
+pass,e_dnsname_label_too_long,6932956,Let's Encrypt,3264105
+pass,w_extra_subject_common_names,6932954,Let's Encrypt,3264105
+pass,e_dnsname_empty_label,6932952,Let's Encrypt,3264105
+pass,e_dnsname_contains_bare_iana_suffix,6932948,Let's Encrypt,3264105
+pass,e_rfc_dnsname_hyphen_in_sld,6932756,Let's Encrypt,3264104
+pass,e_rfc_dnsname_underscore_in_sld,6932756,Let's Encrypt,3264104
+pass,w_rfc_dnsname_underscore_in_trd,6932756,Let's Encrypt,3264104
+pass,e_empty_sct_list,6932613,Let's Encrypt,3264105
+pass,e_dnsname_bad_character_in_label,6932207,Let's Encrypt,3264105
+pass,w_ext_key_usage_not_critical,6931919,Let's Encrypt,3264105
+pass,e_dnsname_hyphen_in_sld,6931581,Let's Encrypt,3264104
+pass,w_dnsname_underscore_in_trd,6931579,Let's Encrypt,3264104
+pass,e_dnsname_underscore_in_sld,6931578,Let's Encrypt,3264104
+pass,n_dnsname_wildcard_left_of_public_suffix,6930931,Let's Encrypt,3264104
+pass,e_key_usage_and_extended_key_usage_inconsistent,6929581,Let's Encrypt,3264105
+pass,e_sub_cert_postal_code_must_not_appear,6929498,Let's Encrypt,3264062
+pass,e_sub_cert_street_address_should_not_exist,6929498,Let's Encrypt,3264062
+pass,e_sub_cert_locality_name_must_not_appear,6929491,Let's Encrypt,3264062
+pass,e_sub_cert_province_must_not_appear,6929490,Let's Encrypt,3264062
+pass,e_sub_cert_country_name_must_appear,6928789,Let's Encrypt,3264062
+pass,e_dnsname_not_valid_tld,6927649,Let's Encrypt,3264105
+pass,e_sub_cert_locality_name_must_appear,6927558,Let's Encrypt,3264062
+pass,e_sub_cert_province_must_appear,6927558,Let's Encrypt,3264062
+pass,e_sub_cert_valid_time_longer_than_39_months,6926810,Let's Encrypt,3264080
+pass,e_ext_aia_marked_critical,6926807,Let's Encrypt,3264105
+pass,e_sub_cert_aia_missing,6926441,Let's Encrypt,3264105
+pass,e_sub_cert_aia_marked_critical,6926440,Let's Encrypt,3264105
+pass,w_sub_cert_aia_contains_internal_names,6926182,Let's Encrypt,3264105
+pass,w_ext_aia_access_location_missing,6925812,Let's Encrypt,3264105
+pass,e_ext_cert_policy_duplicate,6925442,Let's Encrypt,3264105
+pass,w_sub_cert_aia_does_not_contain_issuing_ca_url,6925356,Let's Encrypt,3264105
+pass,w_ext_cert_policy_contains_noticeref,6925256,Let's Encrypt,3264105
+pass,e_sub_cert_cert_policy_empty,6925206,Let's Encrypt,3264105
+pass,e_sub_cert_certificate_policies_missing,6925206,Let's Encrypt,3264105
+pass,w_sub_cert_certificate_policies_marked_critical,6925206,Let's Encrypt,3264105
+pass,e_sub_cert_valid_time_longer_than_825_days,6923095,Let's Encrypt,3263681
+pass,e_underscore_not_permissible_in_dnsname,6921121,Let's Encrypt,3262821
+pass,w_ct_sct_policy_count_unsatisfied,6916566,Let's Encrypt,3263290
+pass,e_sub_cert_not_is_ca,6909949,Let's Encrypt,3264105
+pass,e_subject_common_name_not_exactly_from_san,6908366,Let's Encrypt,3258085
+pass,e_organizational_unit_name_prohibited,6899467,Let's Encrypt,3254949
+pass,e_dnsname_contains_prohibited_reserved_label,6896242,Let's Encrypt,3257774
+pass,e_duplicate_subject_attribs,6875353,Let's Encrypt,3247547
+pass,e_subject_rdns_correct_encoding,6875331,Let's Encrypt,3247547
+pass,w_tls_server_cert_valid_time_longer_than_397_days,6861192,Let's Encrypt,3260351
+pass,e_invalid_subject_rdn_order,6859332,Let's Encrypt,3247547
+pass,e_eku_critical,6859170,Let's Encrypt,3247547
+pass,e_sub_cert_eku_check,6858494,Let's Encrypt,3247547
+pass,e_aia_unique_access_locations,6858488,Let's Encrypt,3247547
+pass,e_aia_must_contain_permitted_access_method,6858487,Let's Encrypt,3247547
+pass,e_aia_ca_issuers_must_have_http_only,6858146,Let's Encrypt,3247547
+pass,e_aia_ocsp_must_have_http_only,6858029,Let's Encrypt,3247547
+pass,e_invalid_cps_uri,6857831,Let's Encrypt,3247547
+pass,e_policy_qualifiers_other_than_cps_not_permitted,6857824,Let's Encrypt,3247547
+pass,e_sub_cert_basic_constraints_not_critical,6834710,Let's Encrypt,3247547
+pass,e_cab_dv_conflicts_with_locality,6220200,Let's Encrypt,3264105
+pass,e_cab_dv_conflicts_with_org,6220200,Let's Encrypt,3264105
+pass,e_cab_dv_conflicts_with_postal,6220200,Let's Encrypt,3264105
+pass,e_cab_dv_conflicts_with_province,6220200,Let's Encrypt,3264105
+pass,e_cab_dv_conflicts_with_street,6220200,Let's Encrypt,3264105
+pass,e_cab_dv_subject_invalid_values,6161648,Let's Encrypt,3247547
+pass,e_tbs_signature_rsa_encryption_parameter_not_null,4918862,Let's Encrypt,2702680
+pass,e_rsa_exp_negative,4699347,Let's Encrypt,2700062
+pass,e_rsa_fermat_factorization,4699347,Let's Encrypt,2700062
+pass,e_rsa_no_public_key,4699347,Let's Encrypt,2700062
+pass,e_spki_rsa_encryption_parameter_not_null,4698161,Let's Encrypt,2700062
+pass,e_rsa_public_exponent_not_odd,4694382,Let's Encrypt,2700062
+pass,e_rsa_public_exponent_too_small,4694382,Let's Encrypt,2700062
+pass,w_rsa_mod_factors_smaller_than_752,4694382,Let's Encrypt,2700062
+pass,w_rsa_mod_not_odd,4694382,Let's Encrypt,2700062
+pass,w_rsa_public_exponent_not_in_range,4694376,Let's Encrypt,2700062
+pass,e_rsa_mod_less_than_2048_bits,4692005,Let's Encrypt,2700062
+pass,e_mp_exponent_cannot_be_one,4680439,Let's Encrypt,2699958
+pass,e_mp_modulus_must_be_divisible_by_8,4680349,Let's Encrypt,2699958
+pass,e_mp_modulus_must_be_2048_bits_or_more,4679111,Let's Encrypt,2699958
+pass,e_rsa_allowed_ku_ee,4585250,Let's Encrypt,2700062
+pass,e_distribution_point_incomplete,3195992,Google Trust Services,1554693
+pass,w_ext_crl_distribution_marked_critical,3195992,Google Trust Services,1554693
+pass,w_distribution_point_missing_ldap_or_uri,3195773,Google Trust Services,1554693
+pass,e_sub_cert_crl_distribution_points_marked_critical,3195351,Google Trust Services,1554693
+pass,e_sub_cert_crl_distribution_points_does_not_contain_url,3195202,Google Trust Services,1554693
+pass,e_crlissuer_must_not_be_present_in_cdp,3164380,Google Trust Services,1554608
+pass,e_crl_distrib_points_not_http,3164234,Google Trust Services,1554608
+pass,e_ec_improper_curves,2345619,Google Trust Services,1448630
+pass,e_mp_ecdsa_pub_key_encoding_correct,2345371,Google Trust Services,1448630
+pass,n_ecdsa_ee_invalid_ku,2345287,Google Trust Services,1448630
+pass,e_ecdsa_allowed_ku,2344803,Google Trust Services,1448630
+pass,e_mp_ecdsa_signature_encoding_correct,2124720,Google Trust Services,1395247
+pass,e_subject_organization_name_max_length,784040,DigiCert Inc,378757
+pass,e_subject_dn_country_not_printable_string,781482,DigiCert Inc,378758
+pass,e_subject_state_name_max_length,735711,DigiCert Inc,352882
+pass,e_cab_ov_requires_org,684645,DigiCert Inc,370096
+pass,e_cert_policy_ov_requires_country,684645,DigiCert Inc,370096
+pass,e_cert_policy_ov_requires_province_or_locality,684643,DigiCert Inc,370096
+pass,e_subject_locality_name_max_length,637127,DigiCert Inc,375613
+pass,e_sub_cert_eku_server_auth_client_auth_missing,85709,Sectigo Limited,18101
+pass,w_sub_cert_eku_extra_values,70510,Sectigo Limited,18101
+pass,e_sub_cert_aia_does_not_contain_ocsp_url,67791,Sectigo Limited,18101
+pass,e_subject_organizational_unit_name_max_length,61925,testexample,15579
+pass,e_ca_subject_field_empty,50052,testexample,15579
+pass,e_ext_subject_key_identifier_missing_ca,49435,testexample,15579
+pass,e_subject_common_name_not_from_san,48730,,14277
+pass,w_root_ca_contains_cert_policy,48706,testexample,15579
+pass,w_root_ca_basic_constraints_path_len_constraint_field_present,48687,testexample,15579
+pass,e_root_ca_extended_key_usage_present,48265,testexample,15579
+pass,e_ca_organization_name_missing,45164,testexample,15579
+pass,e_ca_country_name_missing,43853,testexample,15579
+pass,e_ca_country_name_invalid,42398,testexample,15579
+pass,e_ca_common_name_missing,40431,testexample,15579
+pass,e_subject_email_max_length,39345,New Dream Network LLC dba Dreamhost,11141
+pass,e_basic_constraints_not_critical,34961,testexample,15579
+pass,e_subject_dn_serial_number_max_length,22637,DigiCert Inc,8585
+pass,e_subject_dn_serial_number_not_printable_string,22636,DigiCert Inc,8585
+pass,e_ev_country_name_missing,19275,DigiCert Inc,8585
+pass,e_ev_organization_name_missing,19275,DigiCert Inc,8585
+pass,e_ev_san_ip_address_present,19275,DigiCert Inc,8585
+pass,e_ev_serial_number_missing,19275,DigiCert Inc,8585
+pass,e_ev_business_category_missing,19274,DigiCert Inc,8585
+pass,e_ev_invalid_business_category,19267,DigiCert Inc,8578
+pass,e_ev_not_wildcard,19249,DigiCert Inc,8585
+pass,e_subject_contains_organizational_unit_name_and_no_organization_name,18964,New Dream Network LLC dba Dreamhost,11141
+pass,e_ext_ian_dns_not_ia5_string,12549,Unizeto Technologies S.A.,11417
+pass,e_ext_ian_empty_name,12549,Unizeto Technologies S.A.,11417
+pass,e_ext_ian_rfc822_format_invalid,12549,Unizeto Technologies S.A.,11417
+pass,e_ext_ian_space_dns_name,12549,Unizeto Technologies S.A.,11417
+pass,e_ian_bare_wildcard,12549,Unizeto Technologies S.A.,11417
+pass,e_ian_dns_name_includes_null_char,12549,Unizeto Technologies S.A.,11417
+pass,e_ian_dns_name_starts_with_period,12549,Unizeto Technologies S.A.,11417
+pass,e_ian_wildcard_not_first,12549,Unizeto Technologies S.A.,11417
+pass,w_ext_ian_critical,12549,Unizeto Technologies S.A.,11417
+pass,e_ext_ian_uri_format_invalid,12548,Unizeto Technologies S.A.,11417
+pass,e_ext_ian_uri_host_not_fqdn_or_ip,12548,Unizeto Technologies S.A.,11417
+pass,e_ext_ian_uri_not_ia5,12548,Unizeto Technologies S.A.,11417
+pass,e_ext_ian_uri_relative,12548,Unizeto Technologies S.A.,11417
+pass,w_ian_iana_pub_suffix_empty,12546,Unizeto Technologies S.A.,11417
+pass,e_ext_ian_no_entries,12539,Unizeto Technologies S.A.,11417
+pass,e_no_underscores_before_1_6_2,11542,COMODO CA Limited,2108
+pass,e_generalized_time_does_not_include_seconds,9472,ispgateway,3001
+pass,e_generalized_time_includes_fraction_seconds,9472,ispgateway,3001
+pass,e_generalized_time_not_in_zulu,9472,ispgateway,3001
+pass,n_subject_common_name_included,3373,My Company Ltd,2100
+pass,e_subj_orgunit_in_ca_cert,2857,ispgateway,1315
+pass,w_ext_subject_key_identifier_not_recommended_subscriber,2707,SSL Corporation,837
+pass,e_subject_street_address_max_length,2646,GlobalSign nv-sa,997
+pass,e_subject_postal_code_max_length,1933,SwissSign AG,402
+pass,w_ext_cert_policy_explicit_text_includes_control,1791,Let's Encrypt,849
+pass,w_ext_cert_policy_explicit_text_not_nfc,1791,Let's Encrypt,849
+pass,e_ext_cert_policy_explicit_text_too_long,1789,Let's Encrypt,849
+pass,e_ext_cert_policy_explicit_text_ia5_string,1783,Let's Encrypt,849
+pass,e_old_sub_cert_rsa_mod_less_than_1024_bits,1729,Parallels,514
+pass,w_ext_cert_policy_explicit_text_not_utf8,1578,Let's Encrypt,849
+pass,e_underscore_permissible_in_dnsname_if_valid_when_replaced,1387,Let's Encrypt,367
+pass,e_underscore_present_with_too_long_validity,1387,Let's Encrypt,367
+pass,e_qcstatem_etsi_present_qcs_critical,869,FNMT-RCM,680
+pass,e_qcstatem_etsi_type_as_statem,869,FNMT-RCM,680
+pass,e_qcstatem_qctype_valid,869,FNMT-RCM,680
+pass,w_qcstatem_qctype_web,869,FNMT-RCM,680
+pass,e_qcstatem_qcpds_valid,826,FNMT-RCM,680
+pass,w_qcstatem_qcpds_lang_case,826,FNMT-RCM,680
+pass,e_qcstatem_qcretentionperiod_valid,801,FNMT-RCM,680
+pass,w_subject_common_name_included,755,Sectigo Limited,460
+pass,e_ca_key_usage_missing,720,WatchGuard,284
+pass,e_ca_is_ca,715,WatchGuard,284
+pass,e_ca_key_cert_sign_not_set,715,WatchGuard,284
+pass,e_root_ca_key_usage_present,714,WatchGuard,284
+pass,n_ca_digital_signature_not_set,709,WatchGuard,284
+pass,e_rsa_allowed_ku_ca,576,WatchGuard,284
+pass,e_cabf_org_identifier_psd_vat_has_state,436,ACCV,387
+pass,e_ca_crl_sign_not_set,373,WatchGuard,284
+pass,w_sub_cert_sha1_expiration_too_long,277,Parallels,177
+pass,e_qcstatem_mandatory_etsi_statems,261,FNMT-RCM,72
+pass,e_qcstatem_qccompliance_valid,261,FNMT-RCM,72
+pass,e_ca_key_usage_not_critical,165,DirectAdmin Self-Signed,139
+pass,e_root_ca_key_usage_must_be_critical,161,DirectAdmin Self-Signed,139
+pass,e_ev_valid_time_too_long,96,COMODO CA Limited,16
+pass,e_ev_organization_id_missing,84,Firmaprofesional S.A.,36
+pass,e_ev_orgid_inconsistent_subj_and_ext,84,Firmaprofesional S.A.,36
+pass,e_old_root_ca_rsa_mod_less_than_2048_bits,47,"SWsoft, Inc.",11
+pass,e_old_sub_ca_rsa_mod_less_than_1024_bits,41,LiquidNet Ltd.,28
+pass,e_rsa_allowed_ku_no_encipherment_ca,27,,11
+pass,e_ext_subject_directory_attr_critical,22,行政院,21
+pass,e_cab_iv_requires_personal_name,15,DigiCert Inc,8
+pass,e_cert_policy_iv_requires_country,15,DigiCert Inc,8
+pass,e_cert_policy_iv_requires_province_or_locality,15,DigiCert Inc,8
+pass,e_ext_freshest_crl_marked_critical,7,,7
+pass,e_qcstatem_qclimitvalue_valid,4,NETLOCK Ltd.,4
+pass,e_ext_cert_policy_disallowed_any_policy_qualifier,4,Stormshield,3
+pass,e_subject_surname_max_length,3,"Cisco-Linksys, LLC",2
+pass,w_subject_surname_recommended_max_length,3,"Cisco-Linksys, LLC",2
+pass,n_mp_allowed_eku,3,IT,1
+pass,n_sub_ca_eku_missing,3,IT,1
+pass,n_sub_ca_eku_not_technically_constrained,3,IT,1
+pass,w_sub_ca_eku_critical,3,IT,1
+pass,e_onion_subject_validity_time_too_large,2,Hellenic Academic and Research Institutions CA,1
+pass,e_san_dns_name_onion_invalid,2,Hellenic Academic and Research Institutions CA,1
+pass,e_ca_invalid_eku,2,IT,1
+pass,e_sub_cert_given_name_surname_contains_correct_policy,1,StartCom Ltd.,1
+pass,e_subject_given_name_max_length,1,StartCom Ltd.,1
+pass,w_subject_given_name_recommended_max_length,1,StartCom Ltd.,1
+pass,e_ext_name_constraints_not_critical,1,,1
+pass,e_ext_name_constraints_not_in_ca,1,,1
+pass,e_ext_nc_intersects_reserved_ip,1,,1
+pass,e_name_constraint_empty,1,,1
+pass,e_name_constraint_maximum_not_absent,1,,1
+pass,e_name_constraint_minimum_non_zero,1,,1
+pass,e_name_constraint_not_fqdn,1,,1
+pass,w_name_constraint_on_edi_party_name,1,,1
+pass,w_name_constraint_on_registered_id,1,,1
+pass,w_name_constraint_on_x400,1,,1
+NE,e_underscore_permissible_in_dnsname_if_valid_when_replaced,6932679,Let's Encrypt,3263738
+NE,e_underscore_present_with_too_long_validity,6930204,Let's Encrypt,3263738
+NE,e_no_underscores_before_1_6_2,6922523,Let's Encrypt,3263188
+NE,e_subject_common_name_not_from_san,6922473,Let's Encrypt,3258085
+NE,e_sub_cert_aia_does_not_contain_ocsp_url,6874718,Let's Encrypt,3247547
+NE,n_subject_common_name_included,6874718,Let's Encrypt,3247547
+NE,e_sub_cert_eku_server_auth_client_auth_missing,6869539,Let's Encrypt,3247547
+NE,w_sub_cert_eku_extra_values,6859804,Let's Encrypt,3247547
+NE,e_duplicate_subject_attribs,169515,,28104
+NE,e_subject_rdns_correct_encoding,169515,,28104
+NE,e_organizational_unit_name_prohibited,92004,,21201
+NE,e_algorithm_identifier_improper_encoding,79026,testexample,15579
+NE,e_br_prohibit_dsa_usage,79026,testexample,15579
+NE,e_invalid_subject_rdn_order,74683,Sectigo Limited,18101
+NE,w_ext_subject_key_identifier_not_recommended_subscriber,74683,Sectigo Limited,18101
+NE,w_subject_common_name_included,74683,Sectigo Limited,18101
+NE,e_eku_critical,71247,Sectigo Limited,18101
+NE,e_sub_cert_eku_check,71247,Sectigo Limited,18101
+NE,e_sub_cert_basic_constraints_not_critical,69678,Sectigo Limited,18101
+NE,e_subject_common_name_not_exactly_from_san,69539,,17107
+NE,e_aia_must_contain_permitted_access_method,68318,Sectigo Limited,18101
+NE,e_aia_unique_access_locations,68318,Sectigo Limited,18101
+NE,e_aia_ocsp_must_have_http_only,68017,Sectigo Limited,18101
+NE,e_invalid_cps_uri,67633,Sectigo Limited,18101
+NE,e_policy_qualifiers_other_than_cps_not_permitted,67633,Sectigo Limited,18101
+NE,e_aia_ca_issuers_must_have_http_only,67572,Sectigo Limited,18101
+NE,e_cab_dv_subject_invalid_values,58552,Sectigo Limited,17543
+NE,e_tls_server_cert_valid_time_longer_than_398_days,50657,,10715
+NE,w_tls_server_cert_valid_time_longer_than_397_days,50657,,10715
+NE,e_mp_rsassa-pss_in_spki,50544,,9999
+NE,e_subj_orgunit_in_ca_cert,46750,testexample,15579
+NE,e_subject_contains_organizational_unit_name_and_no_organization_name,42915,testexample,15579
+NE,e_dnsname_contains_prohibited_reserved_label,37824,Sectigo Limited,9851
+NE,e_crl_distrib_points_not_http,31550,DigiCert Inc,5510
+NE,e_crlissuer_must_not_be_present_in_cdp,31550,DigiCert Inc,5510
+NE,e_prohibit_dsa_usage,19458,,2299
+NE,e_mp_exponent_cannot_be_one,18908,,2210
+NE,e_mp_modulus_must_be_2048_bits_or_more,18908,,2210
+NE,e_mp_modulus_must_be_divisible_by_8,18908,,2210
+NE,e_underscore_not_permissible_in_dnsname,12930,COMODO CA Limited,2179
+NE,e_sub_cert_or_sub_ca_using_sha1,11509,,1616
+NE,w_ct_sct_policy_count_unsatisfied,11018,COMODO CA Limited,1978
+NE,e_international_dns_name_not_nfc,10462,,2397
+NE,e_invalid_certificate_version,9360,,1253
+NE,e_sub_cert_valid_time_longer_than_825_days,8111,COMODO CA Limited,1474
+NE,e_ca_common_name_missing,5225,SomeOrganization,1306
+NE,e_rsa_public_exponent_not_odd,4898,SomeOrganization,791
+NE,e_rsa_public_exponent_too_small,4898,SomeOrganization,791
+NE,w_rsa_mod_factors_smaller_than_752,4898,SomeOrganization,791
+NE,w_rsa_mod_not_odd,4898,SomeOrganization,791
+NE,w_rsa_public_exponent_not_in_range,4898,SomeOrganization,791
+NE,e_sub_cert_country_name_must_appear,4578,COMODO CA Limited,699
+NE,e_sub_cert_locality_name_must_appear,4578,COMODO CA Limited,699
+NE,e_sub_cert_locality_name_must_not_appear,4578,COMODO CA Limited,699
+NE,e_sub_cert_postal_code_must_not_appear,4578,COMODO CA Limited,699
+NE,e_sub_cert_province_must_appear,4578,COMODO CA Limited,699
+NE,e_sub_cert_province_must_not_appear,4578,COMODO CA Limited,699
+NE,e_sub_cert_street_address_should_not_exist,4578,COMODO CA Limited,699
+NE,w_sub_cert_sha1_expiration_too_long,4392,Parallels,915
+NE,e_sub_cert_valid_time_longer_than_39_months,4335,COMODO CA Limited,638
+NE,e_dnsname_left_label_wildcard_correct,3972,SomeOrganization,651
+NE,e_dnsname_wildcard_only_in_left_label,3972,SomeOrganization,651
+NE,e_public_key_type_not_allowed,3972,SomeOrganization,651
+NE,e_subject_contains_noninformational_value,3972,SomeOrganization,651
+NE,e_subject_country_not_iso,3972,SomeOrganization,651
+NE,e_ext_san_missing,2648,Parallels,402
+NE,e_sub_cert_aia_missing,2648,Parallels,402
+NE,e_sub_cert_cert_policy_empty,2648,Parallels,402
+NE,e_sub_cert_certificate_policies_missing,2648,Parallels,402
+NE,e_sub_cert_eku_missing,2648,Parallels,402
+NE,e_mp_authority_key_identifier_correct,2603,SomeOrganization,857
+NE,e_empty_sct_list,1531,Thawte Consulting cc,160
+NE,e_ca_country_name_invalid,1324,SomeOrganization,650
+NE,e_ca_country_name_missing,1324,SomeOrganization,650
+NE,e_ca_organization_name_missing,1324,SomeOrganization,650
+NE,e_root_ca_extended_key_usage_present,1241,SomeOrganization,650
+NE,w_root_ca_basic_constraints_path_len_constraint_field_present,1241,SomeOrganization,650
+NE,w_root_ca_contains_cert_policy,1241,SomeOrganization,650
+NE,e_cert_contains_unique_identifier,1191,SomeOrganization,182
+NE,e_cert_ext_invalid_der,1191,SomeOrganization,182
+NE,e_cert_sig_alg_not_match_tbs_sig_alg,1191,SomeOrganization,182
+NE,e_cert_unique_identifier_version_not_2_or_3,1191,SomeOrganization,182
+NE,e_ext_san_contains_reserved_ip,1187,,333
+NE,e_subject_contains_reserved_ip,1187,,333
+NE,e_spki_rsa_encryption_parameter_not_null,1186,SomeOrganization,182
+NE,e_tbs_signature_rsa_encryption_parameter_not_null,1147,SomeOrganization,182
+NE,w_extra_subject_common_names,1112,Thawte Consulting cc,160
+NE,w_sub_cert_aia_does_not_contain_issuing_ca_url,1112,Thawte Consulting cc,160
+NE,e_dnsname_bad_character_in_label,1110,Thawte Consulting cc,160
+NE,e_dnsname_contains_bare_iana_suffix,1110,Thawte Consulting cc,160
+NE,e_dnsname_empty_label,1110,Thawte Consulting cc,160
+NE,e_dnsname_label_too_long,1110,Thawte Consulting cc,160
+NE,e_dnsname_not_valid_tld,1110,Thawte Consulting cc,160
+NE,n_dnsname_wildcard_left_of_public_suffix,1110,Thawte Consulting cc,160
+NE,e_ecdsa_allowed_ku,652,COMODO CA Limited,421
+NE,e_sub_cert_crl_distribution_points_does_not_contain_url,586,Thawte Consulting cc,155
+NE,e_sub_cert_crl_distribution_points_marked_critical,586,Thawte Consulting cc,155
+NE,e_ext_san_directory_name_present,560,"Snake Oil, Ltd",151
+NE,e_ext_san_edi_party_name_present,560,"Snake Oil, Ltd",151
+NE,e_ext_san_other_name_present,560,"Snake Oil, Ltd",151
+NE,e_ext_san_registered_id_present,560,"Snake Oil, Ltd",151
+NE,e_ext_san_rfc822_name_present,560,"Snake Oil, Ltd",151
+NE,e_ext_san_uniform_resource_identifier_present,560,"Snake Oil, Ltd",151
+NE,e_sub_cert_key_usage_cert_sign_bit_set,496,"GeoTrust, Inc.",66
+NE,e_sub_cert_key_usage_crl_sign_bit_set,496,"GeoTrust, Inc.",66
+NE,e_rfc_dnsname_empty_label,486,Thawte Consulting cc,153
+NE,e_rfc_dnsname_hyphen_in_sld,486,Thawte Consulting cc,153
+NE,e_rfc_dnsname_label_too_long,486,Thawte Consulting cc,153
+NE,e_rfc_dnsname_underscore_in_sld,486,Thawte Consulting cc,153
+NE,w_rfc_dnsname_underscore_in_trd,486,Thawte Consulting cc,153
+NE,e_dnsname_hyphen_in_sld,485,Thawte Consulting cc,153
+NE,e_dnsname_underscore_in_sld,485,Thawte Consulting cc,153
+NE,w_dnsname_underscore_in_trd,485,Thawte Consulting cc,153
+NE,e_sub_cert_not_is_ca,384,"GeoTrust, Inc.",66
+NE,e_sub_cert_aia_marked_critical,366,"GeoTrust, Inc.",66
+NE,w_sub_cert_aia_contains_internal_names,366,"GeoTrust, Inc.",66
+NE,w_sub_cert_certificate_policies_marked_critical,261,"GoDaddy.com, Inc.",50
+NE,e_serial_number_longer_than_20_octets,244,"Snake Oil, Ltd",112
+NE,e_serial_number_not_positive,244,"Snake Oil, Ltd",112
+NE,e_mp_ecdsa_pub_key_encoding_correct,226,Let's Encrypt,140
+NE,e_ext_san_uri_format_invalid,193,"Snake Oil, Ltd",139
+NE,e_ext_san_uri_host_not_fqdn_or_ip,193,"Snake Oil, Ltd",139
+NE,e_ext_san_uri_not_ia5,193,"Snake Oil, Ltd",139
+NE,e_ext_san_uri_relative,193,"Snake Oil, Ltd",139
+NE,w_ext_san_critical_with_subject_dn,192,"Snake Oil, Ltd",139
+NE,w_distribution_point_missing_ldap_or_uri,188,Thawte Consulting cc,148
+NE,e_international_dns_name_not_unicode,123,"Snake Oil, Ltd",107
+NE,e_invalid_ca_certificate_policies,113,LiquidNet Ltd.,66
+NE,w_sub_ca_aia_missing,103,LiquidNet Ltd.,66
+NE,n_mp_allowed_eku,102,LiquidNet Ltd.,66
+NE,e_sub_ca_aia_missing,97,LiquidNet Ltd.,66
+NE,e_path_len_constraint_improperly_included,92,Plesk Inc.,76
+NE,e_ca_key_usage_missing,83,Plesk Inc.,76
+NE,e_sub_ca_certificate_policies_missing,83,LiquidNet Ltd.,66
+NE,e_sub_ca_crl_distribution_points_missing,83,LiquidNet Ltd.,66
+NE,n_sub_ca_eku_missing,83,LiquidNet Ltd.,66
+NE,w_sub_ca_aia_does_not_contain_issuing_ca_url,83,LiquidNet Ltd.,66
+NE,e_mp_ecdsa_signature_encoding_correct,76,"CloudFlare, Inc.",29
+NE,e_ext_cert_policy_explicit_text_ia5_string,52,StartCom Ltd.,31
+NE,e_ext_cert_policy_explicit_text_too_long,52,StartCom Ltd.,31
+NE,w_ext_cert_policy_explicit_text_includes_control,52,StartCom Ltd.,31
+NE,w_ext_cert_policy_explicit_text_not_nfc,52,StartCom Ltd.,31
+NE,w_ext_cert_policy_explicit_text_not_utf8,52,StartCom Ltd.,31
+NE,e_ext_key_usage_without_bits,46,The USERTRUST Network,7
+NE,e_key_usage_incorrect_length,46,The USERTRUST Network,7
+NE,e_ext_san_dns_name_too_long,44,UserGate,19
+NE,e_key_usage_and_extended_key_usage_inconsistent,39,The USERTRUST Network,7
+NE,e_cert_extensions_version_not_3,37,HTTPS Management Certificate for SonicWALL (self-signed),18
+NE,e_ext_authority_key_identifier_no_key_identifier,37,HTTPS Management Certificate for SonicWALL (self-signed),18
+NE,e_issuer_field_empty,37,HTTPS Management Certificate for SonicWALL (self-signed),18
+NE,e_subject_empty_without_san,37,HTTPS Management Certificate for SonicWALL (self-signed),18
+NE,e_subject_not_dn,37,HTTPS Management Certificate for SonicWALL (self-signed),18
+NE,e_subject_printable_string_badalpha,37,HTTPS Management Certificate for SonicWALL (self-signed),18
+NE,e_utc_time_does_not_include_seconds,37,HTTPS Management Certificate for SonicWALL (self-signed),18
+NE,e_utc_time_not_in_zulu,37,HTTPS Management Certificate for SonicWALL (self-signed),18
+NE,e_wrong_time_format_pre2050,37,HTTPS Management Certificate for SonicWALL (self-signed),18
+NE,e_ext_duplicate_extension,34,HTTPS Management Certificate for SonicWALL (self-signed),18
+NE,e_subject_common_name_max_length,32,HTTPS Management Certificate for SonicWALL (self-signed),18
+NE,w_ext_subject_key_identifier_missing_sub_cert,31,HTTPS Management Certificate for SonicWALL (self-signed),18
+NE,e_subject_organization_name_max_length,28,HTTPS Management Certificate for SonicWALL (self-signed),18
+NE,e_ev_not_wildcard,26,"thawte, Inc.",7
+NE,e_ext_cert_policy_duplicate,25,The USERTRUST Network,7
+NE,w_ext_cert_policy_contains_noticeref,25,The USERTRUST Network,7
+NE,e_subject_organizational_unit_name_max_length,24,HTTPS Management Certificate for SonicWALL (self-signed),18
+NE,e_subject_locality_name_max_length,22,HTTPS Management Certificate for SonicWALL (self-signed),18
+NE,e_subject_state_name_max_length,22,HTTPS Management Certificate for SonicWALL (self-signed),18
+NE,w_ext_aia_access_location_missing,20,The USERTRUST Network,7
+NE,e_ext_authority_key_identifier_critical,11,Moustic,3
+NE,e_ext_subject_key_identifier_critical,11,Moustic,3
+NE,e_path_len_constraint_zero_or_less,11,Moustic,3
+NE,e_ext_san_dns_not_ia5_string,11,,6
+NE,e_ext_san_empty_name,11,,6
+NE,e_ext_san_no_entries,11,,6
+NE,e_ext_san_not_critical_without_subject,11,,6
+NE,e_ext_san_rfc822_format_invalid,11,,6
+NE,e_ext_san_space_dns_name,11,,6
+NE,e_subject_email_max_length,8,Moustic,3
+NE,e_basic_constraints_not_critical,6,Moustic,3
+NE,e_ca_subject_field_empty,6,Moustic,3
+NE,e_ext_subject_key_identifier_missing_ca,6,Moustic,3
+NE,e_root_ca_key_usage_present,6,Moustic,3
+NE,e_generalized_time_does_not_include_seconds,6,,5
+NE,e_generalized_time_includes_fraction_seconds,6,,5
+NE,e_generalized_time_not_in_zulu,6,,5
+NE,w_eku_critical_improperly,5,Thawte Consulting cc,2
+NE,e_ca_is_ca,4,,3
+NE,e_cab_ov_requires_org,4,COMODO CA Limited,4
+NE,e_cert_policy_ov_requires_country,4,COMODO CA Limited,4
+NE,e_cert_policy_ov_requires_province_or_locality,4,COMODO CA Limited,4
+NE,e_ext_key_usage_cert_sign_without_ca,3,,3
+NE,e_ca_crl_sign_not_set,2,,2
+NE,e_ca_key_cert_sign_not_set,2,,2
+NE,e_ca_key_usage_not_critical,2,,2
+NE,n_ca_digital_signature_not_set,2,,2
+NE,e_ext_ian_uri_format_invalid,1,,1
+NE,e_ext_ian_uri_host_not_fqdn_or_ip,1,,1
+NE,e_ext_ian_uri_not_ia5,1,,1
+NE,e_ext_ian_uri_relative,1,,1
+NE,e_rsa_allowed_ku_ca,1,,1
+NE,e_rsa_allowed_ku_no_encipherment_ca,1,,1
+warn,w_subject_common_name_included,6858638,Let's Encrypt,3247544
+warn,w_ext_subject_key_identifier_not_recommended_subscriber,6856686,Let's Encrypt,3247547
+warn,w_tls_server_cert_valid_time_longer_than_397_days,82986,"GoDaddy.com, Inc.",64667
+warn,w_ext_subject_key_identifier_missing_sub_cert,40636,,8801
+warn,w_sub_cert_aia_does_not_contain_issuing_ca_url,7608,GlobalSign nv-sa,1679
+warn,w_ext_key_usage_not_critical,6630,SomeOrganization,3795
+warn,w_sub_cert_sha1_expiration_too_long,1778,,565
+warn,e_sub_cert_eku_check,692,"GoDaddy.com, Inc.",600
+warn,w_sub_cert_aia_contains_internal_names,258,,237
+warn,w_ext_cert_policy_explicit_text_not_utf8,213,StartCom Ltd.,115
+warn,w_ext_cert_policy_contains_noticeref,186,StartCom Ltd.,146
+warn,w_issuer_dn_trailing_whitespace,131, ,53
+warn,w_subject_dn_trailing_whitespace,129, ,53
+warn,w_sub_cert_eku_extra_values,123,Root CA,30
+warn,w_subject_dn_leading_whitespace,117, ,53
+warn,w_issuer_dn_leading_whitespace,112, ,53
+warn,w_sub_ca_aia_does_not_contain_issuing_ca_url,34,Fortinet,24
+warn,w_distribution_point_missing_ldap_or_uri,31,Mchost,14
+warn,w_ext_aia_access_location_missing,19,,5
+warn,w_root_ca_basic_constraints_path_len_constraint_field_present,19,,11
+warn,w_sub_ca_aia_missing,14,Fortinet,7
+warn,w_extra_subject_common_names,10,,3
+warn,w_ext_san_critical_with_subject_dn,8,,4
+warn,w_rsa_public_exponent_not_in_range,6,GeoTrust Inc.,2
+warn,w_multiple_issuer_rdn,5,Symantec Corporation,2
+warn,w_ian_iana_pub_suffix_empty,3,N/A,3
+warn,w_dnsname_underscore_in_trd,2,National E-Government Network Administration Center,2
+warn,w_eku_critical_improperly,2,KM UK,1
+info,n_subject_common_name_included,116744,,24800
+info,w_ct_sct_policy_count_unsatisfied,6560,GlobalSign nv-sa,1669
+info,n_san_iana_pub_suffix_empty,2947,,1746
+info,n_ecdsa_ee_invalid_ku,105,,47
+info,n_san_dns_name_duplicate,98,,35
+info,n_dnsname_wildcard_left_of_public_suffix,80,"WebSupport, s.r.o.",42
+info,n_sub_ca_eku_missing,31,Fortinet,24
+info,n_multiple_subject_rdn,14,Republika Slovenija,7
+info,n_mp_allowed_eku,12,Fortinet,8
+info,n_ca_digital_signature_not_set,10,,4
+error,e_sub_cert_cert_policy_empty,66981,,34344
+error,e_sub_cert_certificate_policies_missing,66981,,34344
+error,e_sub_cert_aia_missing,65746,,34103
+error,e_sub_cert_aia_does_not_contain_ocsp_url,52326,,25067
+error,e_ca_key_usage_missing,49261,testexample,15579
+error,e_root_ca_key_usage_present,49227,testexample,15579
+error,e_ext_authority_key_identifier_no_key_identifier,38485,,9649
+error,e_sub_cert_eku_missing,38050,,14287
+error,e_ext_san_missing,31017,,5214
+error,e_mp_authority_key_identifier_correct,19918,,17844
+error,e_invalid_certificate_version,19223,,2628
+error,e_subject_common_name_not_from_san,18331,SomeOrganization,2959
+error,e_basic_constraints_not_critical,15097,Internet Widgits Pty Ltd,3780
+error,e_subject_common_name_not_exactly_from_san,11631,,2532
+error,e_tls_server_cert_valid_time_longer_than_398_days,9884,,5288
+error,e_subj_country_not_uppercase,6322,SomeOrganization,5482
+error,e_subject_contains_noninformational_value,6233,SomeOrganization,4831
+error,e_subject_country_not_iso,5537,SomeOrganization,4831
+error,e_dnsname_not_valid_tld,5307,GlobalSign nv-sa,1679
+error,e_ca_country_name_missing,4887,,3413
+error,e_signature_algorithm_not_supported,4423,My Company Ltd,2101
+error,e_ca_common_name_missing,4408,Internet Widgits Pty Ltd,3769
+error,e_rsa_mod_less_than_2048_bits,4294,,933
+error,e_serial_number_not_positive,4274,My Company Ltd,2103
+error,e_ca_organization_name_missing,3576,,3576
+error,e_organizational_unit_name_prohibited,3364,XX,1064
+error,e_sub_cert_valid_time_longer_than_39_months,2931,VK,1407
+error,e_sub_cert_valid_time_longer_than_825_days,2870,VK,1407
+error,e_sub_cert_or_sub_ca_using_sha1,2418,,557
+error,e_sub_cert_locality_name_must_appear,1940,Unspecified,1107
+error,e_sub_cert_province_must_appear,1940,Unspecified,1107
+error,e_ca_country_name_invalid,1455,SomeOrganization,1206
+error,e_mp_modulus_must_be_2048_bits_or_more,1328,,459
+error,e_issuer_field_empty,1148,,1148
+error,e_subject_empty_without_san,1143,,1143
+error,e_validity_time_not_positive,922,Test Self SSL Company,900
+error,e_sub_cert_basic_constraints_not_critical,787,The Ministry of Digital Development and Communications,320
+error,e_old_root_ca_rsa_mod_less_than_2048_bits,756,SomeOrganization,399
+error,e_dnsname_bad_character_in_label,749,"CloudFlare, Inc.",638
+error,e_sub_cert_country_name_must_appear,709,"CloudFlare, Inc.",632
+error,e_ext_subject_key_identifier_missing_ca,623,,364
+error,e_qcstatem_mandatory_etsi_statems,608,FNMT-RCM,608
+error,e_key_usage_and_extended_key_usage_inconsistent,608,"WEDOS Internet, a.s.",131
+error,e_ca_key_usage_not_critical,554,WatchGuard,284
+error,e_rsa_allowed_ku_no_encipherment_ca,554,WatchGuard,284
+error,e_root_ca_key_usage_must_be_critical,553,WatchGuard,284
+error,e_ext_san_contains_reserved_ip,534,,471
+error,e_subj_orgunit_in_ca_cert,457,iZj6cgrym8sxzup76uhr9iZ,39
+error,e_root_ca_extended_key_usage_present,441,DirectAdmin Self-Signed,139
+error,e_subject_contains_reserved_ip,378,GlobalSign nv-sa,322
+error,e_ca_crl_sign_not_set,346,SomeOrganization,174
+error,e_incorrect_ku_encoding,339,,271
+error,e_superfluous_ku_encoding,282,,271
+error,e_key_usage_incorrect_length,268,,268
+error,e_rsa_allowed_ku_ee,262,StartCom Ltd.,146
+error,e_cert_extensions_version_not_3,189,XX,184
+error,e_subject_printable_string_badalpha,172,FASTPANEL,129
+error,e_ext_key_usage_cert_sign_without_ca,152,,89
+error,e_crl_distrib_points_not_http,149,,106
+error,e_sub_cert_crl_distribution_points_does_not_contain_url,149,,98
+error,e_sub_cert_key_usage_cert_sign_bit_set,148,,86
+error,e_aia_ca_issuers_must_have_http_only,132,,114
+error,e_ext_san_other_name_present,107,CAcert Inc.,40
+error,e_ext_san_rfc822_name_present,97,mixxt GmbH,21
+error,e_subject_dn_not_printable_characters,96,æºæåä½,43
+error,e_dnsname_wildcard_only_in_left_label,95,"WebSupport, s.r.o.",42
+error,e_mp_modulus_must_be_divisible_by_8,90,ACME,81
+error,e_ecdsa_allowed_ku,81,,47
+error,e_ocsp_id_pkix_ocsp_nocheck_ext_not_included_server_auth,70,iZj6cgrym8sxzup76uhr9iZ,39
+error,e_mp_ecdsa_signature_encoding_correct,68,,42
+error,e_invalid_subject_rdn_order,61,,17
+error,e_subject_dn_country_not_printable_string,61,RunCloud Sdn. Bhd.,39
+error,e_subject_contains_organizational_unit_name_and_no_organization_name,58,,44
+error,e_path_len_constraint_improperly_included,53,RunCloud Sdn. Bhd.,39
+error,e_subject_rdns_correct_encoding,53,RunCloud Sdn. Bhd.,33
+error,e_ca_is_ca,51,N/A,43
+error,e_wrong_time_format_pre2050,46,Dell Inc.,9
+error,e_old_sub_cert_rsa_mod_less_than_1024_bits,46,LiquidNet Ltd.,40
+error,e_sub_ca_certificate_policies_missing,34,Fortinet,24
+error,e_sub_ca_crl_distribution_points_missing,34,Fortinet,24
+error,e_duplicate_subject_attribs,31,U.S. Government,16
+error,e_tbs_signature_rsa_encryption_parameter_not_null,30,,22
+error,e_cert_sig_alg_not_match_tbs_sig_alg,28,,21
+error,e_mp_ecdsa_pub_key_encoding_correct,23,,23
+error,e_issuer_dn_country_not_printable_string,22,HTTPS Management Certificate for SonicWALL (self-signed),18
+error,e_sub_cert_key_usage_crl_sign_bit_set,21,,18
+error,e_sub_ca_aia_missing,20,Fortinet,17
+error,e_eku_critical,20,GAE,4
+error,e_san_wildcard_not_first,19,,5
+error,e_san_bare_wildcard,16,,7
+error,e_underscore_not_permissible_in_dnsname,15,Unspecified,7
+error,e_subject_organization_name_max_length,10,,7
+error,e_policy_qualifiers_other_than_cps_not_permitted,10,Firmaprofesional S.A.,4
+error,e_ext_ian_no_entries,10,Security Competence GmbH,3
+error,e_ext_cert_policy_explicit_text_ia5_string,8,"Thawte, Inc.",3
+error,e_sub_cert_province_must_not_appear,8,,4
+error,e_dnsname_contains_bare_iana_suffix,8,Unspecified,3
+error,e_ev_invalid_business_category,7,DigiCert Inc,7
+error,e_sub_cert_locality_name_must_not_appear,7,DH Security,3
+error,e_ca_subject_field_empty,6,,6
+error,e_rsa_allowed_ku_ca,5,Avaya Inc,1
+error,e_dnsname_left_label_wildcard_correct,5,The Ministry of Digital Development and Communications,2
+error,e_ext_san_uniform_resource_identifier_present,5,,2
+error,e_serial_number_longer_than_20_octets,5,,2
+error,e_dnsname_empty_label,4,Sitewalk Est.,2
+error,e_ca_key_cert_sign_not_set,4,SomeOrganization,1
+error,e_sub_cert_not_is_ca,4,SomeOrganization,1
+error,e_sub_cert_eku_check,4,Plasmatic Arts,2
+error,e_invalid_ca_certificate_policies,4,"Regery, https://regery.com",2
+error,e_invalid_cps_uri,3,Hongkong Post,2
+error,e_crlissuer_must_not_be_present_in_cdp,3,CUBADEBATE.CU,1
+error,e_ext_san_no_entries,3,,1
+error,e_dnsname_underscore_in_sld,3,,3
+error,e_ext_cert_policy_explicit_text_too_long,2,,1
+error,e_ext_san_uri_host_not_fqdn_or_ip,2,unknown,2
+error,e_subject_organizational_unit_name_max_length,1,Codeberg Pages Error Certificate (couldn't obtain ACME certificate),1
+error,e_ext_authority_key_identifier_critical,1,supership.jp,1
+error,e_ext_san_dns_not_ia5_string,1,MySSL,1
+error,e_ev_business_category_missing,1,Firmaprofesional SA,1
+error,e_ca_invalid_eku,1,Hylanda,1
+error,e_cert_policy_ov_requires_province_or_locality,1,SERPRO,1
+error,e_subject_dn_serial_number_not_printable_string,1,China Financial Certification Authority,1
+error,e_aia_must_contain_permitted_access_method,1,"Alzatex, Inc.",1
+error,e_rfc_dnsname_empty_label,1,Mal-Gum,1
+error,e_no_underscores_before_1_6_2,1,McAfee,1
