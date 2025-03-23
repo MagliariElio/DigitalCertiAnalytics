@@ -277,6 +277,7 @@ Il programma può essere eseguito tramite il terminale o la riga di comando, con
 - `src/analysis/leaf/plots`: directory dove sono memorizzati i risultati grafici dei certificati leaf.
 - `src/analysis/intermediate/plots`: directory dove sono memorizzati i risultati grafici dei certificati intermediate.
 - `src/analysis/root/plots`: directory dove sono memorizzati i risultati grafici dei certificati root.
+- `zlint_analysis/reading_zlint_results.py`: script Python progettato per estrarre i dati dal database non relazionale MongoDB e strumentale per eseguire analisi dettagliate sui dati dei certificati memorizzati.
 - `src/db/schema_db.sql`: script SQL per creare lo schema dei database leaf, intermediate e root.
 - `src/scan/`: directory contenente un file di scan sul file JSON.
 

@@ -1,0 +1,4 @@
+2025-03-22 10:24:52,039 - INFO - certificates_analysis.py:487 - certificates_analysis_main() - Inizio dell'applicazione.
+2025-03-22 10:24:52,042 - ERROR - certificates_analysis.py:513 - certificates_analysis_main() - Il file '/home/elion-man/LEZIONE/TESI/DigitalCertiAnalytics/res/certs_polito.json' non esiste. Oppure il nome del file output non coincide! Si prega di consultare il README per istruzioni su come generare questo file utilizzando il programma Zgrab2.
+2025-03-22 10:24:52,043 - INFO - certificates_analysis.py:24 - close_connections() - Inizio chiusura delle connessioni ai database...
+2025-03-22 10:24:52,044 - INFO - certificates_analysis.py:56 - close_connections() - Tutte le connessioni ai database sono state chiuse.
