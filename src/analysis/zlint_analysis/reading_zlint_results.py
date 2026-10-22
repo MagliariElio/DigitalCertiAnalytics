@@ -1,10 +1,19 @@
 import csv
+import sys
 from pymongo import MongoClient
 from collections import defaultdict, Counter
 
+# Nome del database MongoDB da leggere (es. 'Intermediate_Zlint_Checks'), di default quello dei certificati leaf
+db_name = sys.argv[1] if len(sys.argv) > 1 else 'Leaf_Zlint_Checks'
+
 client = MongoClient('mongodb://localhost:27017/')
-db = client['Leaf_Zlint_Checks']
+db = client[db_name]
 collection = db['zlint_results']
+
+if collection.estimated_document_count() == 0:
+    print(f"Nessun risultato ZLint trovato nel database '{db_name}' (database disponibili: {client.list_database_names()}).")
+    client.close()
+    sys.exit(1)
 
 # --- Part 1: Ranking for each field by result ---
 results_data = defaultdict(lambda: defaultdict(lambda: {'total': 0, 'issuers': Counter()}))

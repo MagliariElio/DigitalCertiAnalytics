@@ -40,7 +40,7 @@ La tabella `Certificates` è la tabella centrale che memorizza i dettagli di ogn
 - **key_length**: Lunghezza della chiave pubblica.
 - **validity_start**: Data di inizio validità del certificato.
 - **validity_end**: Data di scadenza del certificato.
-- **validity_length**: Durata in giorni del certificato.
+- **validity_length**: Durata in secondi del certificato (campo `validity.length` di zgrab2).
 - **SAN (Subject Alternative Name)**: Elenco di nomi alternativi (solo per certificati che li supportano).
 - **domain_matches_san**: Indica se il dominio del certificato corrisponde a uno dei SAN.
 - **authority_info_access_is_critical**: Se l'accesso alle informazioni dell'autorità è critico.
@@ -103,7 +103,7 @@ Le tabelle `LogsOperators` e `Logs` memorizzano informazioni sugli **operatori**
 - **temporal_start**, **temporal_end**: Periodo in cui l'operazione è stata registrata.
 
 **Rimozione delle tabelle non utilizzate per tipo di certificato:**
-- **INTERMEDIATE** e **ROOT**: Le tabelle `Errors`, `SignedCertificateTimestamps`, `Logs` e `LogsOperators` vengono rimosse, poiché non sono necessarie per il tipo di database relativo ai certificati intermedi e root.
+- **INTERMEDIATE** e **ROOT**: La tabella `Errors` viene rimossa, poiché gli errori di connessione sono registrati solo nel database relativo ai certificati leaf.
 
 ---
 

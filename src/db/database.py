@@ -9,7 +9,7 @@ from enum import Enum
 # Politecnico di Torino
 
 class DatabaseType(Enum):
-    LEAF = "leaf",
+    LEAF = "leaf"
     INTERMEDIATE = "intermediate"
     ROOT = "root"
 
@@ -39,8 +39,26 @@ class Database:
         tables = cursor.fetchall()
         if not tables:
             self.create_tables()
+        else:
+            self._ensure_certificate_id_index()
         
         logging.info(f"Connessione al database esistente: 'file://{self.db_path}'")
+        return
+
+    def _ensure_certificate_id_index(self):
+        """
+            Garantisce un indice su certificate_id per i database generati dalle versioni precedenti, 
+            in cui la rimozione delle colonne faceva perdere la PRIMARY KEY della tabella 'Certificates'.
+            Senza indice ogni ricerca per certificate_id richiederebbe la scansione dell'intera tabella.
+        """
+        cursor = self.conn.cursor()
+        cursor.execute("PRAGMA table_info(Certificates);")
+        columns = cursor.fetchall()
+        
+        if any(col[1] == 'certificate_id' and col[5] == 0 for col in columns):
+            logging.info("Creazione dell'indice su 'certificate_id' per un database senza PRIMARY KEY in corso...")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_certificate_id_leaf_domain ON Certificates(certificate_id, leaf_domain);")
+            self.conn.commit()
         return
 
     def create_tables(self):
@@ -145,31 +163,53 @@ class Database:
     def _restructure_table_remove_columns(self, table_name: str, columns_to_remove: list[str]):
         """
             Ristruttura la tabella specificata rimuovendo le colonne indicate.
-            Crea una nuova tabella con le colonne rimanenti, copia i dati dalla 
-            tabella originale e rinomina la nuova tabella.
+            Crea una nuova tabella con le colonne rimanenti (mantenendo tipo, NOT NULL, DEFAULT e PRIMARY KEY), 
+            copia i dati dalla tabella originale e rinomina la nuova tabella.
         """
         cursor = self.conn.cursor()
         
-        # Crea una nuova tabella senza le colonne da eliminare
+        # Legge la definizione delle colonne della tabella originale: (cid, name, type, notnull, dflt_value, pk)
         cursor.execute(f"PRAGMA table_info({table_name});")
-        columns = cursor.fetchall()
+        columns = [col for col in cursor.fetchall() if col[1] not in columns_to_remove]
         
-        # Costruisce la query per creare la nuova tabella
-        new_columns = [col[1] for col in columns if col[1] not in columns_to_remove]
+        # Costruisce la definizione delle colonne mantenendo tipo e vincoli, così da non perdere 
+        # la PRIMARY KEY (es. certificate_id resta alias del rowid e quindi indicizzato)
+        primary_keys = [col for col in columns if col[5] > 0]
+        column_definitions = []
+        for col in columns:
+            definition = f"{col[1]} {col[2]}".strip()
+            if(len(primary_keys) == 1 and col[5] > 0):
+                definition += " PRIMARY KEY"
+            if(col[3]):
+                definition += " NOT NULL"
+            if(col[4] is not None):
+                definition += f" DEFAULT {col[4]}"
+            column_definitions.append(definition)
+        
+        if(len(primary_keys) > 1):
+            primary_keys.sort(key=lambda col: col[5])
+            column_definitions.append(f"PRIMARY KEY ({', '.join(col[1] for col in primary_keys)})")
+        
+        new_columns = [col[1] for col in columns]
         new_table_name = f"{table_name}_new"
-        
-        create_table_query = f"CREATE TABLE {new_table_name} ({', '.join(new_columns)});"
-        cursor.execute(create_table_query)
-        
-        # Copia i dati nella nuova tabella
         columns_to_select = ', '.join(new_columns)
-        insert_query = f"INSERT INTO {new_table_name} ({columns_to_select}) SELECT {columns_to_select} FROM {table_name};"
-        cursor.execute(insert_query)
         
-        cursor.execute(f"DROP TABLE {table_name};")                                 # Eliminare la tabella originale
-        cursor.execute(f"ALTER TABLE {new_table_name} RENAME TO {table_name};")     # Rinominare la nuova tabella
-        
-        self.conn.commit()
+        try:
+            # Rimuove eventuali residui di una ristrutturazione precedente non completata
+            cursor.execute(f"DROP TABLE IF EXISTS {new_table_name};")
+            cursor.execute(f"CREATE TABLE {new_table_name} ({', '.join(column_definitions)});")
+            
+            # Copia i dati nella nuova tabella
+            cursor.execute(f"INSERT INTO {new_table_name} ({columns_to_select}) SELECT {columns_to_select} FROM {table_name};")
+            
+            cursor.execute(f"DROP TABLE {table_name};")                                 # Eliminare la tabella originale
+            cursor.execute(f"ALTER TABLE {new_table_name} RENAME TO {table_name};")     # Rinominare la nuova tabella
+            
+            self.conn.commit()
+        except Exception:
+            # Evita che una ristrutturazione parziale (es. tabella originale eliminata ma non rinominata) venga confermata in seguito
+            self.conn.rollback()
+            raise
         return
 
     def remove_columns(self):
@@ -236,7 +276,8 @@ class Database:
             logging.info(f"Rimozione indici dal database in corso...")
             
             cursor = self.conn.cursor()
-            cursor.execute(f"SELECT name FROM sqlite_master WHERE type='index';")
+            # Gli indici automatici (UNIQUE/PRIMARY KEY) non possono essere eliminati
+            cursor.execute(f"SELECT name FROM sqlite_master WHERE type='index' AND name NOT LIKE 'sqlite_autoindex_%';")
             indexes = cursor.fetchall()
             
             # Lista di indici da ignorare durante la rimozione
@@ -259,6 +300,25 @@ class Database:
             logging.error(f"Errore nel rimuovere gli indici: {e}")
             self.conn.rollback()
 
+    def set_bulk_insert_mode(self, enabled: bool):
+        """
+            Durante l'inserimento massivo dal file JSON (un commit per ogni riga) mantiene il journal in memoria e disabilita 
+            l'fsync ad ogni commit: il database viene comunque ricreato da zero ad ogni analisi.
+            Il rollback della singola riga in caso di errore continua a funzionare.
+        """
+        self.conn.commit()      # Il journal_mode non può essere modificato durante una transazione
+        
+        cursor = self.conn.cursor()
+        if(enabled):
+            cursor.execute("PRAGMA journal_mode = MEMORY;")
+            cursor.execute("PRAGMA synchronous = OFF;")
+            logging.info("Modalità di inserimento massivo attivata.")
+        else:
+            cursor.execute("PRAGMA journal_mode = DELETE;")
+            cursor.execute("PRAGMA synchronous = FULL;")
+            logging.info("Modalità di inserimento massivo disattivata.")
+        return
+
     @contextmanager
     def transaction(self):
         """Gestisce una transazione con commit o rollback."""
@@ -269,12 +329,17 @@ class Database:
             self.conn.rollback()
             logging.error(f"Transazione fallita: {e}")
             raise e
+        except BaseException:
+            # Interruzione (es. KeyboardInterrupt): annulla le operazioni parziali, evitando che vengano confermate in seguito
+            self.conn.rollback()
+            raise
         return
 
     def close(self):
         """Chiude la connessione al database."""
         if self.conn:
             self.conn.close()
+            self.conn = None    # Evita una doppia chiusura (es. da close_connections a fine esecuzione)
             if(self.db_type == DatabaseType.LEAF):
                 logging.info(f"Connessione al database Leaf chiusa con successo: 'file://{self.db_path}'")
             elif(self.db_type == DatabaseType.INTERMEDIATE):

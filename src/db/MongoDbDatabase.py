@@ -26,11 +26,19 @@ class MongoDbDatabase:
         if self.client is None:
             try:
                 self.client = MongoClient(self.uri)
+                
+                # I risultati di un'esecuzione precedente vengono sostituiti da quelli della nuova analisi
+                logging.info(f"Eliminazione dei risultati precedenti presenti nel database MongoDB '{self.db_name}'.")
                 self.client.drop_database(self.db_name)
                 self.db = self.client[self.db_name]
                 logging.info(f"Connessione al database '{self.db_name}' stabilita.")
             except Exception as e:
                 logging.error(f"Errore durante la connessione a MongoDB: {e}")
+                # Permette un nuovo tentativo di connessione invece di lasciare un client non utilizzabile
+                if self.client is not None:
+                    self.client.close()
+                self.client = None
+                self.db = None
                 raise
     
     def get_collection(self, collection_name):

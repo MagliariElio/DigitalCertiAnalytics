@@ -1,6 +1,7 @@
 import json
 import logging
 import asyncio
+import aiohttp
 from tqdm.rich import tqdm
 from typing import Optional
 from datetime import datetime
@@ -8,9 +9,14 @@ from bean.certificate import Certificate
 from db.database import DatabaseType
 from cryptography.x509.extensions import UserNotice
 from utils.utils import verify_signature, find_raw_cert_issuer, check_is_revoked_from_crl, check_ocsp_status_row, reorder_signature_algorithm, count_intermediate_up_to_root_and_root_certificates
+from utils.utils import OCSP_MAX_CONCURRENT_REQUESTS
 
 # Admin: Anuar Elio Magliari 
 # Politecnico di Torino
+
+# Nei conteggi per i grafici i certificati sono distinti tramite il Subject Key Identifier; quelli senza SKI (es. certificati v1) 
+# sono distinti tramite il certificato raw, altrimenti verrebbero conteggiati tutti come un unico certificato (SKI = '').
+# L'identità viene calcolata in una sottoquery DISTINCT, così il raw completo non viene copiato nell'ordinamento del GROUP BY.
 
 class CertificateDAO:
     def __init__(self, connection, certificate_type: DatabaseType):
@@ -87,7 +93,8 @@ class CertificateDAO:
         return self.cursor.lastrowid
 
     def insert_certificate(self, json_row, parsed, issuer_id, subject_id, issuer_common_name, issuer_dn, 
-                           certificate_type: DatabaseType, certificates_emitted_up_to: int) -> Optional[int]:
+                           certificate_type: DatabaseType, certificates_emitted_up_to: int, 
+                           digital_certificate: Optional[Certificate] = None) -> Optional[int]:
         """Inserisce un certificato nel database e restituisce il certificate_id."""
         download_date = json_row.get("data", {}).get("tls", {}).get("timestamp", datetime.now().isoformat())
         handshake_log = json_row.get("data", {}).get("tls", {}).get("result", {}).get("handshake_log", {})
@@ -113,8 +120,11 @@ class CertificateDAO:
         san = ', '.join(parsed.get("names", []))
         domain_matches_san = handshake_log.get("server_certificates", {}).get("validation", {}).get("matches_domain", False)
         
-        raw = handshake_log.get("server_certificates", {}).get("certificate", {}).get("raw", {})
-        digital_certificate = Certificate(raw)
+        raw = handshake_log.get("server_certificates", {}).get("certificate", {}).get("raw", None)
+        
+        # Evita di effettuare nuovamente il parsing del certificato se è già stato caricato
+        if(digital_certificate is None):
+            digital_certificate = Certificate(raw)
         
         chain = handshake_log.get("server_certificates", {}).get("chain", [])
 
@@ -164,10 +174,10 @@ class CertificateDAO:
         logging.debug(f"Certificato inserito: {serial_number}")
         return self.cursor.lastrowid
 
-    def insert_extensions(self, certificate_id, json_row, extensions) -> int:
+    def insert_extensions(self, certificate_id, json_row, extensions, digital_certificate: Optional[Certificate] = None) -> int:
         """Inserisce le estensioni di un certificato nel database."""
         handshake_log = json_row.get("data", {}).get("tls", {}).get("result", {}).get("handshake_log", {})
-        raw = handshake_log.get("server_certificates", {}).get("certificate", {}).get("raw", {})
+        raw = handshake_log.get("server_certificates", {}).get("certificate", {}).get("raw", None)
         
         key_usage = json.dumps(extensions.get("key_usage", {}))
         extended_key_usage = json.dumps(extensions.get("extended_key_usage", {}))
@@ -179,7 +189,9 @@ class CertificateDAO:
             max_path_length = basic_constraints.get("max_path_len", None)
             basic_constraints.pop("max_path_len")
         
-        digital_certificate = Certificate(raw)
+        # Evita di effettuare nuovamente il parsing del certificato se è già stato caricato
+        if(digital_certificate is None):
+            digital_certificate = Certificate(raw)
         crl_distr_point_is_critical = digital_certificate.is_crl_distr_point_critical()
         
         
@@ -269,12 +281,12 @@ class CertificateDAO:
                                 issuer_dn, certificate_type: DatabaseType, certificates_emitted_up_to: int):
         """Processa e inserisce un certificato nel database, comprese le estensioni."""
         certificate_id = self.insert_certificate(json_row, parsed, issuer_id, subject_id, issuer_common_name, 
-                                                issuer_dn, certificate_type, certificates_emitted_up_to)
+                                                issuer_dn, certificate_type, certificates_emitted_up_to, digital_certificate)
         
         if certificate_id:
             # Inserisce le Extensions
             extensions = parsed.get("extensions", {})
-            extension_id = self.insert_extensions(certificate_id, json_row, extensions)
+            extension_id = self.insert_extensions(certificate_id, json_row, extensions, digital_certificate)
             
             # Inserisce gli SCT
             self.insert_signed_certificate_timestamps(certificate_id, extensions)
@@ -291,7 +303,7 @@ class CertificateDAO:
 
         handshake_log = json_row.get("data", {}).get("tls", {}).get("result", {}).get("handshake_log", {})
         server_certificates = handshake_log.get("server_certificates", {})
-        raw = server_certificates.get("certificate", {}).get("raw", {})
+        raw = server_certificates.get("certificate", {}).get("raw", None)
 
         digital_certificate = Certificate(raw)
         
@@ -307,13 +319,15 @@ class CertificateDAO:
                                     certificate_type, certificates_emitted_up_to)
         return
 
-    async def check_ocsp_status_for_certificates(self, certificate_type: DatabaseType, db, ocsp_temp_file_writer, batch_size=50000, offset=0):
+    async def check_ocsp_status_for_certificates(self, certificate_type: DatabaseType, db, ocsp_temp_file_writer, batch_size=50000, last_certificate_id=0):
         """Controlla lo stato OCSP per ciascun certificato nel database e aggiorna il relativo stato."""
         global pbar_ocsp_check
         
+        pbar_ocsp_check = None
+        
         try:
             logging.info(f"Inizio del controllo OCSP per i certificati. Tipo di certificati: '{certificate_type.name}', "
-             f"Batch Size: {batch_size}, Offset iniziale: {offset}.")
+             f"Batch Size: {batch_size}, Certificate ID iniziale: {last_certificate_id}.")
             
             # Esclude tutte le righe che non hanno un ocsp url
             await db.execute("""
@@ -330,7 +344,8 @@ class CertificateDAO:
                 await db.execute("""
                     UPDATE Certificates
                     SET ocsp_check = 'No Issuer Url Found'
-                    WHERE NOT authority_info_access LIKE '{}' 
+                    WHERE ocsp_check = 'No Request Done'
+                    AND NOT authority_info_access LIKE '{}' 
                     AND NOT authority_info_access LIKE '%issuer_urls%' 
                     AND issuer_id IN (
                         SELECT issuer_id
@@ -369,36 +384,55 @@ class CertificateDAO:
                 "leaf_cert_raw": row[4],
                 "leaf_domain": row[5]
             }
+            
+            # Limita il numero di richieste contemporanee: senza limite verrebbero aperte decine di migliaia di 
+            # connessioni insieme, esaurendo i file descriptor e producendo falsi "Impossible Retrieve OCSP Information"
+            semaphore = asyncio.Semaphore(OCSP_MAX_CONCURRENT_REQUESTS)
+            
+            async def check_ocsp_status_row_limited(row, session):
+                async with semaphore:
+                    return await check_ocsp_status_row(row_to_certificate(row), certificate_type, session)
 
-            while True:
-                async with db.execute("""
-                    SELECT c.certificate_id, c.authority_info_access, i.common_name, i.raw AS issuer_cert_raw, c.raw AS leaf_cert_raw, c.leaf_domain
-                    FROM Certificates AS c 
-                    INNER JOIN Issuers AS i ON c.issuer_id = i.issuer_id
-                    WHERE c.ocsp_check = 'No Request Done'
-                    LIMIT ? OFFSET ?
-                """, (batch_size, offset)) as cursor:
-                
-                    # Prende tutti i record
-                    rows = await cursor.fetchall()
+            # Un'unica sessione HTTP condivisa per tutte le richieste. Le connessioni vengono chiuse dopo ogni richiesta: 
+            # quelle inattive mantenute in keep-alive non rientrano nel limite e potrebbero esaurire i file descriptor
+            connector = aiohttp.TCPConnector(limit=OCSP_MAX_CONCURRENT_REQUESTS, force_close=True)
+            async with aiohttp.ClientSession(connector=connector) as session:
+                while True:
+                    # Paginazione per chiave: i risultati vengono scritti nel file temporaneo e non nel db, 
+                    # quindi i certificati già elaborati restano 'No Request Done' fino alla fine dell'analisi
+                    async with db.execute("""
+                        SELECT c.certificate_id, c.authority_info_access, i.common_name, i.raw AS issuer_cert_raw, c.raw AS leaf_cert_raw, c.leaf_domain
+                        FROM Certificates AS c 
+                        INNER JOIN Issuers AS i ON c.issuer_id = i.issuer_id
+                        WHERE c.ocsp_check = 'No Request Done' AND c.certificate_id > ?
+                        ORDER BY c.certificate_id
+                        LIMIT ?
+                    """, (last_certificate_id, batch_size)) as cursor:
+                    
+                        # Prende tutti i record
+                        rows = await cursor.fetchall()
 
                     # Se non ci sono più record, interrompe il ciclo
                     if not rows or len(rows) == 0:
                         break
                     
-                    tasks = [check_ocsp_status_row(row_to_certificate(row), certificate_type) for row in rows]
-                    results = await asyncio.gather(*tasks)
-                
-                    update_values = [(result[0], result[1], result[2]) for result in results]
-                
-                    # Scrive i risultati in un file temporaneo per evitare di scrivere direttamente nel db
-                    ocsp_temp_file_writer.writerows(update_values)
+                    tasks = [asyncio.ensure_future(check_ocsp_status_row_limited(row, session)) for row in rows]
+                    try:
+                        # Scrive ogni risultato appena disponibile nel file temporaneo (e non direttamente nel db): 
+                        # in caso di interruzione non si perde il lavoro già svolto sul batch corrente
+                        for completed_task in asyncio.as_completed(tasks):
+                            result = await completed_task
+                            ocsp_temp_file_writer.writerow((result[0], result[1], result[2]))
+                            
+                            # Aggiorna la barra di caricamento
+                            pbar_ocsp_check.update(1)
+                    finally:
+                        # In caso di interruzione cancella le richieste ancora in corso
+                        for task in tasks:
+                            task.cancel()
 
-                    # Incrementa l'offset per il prossimo batch
-                    offset += batch_size
-                    
-                    # Aggiorna la barra di caricamento
-                    pbar_ocsp_check.update(len(rows))
+                    # Il batch successivo parte dall'ultimo certificato elaborato
+                    last_certificate_id = rows[-1][0]
 
                     # Aggiornamento in batch dell'OCSP status nel db
                     # await db.executemany("""
@@ -412,9 +446,10 @@ class CertificateDAO:
             logging.error(f"Errore nella deserializzazione del JSON: {json_err}")
         except Exception as e:
             logging.error(f"Errore generale durante il controllo dello stato OCSP: {e}")
-        
-        # Chiusura barra di progresso
-        pbar_ocsp_check.close()
+        finally:
+            # Chiusura barra di progresso
+            if pbar_ocsp_check is not None:
+                pbar_ocsp_check.close()
         return
     
     def insert_sct_log_operator(self, operator):
@@ -512,7 +547,7 @@ class CertificateDAO:
                     LIMIT ?
                 ),
                 Others AS (
-                    SELECT 'Others' AS organization, SUM(certificate_count) AS certificate_count
+                    SELECT 'Others' AS organization, COALESCE(SUM(certificate_count), 0) AS certificate_count
                     FROM IssuersCounts 
                     WHERE organization NOT IN (SELECT organization FROM TopIssuers)
                 )
@@ -524,7 +559,8 @@ class CertificateDAO:
 
             logging.debug(f"Risultati ottenuti: {len(results)}")
 
-            issuer_count_dict = {row[0]: row[1] for row in results}
+            # Esclude la riga 'Others' quando vale 0 (nessun issuer oltre ai primi)
+            issuer_count_dict = {row[0]: row[1] for row in results if row[1]}
             
             logging.debug(f"Totale trovati: {len(issuer_count_dict)}")
             return issuer_count_dict
@@ -567,7 +603,8 @@ class CertificateDAO:
 
             logging.debug(f"Risultati ottenuti: {len(results)}")
 
-            count_dict = {row[0]: row[1] for row in results}
+            # Esclude la riga 'Others' quando vale 0 (nessun paese oltre ai primi)
+            count_dict = {row[0]: row[1] for row in results if row[1]}
 
             logging.debug(f"Totale trovati: {len(count_dict)}")
             return count_dict
@@ -585,15 +622,23 @@ class CertificateDAO:
             elif(self.certificate_type == DatabaseType.ROOT):
                 count_certs = 1
             
+            # Le durate negative sono raggruppate nella categoria -1: con la divisione intera di SQLite 
+            # (es. -100/31536000 = 0) finirebbero nella stessa categoria dei certificati con durata inferiore all'anno
             self.cursor.execute("""
-                SELECT validity_length/31536000, COUNT(DISTINCT(s.subject_key_id)) AS count
-                FROM Certificates AS c JOIN Subjects AS s ON c.subject_id = s.subject_id
-                WHERE validity_length < 0
+                SELECT -1, COUNT(certificate_identity) AS count
+                FROM (
+                    SELECT DISTINCT COALESCE(NULLIF(s.subject_key_id, ''), c.raw) AS certificate_identity
+                    FROM Certificates AS c JOIN Subjects AS s ON c.subject_id = s.subject_id
+                    WHERE validity_length < 0
+                )
                 UNION ALL
-                SELECT validity_length/31536000, COUNT(DISTINCT(s.subject_key_id)) AS count
-                FROM Certificates AS c JOIN Subjects AS s ON c.subject_id = s.subject_id
-                WHERE c.validity_length IS NOT NULL AND validity_length >= 0
-                GROUP BY validity_length/31536000
+                SELECT years, COUNT(certificate_identity) AS count
+                FROM (
+                    SELECT DISTINCT validity_length/31536000 AS years, COALESCE(NULLIF(s.subject_key_id, ''), c.raw) AS certificate_identity
+                    FROM Certificates AS c JOIN Subjects AS s ON c.subject_id = s.subject_id
+                    WHERE c.validity_length IS NOT NULL AND validity_length >= 0
+                )
+                GROUP BY years
                 HAVING count >= ?;
             """, (count_certs,))
             
@@ -615,7 +660,8 @@ class CertificateDAO:
                     count_dict[year] = value
             """
             
-            count_dict = {row[0]: row[1] for row in results}
+            # La prima SELECT è un'aggregazione senza GROUP BY: senza durate negative restituisce comunque la riga (-1, 0)
+            count_dict = {row[0]: row[1] for row in results if row[0] is not None and row[1] > 0}
             
             logging.debug(f"Totale trovati: {len(count_dict)}")
             return count_dict
@@ -634,9 +680,12 @@ class CertificateDAO:
                 count_certs = 9
             
             self.cursor.execute("""
-                SELECT strftime('%Y-%m', validity_end) AS month, COUNT(DISTINCT(subject_key_id)) AS count
-                FROM Certificates AS c JOIN Subjects AS s ON c.subject_id = s.subject_id
-                WHERE validity_end IS NOT NULL
+                SELECT month, COUNT(certificate_identity) AS count
+                FROM (
+                    SELECT DISTINCT strftime('%Y-%m', validity_end) AS month, COALESCE(NULLIF(s.subject_key_id, ''), c.raw) AS certificate_identity
+                    FROM Certificates AS c JOIN Subjects AS s ON c.subject_id = s.subject_id
+                    WHERE validity_end IS NOT NULL
+                )
                 GROUP BY month
                 HAVING count > ?
                 ORDER BY month ASC;
@@ -658,9 +707,12 @@ class CertificateDAO:
         """Mostra la distribuzione degli algoritmi di firma utilizzati."""
         try:
             self.cursor.execute("""
-                SELECT signature_algorithm, COUNT(DISTINCT(subject_key_id)) AS sign_algorithm_count
-                FROM Certificates AS c INNER JOIN Subjects AS s ON c.subject_id = s.subject_id
-                WHERE signature_algorithm IS NOT NULL
+                SELECT signature_algorithm, COUNT(certificate_identity) AS sign_algorithm_count
+                FROM (
+                    SELECT DISTINCT signature_algorithm, COALESCE(NULLIF(s.subject_key_id, ''), c.raw) AS certificate_identity
+                    FROM Certificates AS c INNER JOIN Subjects AS s ON c.subject_id = s.subject_id
+                    WHERE signature_algorithm IS NOT NULL
+                )
                 GROUP BY signature_algorithm
                 ORDER BY sign_algorithm_count DESC;
             """)
@@ -684,12 +736,15 @@ class CertificateDAO:
                 SELECT 
                     key_algorithm, 
                     key_length, 
-                    COUNT(DISTINCT(subject_key_id)) AS certificate_count
-                FROM 
-                    Certificates AS c INNER JOIN Subjects AS s ON c.subject_id = s.subject_id
-                WHERE 
-                    key_algorithm IS NOT NULL AND key_algorithm <> '' AND
-                    key_length IS NOT NULL AND key_length <> ''
+                    COUNT(certificate_identity) AS certificate_count
+                FROM (
+                    SELECT DISTINCT key_algorithm, key_length, COALESCE(NULLIF(s.subject_key_id, ''), c.raw) AS certificate_identity
+                    FROM 
+                        Certificates AS c INNER JOIN Subjects AS s ON c.subject_id = s.subject_id
+                    WHERE 
+                        key_algorithm IS NOT NULL AND key_algorithm <> '' AND
+                        key_length IS NOT NULL AND key_length <> ''
+                )
                 GROUP BY 
                     key_algorithm, 
                     key_length
@@ -743,8 +798,11 @@ class CertificateDAO:
         """Conta il numero di certificati che hanno implementato estensioni critiche rispetto a quelle non critiche dell'AIA."""
         try:
             self.cursor.execute("""
-                SELECT authority_info_access_is_critical, COUNT(DISTINCT(subject_key_id)) AS count
-                FROM Certificates AS c JOIN Subjects AS s ON c.subject_id = s.subject_id
+                SELECT authority_info_access_is_critical, COUNT(certificate_identity) AS count
+                FROM (
+                    SELECT DISTINCT authority_info_access_is_critical, COALESCE(NULLIF(s.subject_key_id, ''), c.raw) AS certificate_identity
+                    FROM Certificates AS c JOIN Subjects AS s ON c.subject_id = s.subject_id
+                )
                 GROUP BY authority_info_access_is_critical
                 ORDER BY count DESC;
             """)
@@ -770,8 +828,11 @@ class CertificateDAO:
                         WHEN self_signed = 1 THEN 'True' 
                         ELSE 'False' 
                     END AS is_self_signed,
-                    COUNT(DISTINCT(subject_key_id)) AS count
-                FROM Certificates AS c JOIN Subjects AS s ON c.subject_id = s.subject_id
+                    COUNT(certificate_identity) AS count
+                FROM (
+                    SELECT DISTINCT self_signed, COALESCE(NULLIF(s.subject_key_id, ''), c.raw) AS certificate_identity
+                    FROM Certificates AS c JOIN Subjects AS s ON c.subject_id = s.subject_id
+                )
                 GROUP BY self_signed;
             """)
             
@@ -791,8 +852,11 @@ class CertificateDAO:
         """Mostra la distribuzione dei diversi validation_level dei certificati."""
         try:
             self.cursor.execute("""
-                SELECT validation_level, COUNT(DISTINCT(subject_key_id)) AS count
-                FROM Certificates AS c JOIN Subjects AS s ON c.subject_id = s.subject_id
+                SELECT validation_level, COUNT(certificate_identity) AS count
+                FROM (
+                    SELECT DISTINCT validation_level, COALESCE(NULLIF(s.subject_key_id, ''), c.raw) AS certificate_identity
+                    FROM Certificates AS c JOIN Subjects AS s ON c.subject_id = s.subject_id
+                )
                 GROUP BY validation_level;
             """)
             
@@ -812,8 +876,11 @@ class CertificateDAO:
         """Mostra la distribuzione delle versioni dei certificati (es. v1, v2, v3)."""
         try:
             self.cursor.execute("""
-                SELECT version, COUNT(DISTINCT(subject_key_id)) AS count
-                FROM Certificates AS c JOIN Subjects AS s ON c.subject_id = s.subject_id
+                SELECT version, COUNT(certificate_identity) AS count
+                FROM (
+                    SELECT DISTINCT version, COALESCE(NULLIF(s.subject_key_id, ''), c.raw) AS certificate_identity
+                    FROM Certificates AS c JOIN Subjects AS s ON c.subject_id = s.subject_id
+                )
                 GROUP BY version;
             """)
             
@@ -833,8 +900,11 @@ class CertificateDAO:
         """Rappresenta la proporzione di firme valide rispetto a quelle non valide."""
         try:
             self.cursor.execute("""
-                SELECT signature_valid AS is_valid_signature, COUNT(DISTINCT(subject_key_id)) AS count
-                FROM Certificates AS c INNER JOIN Subjects AS s ON c.subject_id = s.subject_id
+                SELECT signature_valid AS is_valid_signature, COUNT(certificate_identity) AS count
+                FROM (
+                    SELECT DISTINCT signature_valid, COALESCE(NULLIF(s.subject_key_id, ''), c.raw) AS certificate_identity
+                    FROM Certificates AS c INNER JOIN Subjects AS s ON c.subject_id = s.subject_id
+                )
                 GROUP BY signature_valid
                 ORDER BY count DESC;
             """)
@@ -879,10 +949,13 @@ class CertificateDAO:
         """Mostra quali key_usage sono più comunemente utilizzati nei certificati."""
         try:
             self.cursor.execute("""
-                SELECT e.key_usage, COUNT(DISTINCT(s.subject_key_id)) AS count
-                FROM Extensions AS e JOIN Certificates AS c ON e.certificate_id = c.certificate_id 
-                JOIN Subjects AS s ON c.subject_id = s.subject_id
-                GROUP BY e.key_usage
+                SELECT key_usage, COUNT(certificate_identity) AS count
+                FROM (
+                    SELECT DISTINCT e.key_usage, COALESCE(NULLIF(s.subject_key_id, ''), c.raw) AS certificate_identity
+                    FROM Extensions AS e JOIN Certificates AS c ON e.certificate_id = c.certificate_id 
+                    JOIN Subjects AS s ON c.subject_id = s.subject_id
+                )
+                GROUP BY key_usage
                 ORDER BY count DESC;
             """)
             
@@ -894,7 +967,8 @@ class CertificateDAO:
             for row in results:
                 key_usage = json.loads(row[0])
                 key_usage.pop('value', None)
-                count_dict[json.dumps(", ".join(key_usage.keys()))] = row[1]
+                key = json.dumps(", ".join(key_usage.keys()))
+                count_dict[key] = count_dict.get(key, 0) + row[1]     # Righe diverse possono avere le stesse chiavi
 
             logging.debug(f"Totale trovati: {len(count_dict)}")
             return count_dict
@@ -906,9 +980,12 @@ class CertificateDAO:
         """Mostra la proporzione di key_usage critici rispetto a quelli non critici."""
         try:
             self.cursor.execute("""
-                SELECT key_usage_is_critical, COUNT(DISTINCT(subject_key_id)) AS count
-                FROM Extensions AS e JOIN Certificates AS c ON e.certificate_id = c.certificate_id
-                JOIN Subjects AS s ON c.subject_id = s.subject_id
+                SELECT key_usage_is_critical, COUNT(certificate_identity) AS count
+                FROM (
+                    SELECT DISTINCT key_usage_is_critical, COALESCE(NULLIF(s.subject_key_id, ''), c.raw) AS certificate_identity
+                    FROM Extensions AS e JOIN Certificates AS c ON e.certificate_id = c.certificate_id
+                    JOIN Subjects AS s ON c.subject_id = s.subject_id
+                )
                 GROUP BY key_usage_is_critical
                 ORDER BY count DESC;
             """)
@@ -929,10 +1006,13 @@ class CertificateDAO:
         """Visualizza quali extended_key_usage sono più comuni nei certificati."""
         try:
             self.cursor.execute("""
-                SELECT e.extended_key_usage, COUNT(DISTINCT(s.subject_key_id)) AS count
-                FROM Extensions AS e JOIN Certificates AS c ON e.certificate_id = c.certificate_id 
-                JOIN Subjects AS s ON c.subject_id = s.subject_id
-                GROUP BY e.extended_key_usage
+                SELECT extended_key_usage, COUNT(certificate_identity) AS count
+                FROM (
+                    SELECT DISTINCT e.extended_key_usage, COALESCE(NULLIF(s.subject_key_id, ''), c.raw) AS certificate_identity
+                    FROM Extensions AS e JOIN Certificates AS c ON e.certificate_id = c.certificate_id 
+                    JOIN Subjects AS s ON c.subject_id = s.subject_id
+                )
+                GROUP BY extended_key_usage
                 ORDER BY count DESC;
             """)
             
@@ -943,7 +1023,8 @@ class CertificateDAO:
             count_dict = {}
             for row in results:
                 key_usage = json.loads(row[0])
-                count_dict[json.dumps(", ".join(key_usage.keys()))] = row[1]
+                key = json.dumps(", ".join(key_usage.keys()))
+                count_dict[key] = count_dict.get(key, 0) + row[1]     # Righe diverse (es. OID sconosciuti) possono avere le stesse chiavi
 
             logging.debug(f"Totale trovati: {len(count_dict)}")
             return count_dict
@@ -955,10 +1036,13 @@ class CertificateDAO:
         """Mostra la proporzione di extended_key_usage critici rispetto a quelli non critici."""
         try:
             self.cursor.execute("""
-                SELECT e.extended_key_usage_is_critical, COUNT(DISTINCT(s.subject_key_id)) AS count
-                FROM Extensions AS e JOIN Certificates AS c ON e.certificate_id = c.certificate_id 
-                JOIN Subjects AS s ON c.subject_id = s.subject_id
-                GROUP BY e.extended_key_usage_is_critical
+                SELECT extended_key_usage_is_critical, COUNT(certificate_identity) AS count
+                FROM (
+                    SELECT DISTINCT e.extended_key_usage_is_critical, COALESCE(NULLIF(s.subject_key_id, ''), c.raw) AS certificate_identity
+                    FROM Extensions AS e JOIN Certificates AS c ON e.certificate_id = c.certificate_id 
+                    JOIN Subjects AS s ON c.subject_id = s.subject_id
+                )
+                GROUP BY extended_key_usage_is_critical
                 ORDER BY count DESC;
             """)
             
@@ -978,10 +1062,13 @@ class CertificateDAO:
         """Mostra la distribuzione dei Basic Constraints nei certificati."""
         try:
             self.cursor.execute("""
-                SELECT e.basic_constraints, COUNT(DISTINCT(s.subject_key_id)) AS count
-                FROM Extensions AS e JOIN Certificates AS c ON e.certificate_id = c.certificate_id
-                JOIN Subjects AS s ON c.subject_id = s.subject_id
-                GROUP BY e.basic_constraints
+                SELECT basic_constraints, COUNT(certificate_identity) AS count
+                FROM (
+                    SELECT DISTINCT e.basic_constraints, COALESCE(NULLIF(s.subject_key_id, ''), c.raw) AS certificate_identity
+                    FROM Extensions AS e JOIN Certificates AS c ON e.certificate_id = c.certificate_id
+                    JOIN Subjects AS s ON c.subject_id = s.subject_id
+                )
+                GROUP BY basic_constraints
                 ORDER BY count DESC;
             """)
             
@@ -1001,9 +1088,12 @@ class CertificateDAO:
         """Mostra la proporzione di estensioni CRL critical vs non critical."""
         try:
             self.cursor.execute("""
-                SELECT crl_distr_point_is_critical, COUNT(DISTINCT(subject_key_id)) AS count
-                FROM Extensions AS e JOIN Certificates AS c ON e.certificate_id = c.certificate_id
-                JOIN Subjects AS s ON c.subject_id = s.subject_id
+                SELECT crl_distr_point_is_critical, COUNT(certificate_identity) AS count
+                FROM (
+                    SELECT DISTINCT crl_distr_point_is_critical, COALESCE(NULLIF(s.subject_key_id, ''), c.raw) AS certificate_identity
+                    FROM Extensions AS e JOIN Certificates AS c ON e.certificate_id = c.certificate_id
+                    JOIN Subjects AS s ON c.subject_id = s.subject_id
+                )
                 GROUP BY crl_distr_point_is_critical
                 ORDER BY count DESC;
             """)
@@ -1079,11 +1169,14 @@ class CertificateDAO:
         """Mostra quali log di SCT sono stati usati più spesso."""
         try:
             self.cursor.execute("""
-                SELECT l.description, COUNT(DISTINCT(subject_key_id)) AS count
-                FROM SignedCertificateTimestamps AS s INNER JOIN Logs AS l ON s.log_id = l.id
-                INNER JOIN Certificates AS c ON s.certificate_id = c.certificate_id
-                INNER JOIN Subjects AS su ON c.subject_id = su.subject_id
-                GROUP BY l.description
+                SELECT description, COUNT(certificate_identity) AS count
+                FROM (
+                    SELECT DISTINCT l.description, COALESCE(NULLIF(su.subject_key_id, ''), c.raw) AS certificate_identity
+                    FROM SignedCertificateTimestamps AS s INNER JOIN Logs AS l ON s.log_id = l.id
+                    INNER JOIN Certificates AS c ON s.certificate_id = c.certificate_id
+                    INNER JOIN Subjects AS su ON c.subject_id = su.subject_id
+                )
+                GROUP BY description
                 HAVING count > 12000
                 ORDER BY count DESC;
             """)
@@ -1125,8 +1218,11 @@ class CertificateDAO:
         """Mostra la proporzione di estensioni critiche vs non critiche nelle Subject Alternative Name."""
         try:
             self.cursor.execute("""
-                SELECT subject_alt_name_is_critical, COUNT(DISTINCT(subject_key_id)) AS count
-                FROM Subjects
+                SELECT subject_alt_name_is_critical, COUNT(certificate_identity) AS count
+                FROM (
+                    SELECT DISTINCT s.subject_alt_name_is_critical, COALESCE(NULLIF(s.subject_key_id, ''), c.raw) AS certificate_identity
+                    FROM Subjects AS s JOIN Certificates AS c ON c.subject_id = s.subject_id
+                )
                 GROUP BY subject_alt_name_is_critical
                 ORDER BY count DESC;
             """)
@@ -1147,10 +1243,13 @@ class CertificateDAO:
         """Mostra la proporzione di certificate policies critici rispetto a quelli non critici."""
         try:
             self.cursor.execute("""
-                SELECT is_cp_critical, COUNT(DISTINCT(subject_key_id)) AS count
-                FROM CertificatePolicies AS c JOIN Extensions AS e ON c.extension_id = e.extension_id 
-                JOIN Certificates AS cc ON e.certificate_id = cc.certificate_id
-                JOIN Subjects AS s ON cc.subject_id = s.subject_id
+                SELECT is_cp_critical, COUNT(certificate_identity) AS count
+                FROM (
+                    SELECT DISTINCT c.is_cp_critical, COALESCE(NULLIF(s.subject_key_id, ''), cc.raw) AS certificate_identity
+                    FROM CertificatePolicies AS c JOIN Extensions AS e ON c.extension_id = e.extension_id 
+                    JOIN Certificates AS cc ON e.certificate_id = cc.certificate_id
+                    JOIN Subjects AS s ON cc.subject_id = s.subject_id
+                )
                 GROUP BY is_cp_critical
                 ORDER BY count DESC;
             """)
@@ -1167,15 +1266,21 @@ class CertificateDAO:
             logging.error("Errore: %s", str(e))
             return {}
     
-    def get_raw_certificates(self, batch_size=1500, offset=0):
-        """Recupera una lista di certificati dal database, insieme al loro ID e dominio di origine."""
+    def get_raw_certificates(self, batch_size=1500, last_certificate_id=0):
+        """
+            Recupera un batch di certificati dal database, insieme al loro ID e dominio di origine.
+            Usa la paginazione per chiave (certificate_id > last_certificate_id) invece di OFFSET, 
+            che su milioni di righe costringerebbe a riscandire tutte le righe già lette.
+        """
         
         try:
             self.cursor.execute("""
                 SELECT c.certificate_id, c.leaf_domain, c.raw, i.common_name, i.organization, i.issuer_dn
                 FROM Certificates AS c INNER JOIN Issuers AS i ON c.issuer_id = i.issuer_id
-                LIMIT ? OFFSET ?
-            """, (batch_size, offset))
+                WHERE c.certificate_id > ?
+                ORDER BY c.certificate_id
+                LIMIT ?
+            """, (last_certificate_id, batch_size))
             
             # Prende tutti i record
             rows = self.cursor.fetchall()
@@ -1185,8 +1290,9 @@ class CertificateDAO:
                     
             return rows
         except Exception as e:
-            logging.error(f"Errore generale durante il controllo dello stato OCSP: {e}")
-        return []
+            # Propaga l'errore: restituire una lista vuota farebbe terminare l'analisi come se fosse completa
+            logging.error(f"Errore generale durante il recupero dei certificati: {e}")
+            raise
     
     def get_certificates_count(self):
         """Restituisce il numero di certificati."""
@@ -1206,15 +1312,20 @@ class CertificateDAO:
             logging.error(f"Errore generale durante il conteggio dei certificati: {e}")
         return 0
     
-    def get_leaf_domain_certificates(self, batch_size=1500, offset=0):
-        """Recupera una lista di certificati dal database, insieme al loro ID e dominio di origine."""
+    def get_leaf_domain_certificates(self, batch_size=1500, last_certificate_id=0):
+        """
+            Recupera un batch di certificati dal database, insieme al loro ID e dominio di origine.
+            Usa la paginazione per chiave (certificate_id > last_certificate_id) invece di OFFSET.
+        """
         
         try:
             self.cursor.execute("""
                 SELECT certificate_id, leaf_domain
                 FROM Certificates
-                LIMIT ? OFFSET ?
-            """, (batch_size, offset))
+                WHERE certificate_id > ?
+                ORDER BY certificate_id
+                LIMIT ?
+            """, (last_certificate_id, batch_size))
             
             # Prende tutti i record
             rows = self.cursor.fetchall()
@@ -1224,8 +1335,9 @@ class CertificateDAO:
                     
             return rows
         except Exception as e:
+            # Propaga l'errore: restituire una lista vuota farebbe terminare l'analisi come se fosse completa
             logging.error(f"Errore generale durante il recupero della lista dei certificati: {e}")
-        return
+            raise
     
     def update_leaf_certificate_validity(self, signature_valid, certificate_id) -> dict:
         """Aggiorna la validità della firma di un certificato specificato dal suo ID."""

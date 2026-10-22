@@ -16,7 +16,8 @@ class Certificate:
     def get_cert(self):
         return self.cert
 
-    def load_cert_from_string(self, raw):
+    @staticmethod
+    def load_cert_from_string(raw):
         """Crea una stringa PEM da un certificato raw."""
         if(raw is None):
             return None

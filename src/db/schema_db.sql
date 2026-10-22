@@ -105,7 +105,7 @@ CREATE TABLE IF NOT EXISTS SignedCertificateTimestamps (
     timestamp INTEGER NOT NULL,
     version INTEGER NOT NULL,        
     signature TEXT NOT NULL,
-    FOREIGN KEY (certificate_id) REFERENCES Certificates(certificate_id)
+    FOREIGN KEY (certificate_id) REFERENCES Certificates(certificate_id),
     FOREIGN KEY (log_id) REFERENCES Logs(id)
 );
 
@@ -166,7 +166,7 @@ CREATE TABLE IF NOT EXISTS Logs (
     state_qualified_timestamp TIMESTAMPTZ,
     temporal_start TIMESTAMPTZ NOT NULL,
     temporal_end TIMESTAMPTZ NOT NULL,
-    FOREIGN KEY (operator_id) REFERENCES Operators(id)
+    FOREIGN KEY (operator_id) REFERENCES LogsOperators(id)
 );
 
 

@@ -32,22 +32,22 @@ async def close_connections():
     if 'root_database' in globals():
         root_database.close()
     
-    if 'pbar_leaf' in globals():
+    if globals().get('pbar_leaf') is not None:
         pbar_leaf.close()
     
-    if 'pbar_intermediate' in globals():
+    if globals().get('pbar_intermediate') is not None:
         pbar_intermediate.close()
     
-    if 'pbar_root' in globals():
+    if globals().get('pbar_root') is not None:
         pbar_root.close()
     
-    if 'pbar_zlint' in globals():
+    if globals().get('pbar_zlint') is not None:
         pbar_zlint.close()
     
-    if 'pbar_leaf_chain_check' in globals():
+    if globals().get('pbar_leaf_chain_check') is not None:
         pbar_leaf_chain_check.close()
     
-    if 'pbar_ocsp_check' in globals():
+    if globals().get('pbar_ocsp_check') is not None:
         pbar_ocsp_check.close()
     
     if 'plotter' in globals():
@@ -84,7 +84,7 @@ def leaf_certificates_analysis(certificates_file, dao: CertificateDAO, database:
     """Analizza e inserisce i certificati leaf dal file JSON nel database."""
     global pbar_leaf
     
-    with open(certificates_file, 'r') as certificates_reader:
+    with open(certificates_file, 'r', encoding='utf-8') as certificates_reader:
         # Inizializza la barra di caricamento
         tqdm.write("")
         pbar_leaf = tqdm(total=total_lines, desc=" 🔍  [magenta bold]Elaborazione Certificati[/magenta bold]", unit="cert.", 
@@ -110,6 +110,7 @@ def leaf_certificates_analysis(certificates_file, dao: CertificateDAO, database:
                     logging.error(f"Errore nell'elaborazione della riga {line_number}: {e}")
         except KeyboardInterrupt:
             logging.info(f"Ricevuto segnale di interruzione (SIGINT). Inizio della procedura di chiusura...")
+            raise   # Interrompe l'applicazione invece di proseguire con le analisi successive
         finally:
             pbar_leaf.close()   # Chiusura barra di progresso
     return
@@ -118,7 +119,7 @@ def intermediate_certificates_analysis(certificates_file, dao: CertificateDAO, d
     """Analizza e inserisce i certificati intermediate dal file JSON nel database."""
     global pbar_intermediate
     
-    with open(certificates_file, 'r') as certificates_reader:
+    with open(certificates_file, 'r', encoding='utf-8') as certificates_reader:
         # Inizializza la barra di caricamento
         tqdm.write("")
         pbar_intermediate = tqdm(total=total_lines, desc=" 📜  [green bold]Righe elaborate[/green bold]", unit="rows", 
@@ -156,12 +157,9 @@ def intermediate_certificates_analysis(certificates_file, dao: CertificateDAO, d
                                 raw_intermediate = intermediate_cert.get("raw", {})
                                 parsed_intermediate = intermediate_cert.get("parsed", {})
                             
-                                try:
-                                    # Rimuove il certificato intermedio estratto dalla catena
-                                    serial_number_intermediate = intermediate_cert.get("parsed", {}).get("serial_number", "")
-                                    chain = list(filter(lambda cert: cert.get("parsed", {}).get("serial_number", "") != serial_number_intermediate, chain))
-                                except ValueError:
-                                    pass  # Ignora l'errore se il certificato non è presente nella catena
+                                # Rimuove dalla catena il certificato intermedio estratto (per identità: altri certificati 
+                                # della catena potrebbero avere lo stesso numero di serie pur essendo emessi da CA diverse)
+                                chain = [cert for cert in chain if cert is not intermediate_cert]
                             
                                 # Aggiorna i dati del certificato nel server_certificates
                                 server_certificates["certificate"]["raw"] = raw_intermediate
@@ -178,6 +176,7 @@ def intermediate_certificates_analysis(certificates_file, dao: CertificateDAO, d
                     logging.error(f"Errore nell'elaborazione della riga {line_number}: {e}")
         except KeyboardInterrupt:
             logging.info(f"Ricevuto segnale di interruzione (SIGINT). Inizio della procedura di chiusura...")
+            raise   # Interrompe l'applicazione invece di proseguire con le analisi successive
         finally:
             pbar_intermediate.close()   # Chiusura barra di progresso
     return
@@ -186,7 +185,7 @@ def root_certificates_analysis(certificates_file, dao: CertificateDAO, database:
     """Analizza e inserisce i certificati root dal file JSON nel database."""
     global pbar_root
     
-    with open(certificates_file, 'r') as certificates_reader:
+    with open(certificates_file, 'r', encoding='utf-8') as certificates_reader:
         # Inizializza la barra di caricamento
         tqdm.write("")
         pbar_root = tqdm(total=total_lines, desc=" 🛠️  [blue bold]Elaborazione Certificati[/blue bold]", unit="cert.", 
@@ -241,6 +240,7 @@ def root_certificates_analysis(certificates_file, dao: CertificateDAO, database:
         
         except KeyboardInterrupt:
             logging.info(f"Ricevuto segnale di interruzione (SIGINT). Inizio della procedura di chiusura...")
+            raise   # Interrompe l'applicazione invece di proseguire con le analisi successive
         finally:
             pbar_root.close()   # Chiusura barra di progresso
     return
@@ -255,12 +255,13 @@ async def process_ocsp_check_status_request(dao: CertificateDAO, database: Datab
         database.drop_indexes_for_table()
         
         async with aiosqlite.connect(database.db_path) as db:
-            # Se il file esiste e ha delle righe, salva questi dati nel db e lo cancella
-            if os.path.exists(ocsp_temp_file) and os.path.getsize(ocsp_temp_file) > 0:
-                await update_certificates_ocsp_status_db(db, ocsp_temp_file)
-            
+            # Ripristina prima il backup (risultati delle esecuzioni completate) che viene mantenuto su disco
             if(os.path.exists(ocsp_backup_file)):
                 await update_certificates_ocsp_status_db(db, ocsp_backup_file, True)
+            
+            # Poi applica i risultati più recenti di un'esecuzione interrotta: se il file esiste e ha delle righe, salva questi dati nel db e lo cancella
+            if os.path.exists(ocsp_temp_file) and os.path.getsize(ocsp_temp_file) > 0:
+                await update_certificates_ocsp_status_db(db, ocsp_temp_file)
              
             # Esegue l'ocsp check prendendo i dati dal db e scrive nel file temporaneo
             with open(ocsp_temp_file, mode="a", newline="") as ocsp_temp_file_csv:
@@ -279,13 +280,14 @@ async def process_ocsp_check_status_request(dao: CertificateDAO, database: Datab
             logging.info("Analisi OCSP per i certificati completata.")
     except asyncio.CancelledError:
         logging.info("Elaborazione della richiesta di controllo OCSP cancellata.")
+        raise   # Propaga la cancellazione per non proseguire con le analisi successive
     except Exception as e:
         logging.error(f"Errore nell'elaborazione della richiesta di controllo OCSP: {e}")
         
 def process_insert_sct_logs(log_list_path, dao: CertificateDAO, database: Database):
     """Elabora e inserisce i log SCT nel database a partire da un file JSON."""
     
-    with open(log_list_path, 'r') as log_list_reader:
+    with open(log_list_path, 'r', encoding='utf-8') as log_list_reader:
         try:
             data = json.load(log_list_reader)
             operators = data.get("operators", [])
@@ -299,7 +301,8 @@ def process_insert_sct_logs(log_list_path, dao: CertificateDAO, database: Databa
         for operator in operators:
             with database.transaction():
                 operator_id = dao.insert_sct_log_operator(operator)
-                logs = operator.get("logs", [])
+                # Le versioni più recenti della lista includono anche i log "tiled" (Static CT API)
+                logs = operator.get("logs", []) + operator.get("tiled_logs", [])
                 for json_log in logs:
                     dao.insert_sct_log(operator_id, json_log)
         
@@ -308,7 +311,8 @@ def process_insert_sct_logs(log_list_path, dao: CertificateDAO, database: Databa
             "name": "unknown",
             "email": ""
         }
-        dao.insert_sct_log_operator(operator)
+        with database.transaction():
+            dao.insert_sct_log_operator(operator)
         logging.info("SCT Operators e SCT Logs memorizzati con successo.")
 
     return
@@ -391,8 +395,15 @@ def plot_root_certificates(dao: CertificateDAO, is_verbose: bool):
 def start_leaf_certificate_chain_check(dao: CertificateDAO, database: Database):
     global pbar_leaf_chain_check
     
+    pbar_leaf_chain_check = None
+    
     try:
         logging.info("Inizio controllo della validità della catena sui certificati...")
+        
+        # Senza sslyze ogni certificato verrebbe aggiornato con 'Error', sovrascrivendo il valore esistente
+        if shutil.which('sslyze') is None:
+            logging.error("Eseguibile 'sslyze' non trovato nel PATH: impossibile eseguire la validazione delle catene.")
+            return
         
         total_lines = dao.get_certificates_count()
         
@@ -401,15 +412,16 @@ def start_leaf_certificate_chain_check(dao: CertificateDAO, database: Database):
                     colour="magenta", bar_format="{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} • ⚡ {rate_fmt}")
         
         batch_size = 5000
-        offset = 0
+        last_certificate_id = 0
             
         while(True):
-            certificates = dao.get_leaf_domain_certificates(batch_size, offset)
-            
-            offset += batch_size
+            certificates = dao.get_leaf_domain_certificates(batch_size, last_certificate_id)
                 
             if not certificates or len(certificates) == 0:
                 break
+            
+            # Paginazione per chiave: il batch successivo parte dall'ultimo certificate_id elaborato
+            last_certificate_id = certificates[-1][0]
         
             for certificate in certificates:
                 # Aggiorna la barra di caricamento
@@ -424,8 +436,10 @@ def start_leaf_certificate_chain_check(dao: CertificateDAO, database: Database):
         logging.error(f"Errore durante l'esecuzione della funzione start_leaf_certificate_chain_check: {str(e)}")
     except KeyboardInterrupt:
         logging.info(f"Ricevuto segnale di interruzione (SIGINT). Inizio della procedura di chiusura...")
+        raise   # Interrompe l'applicazione invece di proseguire con le analisi successive
     finally:
-        pbar_leaf_chain_check.close()
+        if pbar_leaf_chain_check is not None:
+            pbar_leaf_chain_check.close()
     return
     
 async def certificates_analysis_main():
@@ -553,10 +567,14 @@ async def certificates_analysis_main():
 
     # Analisi Certificati Leaf
     db_leaf_path = os.path.abspath(f'{leaf_path}/leaf_certificates.db')
-    if(args.delete_leaf_db and not (args.leaf_analysis or args.leaf_ocsp_analysis or args.plot_leaf_results or args.leaf_zlint_check or args.leaf_chain_validation)):
+    # Eliminazione senza una nuova analisi: le altre fasi richieste lavorerebbero su un database vuoto e vengono saltate
+    if(args.delete_leaf_db and not args.leaf_analysis):
         if os.path.exists(db_leaf_path):
             os.remove(db_leaf_path)
             logging.info("Database '%s' eliminato con successo.", db_leaf_path)
+        
+        if(args.leaf_ocsp_analysis or args.plot_leaf_results or args.leaf_zlint_check or args.leaf_chain_validation):
+            logging.warning("Il database leaf è stato eliminato senza eseguire --leaf_analysis: le altre analisi sui certificati 'Leaf' non vengono eseguite.")
             
     elif(args.delete_leaf_db or args.leaf_analysis or args.leaf_ocsp_analysis or args.plot_leaf_results or args.leaf_zlint_check or args.leaf_chain_validation):
         if((args.leaf_ocsp_analysis or args.plot_leaf_results or args.leaf_zlint_check or args.leaf_chain_validation) and (not os.path.exists(db_leaf_path))):
@@ -584,7 +602,11 @@ async def certificates_analysis_main():
         # Esegui l'analisi dei certificati
         if(args.leaf_analysis):
             logging.info("Inizio analisi certificati 'Leaf'.")
-            leaf_certificates_analysis(result_json_file, leaf_dao, leaf_database, total_lines)
+            leaf_database.set_bulk_insert_mode(True)
+            try:
+                leaf_certificates_analysis(result_json_file, leaf_dao, leaf_database, total_lines)
+            finally:
+                leaf_database.set_bulk_insert_mode(False)
             logging.info("Analisi dei certificati 'Leaf' completata con successo.")
             
             # Rimuove i dati non necessari
@@ -619,10 +641,14 @@ async def certificates_analysis_main():
     
     # Analisi Certificati Intermediate
     db_intermediate_path = os.path.abspath(f'{intermediate_path}/intermediate_certificates.db')
-    if(args.delete_intermediate_db and not (args.intermediate_analysis or args.intermediate_ocsp_analysis or args.plot_intermediate_results or args.intermediate_zlint_check)):
+    # Eliminazione senza una nuova analisi: le altre fasi richieste lavorerebbero su un database vuoto e vengono saltate
+    if(args.delete_intermediate_db and not args.intermediate_analysis):
         if os.path.exists(db_intermediate_path):
             os.remove(db_intermediate_path)
             logging.info("Database '%s' eliminato con successo.", db_intermediate_path)
+        
+        if(args.intermediate_ocsp_analysis or args.plot_intermediate_results or args.intermediate_zlint_check):
+            logging.warning("Il database intermediate è stato eliminato senza eseguire --intermediate_analysis: le altre analisi sui certificati 'Intermediate' non vengono eseguite.")
 
     elif(args.delete_intermediate_db or args.intermediate_analysis or args.intermediate_ocsp_analysis or args.plot_intermediate_results or args.intermediate_zlint_check):
         if((args.intermediate_ocsp_analysis or args.plot_intermediate_results or args.intermediate_zlint_check) and (not os.path.exists(db_intermediate_path))):
@@ -650,7 +676,11 @@ async def certificates_analysis_main():
         # Esegui l'analisi dei certificati
         if(args.intermediate_analysis):
             logging.info("Inizio analisi certificati 'Intermediate'.")      
-            intermediate_certificates_analysis(result_json_file, intermediate_dao, intermediate_database, total_lines)
+            intermediate_database.set_bulk_insert_mode(True)
+            try:
+                intermediate_certificates_analysis(result_json_file, intermediate_dao, intermediate_database, total_lines)
+            finally:
+                intermediate_database.set_bulk_insert_mode(False)
             logging.info("Analisi dei certificati 'Intermediate' completata con successo.")
             
             # Rimuove i dati non necessari, crea gli indici e applica delle correzioni ai dati
@@ -680,10 +710,14 @@ async def certificates_analysis_main():
     
     # Analisi Certificati Root
     db_root_path = os.path.abspath(f'{root_path}/root_certificates.db')
-    if(args.delete_root_db and not (args.root_analysis or args.root_ocsp_analysis or args.plot_root_results)):
+    # Eliminazione senza una nuova analisi: le altre fasi richieste lavorerebbero su un database vuoto e vengono saltate
+    if(args.delete_root_db and not args.root_analysis):
         if os.path.exists(db_root_path):
             os.remove(db_root_path)
             logging.info("Database '%s' eliminato con successo.", db_root_path)
+        
+        if(args.root_ocsp_analysis or args.plot_root_results):
+            logging.warning("Il database root è stato eliminato senza eseguire --root_analysis: le altre analisi sui certificati 'Root' non vengono eseguite.")
 
     elif(args.delete_root_db or args.root_analysis or args.root_ocsp_analysis or args.plot_root_results):
         if((args.root_ocsp_analysis or args.plot_root_results) and (not os.path.exists(db_root_path))):
@@ -711,7 +745,11 @@ async def certificates_analysis_main():
         # Esegui l'analisi dei certificati
         if(args.root_analysis):
             logging.info("Inizio analisi certificati 'Root'.")      
-            root_certificates_analysis(result_json_file, root_dao, root_database, total_lines)
+            root_database.set_bulk_insert_mode(True)
+            try:
+                root_certificates_analysis(result_json_file, root_dao, root_database, total_lines)
+            finally:
+                root_database.set_bulk_insert_mode(False)
             logging.info("Analisi dei certificati 'Root' completata con successo.")
             
             # Rimuove i dati non necessari, crea gli indici e applica delle correzioni ai dati

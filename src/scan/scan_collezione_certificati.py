@@ -14,7 +14,7 @@ def count_status(input_file):
             try:
                 json_data = json.loads(row)
                 
-                status = json_data["data"]["tls"]["status"]
+                status = json_data.get("data", {}).get("tls", {}).get("status", "")
                 
                 if status not in status_dict:
                     status_dict[status] = 1
@@ -117,14 +117,8 @@ def check_error_rows(input_file):
                 if(status == "success"):
                     continue
                 
-                if(status == "connection-timeout"):
-                    check = controlla_struttura(json_data)
-                    
-                if(status == "unknown-error"):
-                    check = controlla_struttura(json_data)
-                
-                if(status == "io-timeout"):
-                    check = controlla_struttura(json_data)
+                # Ogni riga di errore (connection-timeout, unknown-error, io-timeout o altri status) deve avere la stessa struttura
+                check = controlla_struttura(json_data)
                 
                 if(check == False):
                     print(json_data)
@@ -169,10 +163,11 @@ def download_json_domain(input_file, domain: str, line_num: int):
                 print(f"Errore nel parsing della riga: {row}")
     
     if(domain_json_data is not None):
-        file_domain = os.path.join("src/scan/", f"{domain}.json")
+        # In caso di ricerca per numero di riga il dominio viene preso dalla riga trovata
+        file_domain = os.path.join("src/scan/", f"{domain_json_data.get('domain', domain)}.json")
     
         with open(file_domain, 'w') as writer:
-            json.dump(json_data, writer, indent=4)
+            json.dump(domain_json_data, writer, indent=4)
             print(f"File creato con successo: {file_domain}")
     else:
         print("Dominio non trovato")
@@ -264,6 +259,7 @@ def count_certs_chain(input_file):
     out_file = "src/scan/count_certs_chain.log"
     no_chain_count = 0
     chain_with_root_count = 0
+    chain_root_without_intermediate_count = 0
     chain_without_root_count = 0
     chain_without_intermediate_and_root_count = 0
     
@@ -289,14 +285,20 @@ def count_certs_chain(input_file):
                             
                             # Controlla se siamo arrivati al root
                             if is_self_signed and subject_dn == issuer_dn:
-                                chain_with_root_count += 1
+                                if(is_intermediate_found):
+                                    chain_with_root_count += 1
+                                else:
+                                    chain_root_without_intermediate_count += 1
                                 break
                             
                             # Cerca il certificato successivo nella catena
                             next_cert = next((cert for cert in chain if cert.get("parsed", {}).get("subject_dn", "") == issuer_dn), None)
                             
                             if next_cert:
-                                is_intermediate_found = True
+                                # Il certificato successivo è un intermediate solo se non è il root
+                                next_parsed = next_cert.get("parsed", {})
+                                if not (next_parsed.get("signature", {}).get("self_signed", {}) and next_parsed.get("subject_dn", "") == next_parsed.get("issuer_dn", "")):
+                                    is_intermediate_found = True
                                 try:
                                     chain.remove(current_cert)
                                 except ValueError:
@@ -315,10 +317,11 @@ def count_certs_chain(input_file):
 
     with open(out_file, 'w') as writer:
         writer.write(f"Numero totale di certificati che hanno almeno un intermediate e un root nella catena: {chain_with_root_count}\n")
+        writer.write(f"Numero totale di certificati che hanno un root ma nessun intermediate nella catena: {chain_root_without_intermediate_count}\n")
         writer.write(f"Numero totale di certificati che hanno un intermediate ma nessun root nella catena: {chain_without_root_count}\n")
         writer.write(f"Numero totale di certificati che non hanno nè un intermediate e nè un root nella catena: {chain_without_intermediate_and_root_count}\n")
         writer.write(f"Numero totale di certificati che non hanno una catena: {no_chain_count}\n")
-        writer.write(f"Totale (deve corrispondere al numero di success): {chain_with_root_count+chain_without_root_count+chain_without_intermediate_and_root_count+no_chain_count}\n")
+        writer.write(f"Totale (deve corrispondere al numero di success): {chain_with_root_count+chain_root_without_intermediate_count+chain_without_root_count+chain_without_intermediate_and_root_count+no_chain_count}\n")
     return
 
 def check_sct_intermediate_certs_chain(input_file):
@@ -360,6 +363,9 @@ def check_sct_intermediate_certs_chain(input_file):
                                 except ValueError:
                                     pass
                                 current_cert = next_cert
+                            else:
+                                # Nessun certificato successivo nella catena: evita un ciclo infinito
+                                break
             except json.JSONDecodeError:
                 print(f"Errore nel parsing della riga: {row}")
 

@@ -62,47 +62,59 @@ def run_zlint_check(dao: CertificateDAO):
     """Funzione che esegue il controllo ZLint sui certificati e salva i risultati in MongoDB."""
     global pbar_zlint
     
+    pbar_zlint = None
+    db = None
+    
     try:
+        # Percorso di zlint relativo alla directory del file
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        zlint_path = os.path.abspath(os.path.join(base_dir, "../../zlint/v3/zlint"))
+        
+        # Verifica che l'eseguibile di ZLint esista prima di elaborare i certificati
+        if not (os.path.isfile(zlint_path) and os.access(zlint_path, os.X_OK)):
+            logging.error(f"Eseguibile ZLint non trovato o non eseguibile: '{zlint_path}'. Consultare il README per l'installazione.")
+            return
+        
         db = MongoDbDatabase(dao.get_certificate_type())
+        
+        # Verifica subito la connessione a MongoDB: altrimenti ogni risultato verrebbe scartato con un errore
+        try:
+            db.connect()
+        except Exception:
+            logging.error("Impossibile connettersi a MongoDB: verificare che il servizio sia avviato (vedi README).")
+            return
         
         total_lines = dao.get_certificates_count()
         
-        remaining = total_lines - 8895002 # TODO: da rimuovere e rimettere total_lines in total        
-        
         tqdm.write("")
-        pbar_zlint = tqdm(total=remaining, desc=" 🔍  [magenta bold]Elaborazione Certificati[/magenta bold]", unit="cert.", 
+        pbar_zlint = tqdm(total=total_lines, desc=" 🔍  [magenta bold]Elaborazione Certificati[/magenta bold]", unit="cert.", 
                     colour="magenta", bar_format="{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} • ⚡ {rate_fmt}")
         
         batch_size = 5000
-        offset = 8895002 # TODO: da rimettere a 0
-        
-        # Percorso di zlint relativo alla directory del file
-        base_dir = os.path.dirname(os.path.abspath(__file__))
-        zlint_path = os.path.join(base_dir, "../../zlint/v3/zlint")
+        last_certificate_id = 0
         
         while(True):
-            certificates = dao.get_raw_certificates(batch_size, offset)
-            
-            offset += batch_size
+            certificates = dao.get_raw_certificates(batch_size, last_certificate_id)
                 
             if not certificates or len(certificates) == 0:
                 break
+            
+            # Paginazione per chiave: il batch successivo parte dall'ultimo certificate_id elaborato
+            last_certificate_id = certificates[-1][0]
         
             for certificate in certificates:
                 certificate_id, leaf_domain, raw, common_name, organization, issuer_dn = certificate
+                temp_file_path = None
 
                 try:
                     # Crea un file temporaneo per il certificato raw
                     with tempfile.NamedTemporaryFile(delete=False) as temp_file:
-                        certificate_raw = Certificate(cert_string=raw).load_cert_from_string(raw)
-                        temp_file.write(certificate_raw.encode())
                         temp_file_path = temp_file.name
+                        certificate_raw = Certificate.load_cert_from_string(raw)
+                        temp_file.write(certificate_raw.encode())
 
                     command = [zlint_path, temp_file_path]
-                    result = subprocess.run(command, capture_output=True, text=True)
-                    
-                    # Elimina il file temporaneo dopo l'uso
-                    os.remove(temp_file_path)
+                    result = subprocess.run(command, capture_output=True, text=True, timeout=60)
                     
                     if result.returncode != 0:
                         error_message = f"Errore durante l'esecuzione di ZLint: {result.stderr}"
@@ -122,6 +134,10 @@ def run_zlint_check(dao: CertificateDAO):
                     error_message = f"Errore generale durante l'elaborazione: {str(e)}"
                     save_to_mongodb(None, certificate_id, leaf_domain, None, None, None, db, error=True, error_message=error_message)
                     continue
+                finally:
+                    # Elimina il file temporaneo anche in caso di errore
+                    if temp_file_path is not None and os.path.exists(temp_file_path):
+                        os.remove(temp_file_path)
             
             # Aggiorna la barra di caricamento
             pbar_zlint.update(len(certificates))
@@ -129,6 +145,10 @@ def run_zlint_check(dao: CertificateDAO):
         logging.error(f"Errore durante l'esecuzione della funzione run_zlint_check: {str(e)}")
     except KeyboardInterrupt:
         logging.info(f"Ricevuto segnale di interruzione (SIGINT). Inizio della procedura di chiusura...")
+        raise   # Interrompe l'applicazione invece di proseguire con le analisi successive
     finally:
-        pbar_zlint.close()
+        if pbar_zlint is not None:
+            pbar_zlint.close()
+        if db is not None:
+            db.close()
     return

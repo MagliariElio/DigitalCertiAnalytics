@@ -11,6 +11,13 @@ class GraphPlotter:
         plt.close('all')
         return
         
+    def _is_empty(self, data, title):
+        """Controlla se non ci sono dati da rappresentare: seaborn e pandas sollevano eccezioni con dati vuoti."""
+        if data is None or data.empty:
+            logging.warning(f"Nessun dato disponibile per il grafico '{title}': grafico non generato.")
+            return True
+        return False
+
     def disable_logging(self, is_verbose:bool):
         """Disabilita il logging dettagliato per alcune librerie se la modalità verbose è disattivata."""
         logging.getLogger('PIL.PngImagePlugin').setLevel(logging.ERROR)
@@ -22,6 +29,8 @@ class GraphPlotter:
 
     def plot_bar_chart(self, data, x, y, title, xlabel, ylabel, filename, text_offset=3):
         """Crea un grafico a barre ottimizzato per la visualizzazione dei dati."""
+        if self._is_empty(data, title):
+            return
 
         sns.set_style("whitegrid")
         plt.rcParams.update({
@@ -64,6 +73,8 @@ class GraphPlotter:
     def plot_pie_chart(self, data, column, title, filename, legend_loc='best', 
                    legend_fontsize=10, autopct_fontsize=10):
         """Crea un grafico a torta ottimizzato per la visualizzazione dei dati."""
+        if self._is_empty(data, title):
+            return
         
         sns.set_style("whitegrid")
         plt.rcParams.update({
@@ -122,6 +133,9 @@ class GraphPlotter:
         plt.close()
 
     def plot_histogram(self, data, y, title, xlabel, ylabel, filename):
+        if self._is_empty(data, title):
+            return
+
         plt.figure(figsize=(14, 8))
         
         colors = sns.color_palette("Set2")
@@ -152,6 +166,9 @@ class GraphPlotter:
 
     def plot_line_chart(self, data, x, y, title, xlabel, ylabel, filename):
         """Crea un grafico a linee ottimizzato per la visualizzazione dei dati."""
+        if self._is_empty(data, title):
+            return
+
         plt.figure(figsize=(14, 7)) 
 
         sns.lineplot(x=x, y=y, data=data, marker='o', linewidth=2, markersize=6, color='blue')
@@ -179,6 +196,9 @@ class GraphPlotter:
 
     def plot_scatter_plot(self, data, x, y, title, xlabel, ylabel, filename):
         """Crea un grafico a dispersione ottimizzato per la visualizzazione dei dati."""
+        if self._is_empty(data, title):
+            return
+
         plt.figure(figsize=(14, 8))
 
         sns.scatterplot(x=x, y=y, data=data, alpha=0.8, s=100, edgecolor='w')  
@@ -205,6 +225,9 @@ class GraphPlotter:
 
     def plot_box_plot(self, data, x, y, title, xlabel, ylabel, filename):
         """Crea un box plot ottimizzato per la visualizzazione dei dati."""
+        if self._is_empty(data, title):
+            return
+
         plt.figure(figsize=(12, 6))
         sns.boxplot(x=x, y=y, data=data, palette='Set2')
         plt.title(title, fontsize=16, fontweight='bold')
@@ -224,6 +247,9 @@ class GraphPlotter:
 
     def plot_stacked_bar_chart(self, data, title, xlabel, ylabel, filename):
         """Crea un grafico a barre impilate ottimizzato per la visualizzazione dei dati."""
+        if self._is_empty(data, title):
+            return
+
         plt.figure(figsize=(12, 6))
         colors = sns.color_palette('Set2', n_colors=len(data.columns))
         data.plot(kind='bar', stacked=True, ax=plt.gca(), color=colors)
@@ -246,6 +272,9 @@ class GraphPlotter:
 
     def plot_dot_plot(self, data, x, y, title, xlabel, ylabel, filename):
         """Crea un dot plot ottimizzato per la visualizzazione dei dati con legenda."""
+        if self._is_empty(data, title):
+            return
+
         plt.figure(figsize=(20, 14))  
 
         unique_key_usages = data.index.unique()
@@ -284,6 +313,8 @@ class GraphPlotter:
 
     def plot_horizontal_bar(self, data, x, y, title, xlabel, ylabel, filename):
         """Crea un grafico a barre orizzontali per la visualizzazione dei dati con legenda."""
+        if self._is_empty(data, title):
+            return
 
         sns.set_style("whitegrid")
         plt.rcParams.update({
@@ -303,7 +334,7 @@ class GraphPlotter:
         data['Color'] = data.index.map(color_mapping)
 
         sns.barplot(x=x, y=y, data=data, hue=data.index, dodge=False,
-                    palette=color_mapping, ci=None, ax=ax)
+                    palette=color_mapping, errorbar=None, ax=ax)
 
         ax.set_title(title, pad=20)
         ax.set_xlabel(xlabel, fontsize=16)

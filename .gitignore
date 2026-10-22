@@ -18,3 +18,8 @@ domini_italiani_google.txt
 *ocsp_check_results_temp.csv
 
 CARTELLA/
+
+# Python bytecode e log dell'applicazione
+__pycache__/
+*.pyc
+app.log
