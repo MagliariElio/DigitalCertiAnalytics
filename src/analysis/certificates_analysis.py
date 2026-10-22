@@ -379,10 +379,11 @@ async def _run_stages(target: _Target, is_verbose: bool) -> None:
             validate_leaf_certificate_chains(dao, database)
 
     if config.plot:
+        from dao.statistics_dao import StatisticsDAO
         from utils.plotter_utils import plot_certificates
         with _stage(f"Inizio generazione grafici per certificati '{config.label}'."):
             database.prepare_for_plots()
-            plot_certificates(dao, config.results_dir / "plots", is_verbose)
+            plot_certificates(StatisticsDAO(database.conn, config.db_type), config.results_dir / "plots", is_verbose)
 
 
 async def certificates_analysis_main() -> None:

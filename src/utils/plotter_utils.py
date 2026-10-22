@@ -12,7 +12,7 @@ from db.database import DatabaseType
 from utils.graph_plotter import GraphPlotter
 
 if TYPE_CHECKING:
-    from dao.certificate_dao import CertificateDAO
+    from dao.statistics_dao import StatisticsDAO
 
 # Admin: Anuar Elio Magliari
 # Politecnico di Torino
@@ -25,7 +25,7 @@ _LEAF_AND_ROOT = frozenset({DatabaseType.LEAF, DatabaseType.ROOT})
 @dataclass(frozen=True)
 class _Chart:
     """Declarative chart spec: data source, kind, output file and labels."""
-    query: str                              # CertificateDAO get_* method returning the data
+    query: str                              # StatisticsDAO get_* method returning the data
     kind: str                               # 'bar', 'pie', 'line', 'hbar' (horizontal bars) or 'stacked'
     name: str                               # PNG file name, without extension
     title: str
@@ -124,7 +124,7 @@ def _reset_directory(path: str | os.PathLike) -> None:
     logging.info(f"La cartella '{path}' è stata creata.")
 
 
-def _generate(chart: _Chart, dao: CertificateDAO, plotter: GraphPlotter, plots_path: str | os.PathLike) -> None:
+def _generate(chart: _Chart, dao: StatisticsDAO, plotter: GraphPlotter, plots_path: str | os.PathLike) -> None:
     """Generate one chart; errors are logged so the remaining charts still run."""
     logging.info(f"Generazione grafico '{chart.title}'")
     try:
@@ -134,7 +134,7 @@ def _generate(chart: _Chart, dao: CertificateDAO, plotter: GraphPlotter, plots_p
         logging.error(f"Errore nella generazione del grafico '{chart.title}': {e}")
 
 
-def plot_certificates(dao: CertificateDAO, plots_path: str | os.PathLike, is_verbose: bool) -> None:
+def plot_certificates(dao: StatisticsDAO, plots_path: str | os.PathLike, is_verbose: bool) -> None:
     """Regenerate in plots_path every chart applicable to the DAO's certificate type."""
     plotter = GraphPlotter(is_verbose)
     _reset_directory(plots_path)

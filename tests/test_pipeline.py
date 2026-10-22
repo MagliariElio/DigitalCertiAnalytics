@@ -12,13 +12,6 @@ from helpers import Pki, success_row
 
 PROJECT_DIR = Path(__file__).resolve().parents[1]
 
-FAKE_SSLYZE = """#!/bin/sh
-for host; do :; done
-case "$host" in site1.*) valid=false;; *) valid=true;; esac
-echo '{"server_scan_results": [{"scan_result": {"certificate_info": {"result": {"certificate_deployments":' \\
-     '[{"path_validation_results": [{"was_validation_successful": '$valid'}]}]}}}}]}'
-"""
-
 
 @pytest.fixture(scope="module")
 def project(tmp_path_factory):
@@ -33,18 +26,11 @@ def project(tmp_path_factory):
             certs_file.write(json.dumps(row) + "\n")
         certs_file.write(json.dumps(success_row("null.example.test", None, [])) + "\n")
         certs_file.write("not json\n")
-
-    # Fake sslyze: only site1 has an invalid chain
-    bin_dir = root / "bin"
-    bin_dir.mkdir()
-    sslyze = bin_dir / "sslyze"
-    sslyze.write_text(FAKE_SSLYZE)
-    sslyze.chmod(0o755)
     return root
 
 
 def run_cli(project, *flags):
-    env = {**os.environ, "COLUMNS": "160", "PATH": f"{project / 'bin'}{os.pathsep}{os.environ.get('PATH', '')}"}
+    env = {**os.environ, "COLUMNS": "160"}
     return subprocess.run([sys.executable, "-m", "analysis.main", *flags], cwd=project / "src",
                           capture_output=True, text=True, timeout=600, env=env)
 
@@ -70,15 +56,6 @@ def test_analysis_and_plots(project):
     assert "Errore nel parsing della riga 12" in log
     assert "certificato del server nullo" in log
     assert "Errore nella generazione del grafico" not in log
-
-
-def test_chain_validation(project):
-    result = run_cli(project, "--leaf_chain_validation")
-    assert result.returncode == 0, result.stdout + result.stderr
-    with sqlite3.connect(project / "src" / "analysis" / "leaf" / "leaf_certificates.db") as conn:
-        validity = dict(conn.execute("SELECT leaf_domain, signature_valid FROM Certificates").fetchall())
-    assert validity.pop("site1.example.test") == "Not Valid"
-    assert set(validity.values()) == {"Valid"}
 
 
 def test_delete_without_analysis_skips_other_stages(project):

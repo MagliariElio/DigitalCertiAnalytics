@@ -4,6 +4,7 @@ import sqlite3
 import pytest
 from helpers import error_row, success_row, zgrab_certificate
 
+from dao.statistics_dao import StatisticsDAO
 from db.database import DatabaseType
 from utils.chain_utils import find_root_certificate, intermediate_certificates
 
@@ -73,7 +74,7 @@ def test_intermediate_and_root_ingestion(pki, open_database):
     assert root_dao.get_certificates_count() == 2
     assert "SAN" not in certificate_columns(intermediate_db)
     assert "has_root_certificate" not in certificate_columns(root_db)
-    assert root_dao.get_signature_validity_distribution() == {"Valid": 1}
+    assert StatisticsDAO(root_db.conn, DatabaseType.ROOT).get_signature_validity_distribution() == {"Valid": 1}
     tables = {row[0] for row in root_db.conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
     assert "Errors" not in tables
 
@@ -134,9 +135,10 @@ def test_statistics_count_certificates_without_ski_individually(pki, open_databa
         rows.append(success_row(f"noski{i}.example.test", leaf, []))
     rows += pki.rows(2) + [error_row("x.example.test")]
     ingest_leaf(database, dao, rows)
-    assert dao.get_certificate_version_distribution() == {1: 3, 3: 2}
-    assert dao.get_status_analysis() == {"success": 5, "connection-timeout": 2, "unknown-error": 1}
-    assert dao.get_sct_count_per_certificate() == {0: 3, 2: 2}
+    statistics = StatisticsDAO(database.conn, DatabaseType.LEAF)
+    assert statistics.get_certificate_version_distribution() == {1: 3, 3: 2}
+    assert statistics.get_status_analysis() == {"success": 5, "connection-timeout": 2, "unknown-error": 1}
+    assert statistics.get_sct_count_per_certificate() == {0: 3, 2: 2}
 
 
 def test_row_transactions_are_batched_and_isolated(open_database):
