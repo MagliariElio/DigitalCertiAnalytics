@@ -1,0 +1,9 @@
+# Conda environment for the "Python Package using Conda" GitHub Action
+name: digitalcertianalytics
+channels:
+  - defaults
+dependencies:
+  - python=3.10
+  - pip
+  - pip:
+      - -r requirements.txt

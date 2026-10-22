@@ -108,8 +108,8 @@ Il **DigitalCertiAnalytics** è uno strumento progettato per analizzare i certif
 
 Per eseguire il programma, è necessario avere i seguenti software installati:
 
-### 1. Python 3.x
-Scarica e installa l'ultima versione di Python dal [sito ufficiale](https://www.python.org/).
+### 1. Python 3.10 - 3.12
+Scarica e installa Python dal [sito ufficiale](https://www.python.org/). Le versioni fissate in `requirements.txt` sono installabili su Python 3.10 - 3.12 (la GitHub Action usa la 3.10); il codice funziona anche su Python 3.13 e 3.14, ma con versioni più recenti delle librerie.
 
 ### 2. **Zlint**
 **Zlint** è uno strumento di analisi per certificati TLS/SSL che verifica la conformità e la sicurezza dei certificati. Prima di eseguire il programma, è fondamentale installare Zlint e assicurarsi che l'eseguibile sia presente nella cartella del progetto **DigitalCertiAnalytics**. Pertanto, si consiglia di seguire questo passaggio dopo aver clonato il repository GitHub del progetto (consultare la sezione "Guida all'uso" per sapere come procedere).
@@ -133,8 +133,8 @@ Scarica e installa l'ultima versione di Python dal [sito ufficiale](https://www.
 3. **Posizione dell'eseguibile**:
    Una volta completata la compilazione, l'eseguibile di Zlint sarà disponibile nella cartella `zlint/v3/zlint`. Assicurati che il percorso dell'eseguibile corrisponda al valore previsto nel programma, che cercherà l'eseguibile in:
    ```python
-   base_dir = os.path.dirname(os.path.abspath(__file__))
-   zlint_path = os.path.join(base_dir, "../../zlint/v3/zlint")
+   # src/utils/zlint_utils.py
+   ZLINT_PATH = Path(__file__).resolve().parents[2] / "zlint" / "v3" / "zlint"
    ```
 
 4. **Verifica che Zlint sia correttamente installato**:
@@ -146,7 +146,7 @@ Scarica e installa l'ultima versione di Python dal [sito ufficiale](https://www.
    Se tutto è stato configurato correttamente, dovresti vedere l'output delle opzioni di Zlint.
 
 5. **Impostare il percorso di Zlint**:
-   Assicurati che l'eseguibile Zlint sia nella cartella `zlint/v3/`, come specificato nel codice. Se il percorso non è corretto, il programma non riuscirà a eseguire l'analisi Zlint. Se necessario, puoi modificare il percorso nel codice Python dove è definito `zlint_path` per riflettere la posizione esatta.
+   Assicurati che l'eseguibile Zlint sia nella cartella `zlint/v3/`, come specificato nel codice. Se il percorso non è corretto, il programma non riuscirà a eseguire l'analisi Zlint. Se necessario, puoi modificare la costante `ZLINT_PATH` in `src/utils/zlint_utils.py` per riflettere la posizione esatta.
 
 ### 3. **MongoDB**
 Per utilizzare il programma con il salvataggio dei dati, è necessario installare MongoDB sul proprio computer. Inoltre, prima di eseguire comandi come `--leaf_zlint_check` o `--intermediate_zlint_check`, che richiedono l'interazione con MongoDB, è importante assicurarsi che il servizio di MongoDB sia avviato e funzionante.
@@ -204,7 +204,11 @@ cd DigitalCertiAnalytics
 ```
 
 ### 2. Eseguire il programma
-Il programma può essere eseguito tramite il terminale o la riga di comando, con diverse opzioni per controllare l'esecuzione del programma.
+Il programma può essere eseguito tramite il terminale o la riga di comando, con diverse opzioni per controllare l'esecuzione del programma. I comandi vanno eseguiti dalla cartella `src/`:
+
+```bash
+cd src
+```
 
 #### Opzioni disponibili:
 - `--delete_all_db`: elimina tutti i database esistenti prima di iniziare l'analisi.
@@ -271,18 +275,36 @@ Il programma può essere eseguito tramite il terminale o la riga di comando, con
 - `src/analysis/leaf/leaf_certificates.db`: file di database SQLite dove sono memorizzati i risultati dell'analisi dei certificati leaf.
 - `src/analysis/intermediate/intermediate_certificates.db`: file di database SQLite dove sono memorizzati i risultati dell'analisi dei certificati intermediate.
 - `src/analysis/root/root_certificates.db`: file di database SQLite dove sono memorizzati i risultati dell'analisi dei certificati root.
-- `src/analysis/leaf/ocsp_certificates_backup.db`: file di backup in CSV dove sono memorizzati i risultati dell'analisi OCSP dei certificati leaf.
-- `src/analysis/intermediate/ocsp_certificates_backup.db`: file di backup in CSV dove sono memorizzati i risultati dell'analisi OCSP dei certificati intermediate.
-- `src/analysis/root/ocsp_certificates_backup.db`: file di backup in CSV dove sono memorizzati i risultati dell'analisi OCSP dei certificati root.
+- `src/analysis/leaf/ocsp_certificates_backup.csv`: file di backup in CSV dove sono memorizzati i risultati dell'analisi OCSP dei certificati leaf.
+- `src/analysis/intermediate/ocsp_certificates_backup.csv`: file di backup in CSV dove sono memorizzati i risultati dell'analisi OCSP dei certificati intermediate.
+- `src/analysis/root/ocsp_certificates_backup.csv`: file di backup in CSV dove sono memorizzati i risultati dell'analisi OCSP dei certificati root.
 - `src/analysis/leaf/plots`: directory dove sono memorizzati i risultati grafici dei certificati leaf.
 - `src/analysis/intermediate/plots`: directory dove sono memorizzati i risultati grafici dei certificati intermediate.
 - `src/analysis/root/plots`: directory dove sono memorizzati i risultati grafici dei certificati root.
-- `src/analysis/zlint_analysis/reading_zlint_results.py`: script Python progettato per estrarre i dati dal database non relazionale MongoDB e strumentale per eseguire analisi dettagliate sui dati dei certificati memorizzati. Il nome del database da leggere può essere passato come argomento (di default `Leaf_Zlint_Checks`).
+- `src/analysis/zlint_analysis/reading_zlint_results.py`: script Python progettato per estrarre i dati dal database non relazionale MongoDB e strumentale per eseguire analisi dettagliate sui dati dei certificati memorizzati. Il nome del database da leggere può essere passato come argomento (di default `Leaf_Zlint_Checks_Google_3`, il database scritto dall'analisi Zlint dei certificati leaf).
 - `src/db/schema_db.sql`: script SQL per creare lo schema dei database leaf, intermediate e root.
-- `src/scan/`: directory contenente un file di scan sul file JSON.
+- `src/scan/`: directory contenente un file di scan sul file JSON (`python src/scan/scan_collezione_certificati.py --help` per i comandi disponibili).
+- `src/analysis/certificates_analysis.py`: riga di comando e orchestrazione delle analisi. Il file JSON di zgrab2 viene letto una sola volta anche quando sono richieste più analisi (leaf, intermediate e root).
+- `src/dao/certificate_dao.py` e `src/db/`: accesso ai database SQLite e MongoDB.
+- `src/utils/chain_utils.py`: navigazione delle catene di certificati, verifica delle firme e validazione delle catene con sslyze.
+- `src/utils/ocsp_utils.py`: analisi OCSP (richieste concorrenti, ripresa da file CSV temporaneo e di backup).
+- `src/utils/zlint_utils.py`: analisi Zlint eseguita in parallelo e salvataggio dei risultati in MongoDB.
+- `src/utils/graph_plotter.py` e `src/utils/plotter_utils.py`: generazione dei grafici.
+- `tests/`: test automatici (pytest), eseguiti anche dalla GitHub Action insieme al controllo con flake8.
 
 ### 4. Log
 Il programma genera un file di log `app.log` che registra l'andamento dell'applicazione e eventuali errori. Il log sarà disponibile nella directory di esecuzione del programma.
+
+Interrompendo il programma con `Ctrl+C` le connessioni vengono chiuse in modo ordinato e il processo termina con codice di uscita `130`: l'analisi OCSP può essere ripresa dal punto in cui era stata interrotta.
+
+### 5. Test
+I test automatici non richiedono rete, MongoDB, Zlint o sslyze (vengono simulati). Dalla cartella principale del progetto:
+
+```bash
+pip install pytest flake8
+pytest
+flake8
+```
 
 ## Visualizzare e Gestire il Database MongoDB
 
@@ -301,14 +323,16 @@ Se desideri creare un backup (dump) del database MongoDB, puoi farlo utilizzando
 
 #### I comandi per eseguire il dump dei database sono i seguenti:
 
-1. **Per il database "Leaf_Zlint_Checks"**:
+I nomi dei database sono definiti in `ZLINT_DB_NAMES` (`src/db/MongoDbDatabase.py`).
+
+1. **Per il database "Leaf_Zlint_Checks_Google_3"**:
    ```bash
-   mongodump --db Leaf_Zlint_Checks --out Leaf_Zlint_Checks
+   mongodump --db Leaf_Zlint_Checks_Google_3 --out Leaf_Zlint_Checks_Google_3
    ```
 
-2. **Per il database "Intermediate_Zlint_Checks"**:
+2. **Per il database "Intermediate_Zlint_Checks_Google_3"**:
    ```bash
-   mongodump --db Intermediate_Zlint_Checks --out Intermediate_Zlint_Checks
+   mongodump --db Intermediate_Zlint_Checks_Google_3 --out Intermediate_Zlint_Checks_Google_3
    ```
 
 Questi comandi creeranno una copia dei dati dei rispettivi database nella directory indicata come `--out`. Puoi quindi utilizzare questi file di dump per ripristinare i dati o per fare delle analisi.

@@ -1,18 +1,43 @@
 import asyncio
 import logging
 import sys
-from analysis.certificates_analysis import certificates_analysis_main, setup_signal_handlers, close_connections
 
-# Admin: Anuar Elio Magliari 
+from analysis.certificates_analysis import certificates_analysis_main
+
+# Admin: Anuar Elio Magliari
 # Politecnico di Torino
 
-if __name__ == "__main__":
-    # Crea esplicitamente il loop: da Python 3.14 asyncio.get_event_loop() non ne crea più uno in automatico
+# Attempts to cancel the tasks still pending after an interrupt
+CANCELLATION_ROUNDS = 3
+
+# Standard exit code for Ctrl+C, so chained shell commands stop
+SIGINT_EXIT_CODE = 130
+
+
+def _cancel_pending_tasks(loop: asyncio.AbstractEventLoop) -> bool:
+    """Cancel pending tasks; return True if another KeyboardInterrupt arrived meanwhile."""
+    interrupted = False
+    for _ in range(CANCELLATION_ROUNDS):
+        pending = asyncio.all_tasks(loop)
+        if not pending:
+            break
+
+        for task in pending:
+            task.cancel()
+
+        # A task that received the KeyboardInterrupt re-raises it while being cancelled: retry
+        try:
+            loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+        except KeyboardInterrupt:
+            interrupted = True
+    return interrupted
+
+
+def main() -> None:
+    """Run the analysis in a new event loop, handling Ctrl+C."""
+    # Since Python 3.14 asyncio.get_event_loop() no longer creates a loop implicitly
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
-
-    # Imposta i gestori dei segnali
-    # setup_signal_handlers(loop)
 
     interrupted = False
     try:
@@ -22,24 +47,13 @@ if __name__ == "__main__":
         logging.info("Ricevuto segnale di interruzione (SIGINT). Inizio della procedura di chiusura...")
     finally:
         try:
-            # Cancella gli eventuali task rimasti in sospeso (es. dopo un KeyboardInterrupt) prima di chiudere le connessioni.
-            # Un task che ha ricevuto il KeyboardInterrupt lo propaga di nuovo durante la cancellazione, quindi si riprova
-            for _ in range(3):
-                pending = asyncio.all_tasks(loop)
-                if not pending:
-                    break
-
-                for task in pending:
-                    task.cancel()
-
-                try:
-                    loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
-                except KeyboardInterrupt:
-                    interrupted = True
+            interrupted = _cancel_pending_tasks(loop) or interrupted
         finally:
-            loop.run_until_complete(close_connections())
             loop.close()
 
-    # Codice di uscita standard per un'interruzione con Ctrl+C, così eventuali comandi concatenati non proseguono
     if interrupted:
-        sys.exit(130)
+        sys.exit(SIGINT_EXIT_CODE)
+
+
+if __name__ == "__main__":
+    main()

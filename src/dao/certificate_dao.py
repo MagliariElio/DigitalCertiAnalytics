@@ -1,1372 +1,530 @@
+from __future__ import annotations
+
 import json
 import logging
-import asyncio
-import aiohttp
-from tqdm.rich import tqdm
-from typing import Optional
+import sqlite3
+from dataclasses import dataclass
 from datetime import datetime
+from typing import Callable, Iterator
+
+from cryptography.x509.extensions import UserNotice
+from cryptography.x509.oid import ExtensionOID
+
 from bean.certificate import Certificate
 from db.database import DatabaseType
-from cryptography.x509.extensions import UserNotice
-from utils.utils import verify_signature, find_raw_cert_issuer, check_is_revoked_from_crl, check_ocsp_status_row, reorder_signature_algorithm, count_intermediate_up_to_root_and_root_certificates
-from utils.utils import OCSP_MAX_CONCURRENT_REQUESTS
+from utils.chain_utils import (count_intermediates_up_to_root, find_raw_cert_issuer, reorder_signature_algorithm,
+                               verify_signature)
 
-# Admin: Anuar Elio Magliari 
+# Admin: Anuar Elio Magliari
 # Politecnico di Torino
 
-# Nei conteggi per i grafici i certificati sono distinti tramite il Subject Key Identifier; quelli senza SKI (es. certificati v1) 
-# sono distinti tramite il certificato raw, altrimenti verrebbero conteggiati tutti come un unico certificato (SKI = '').
-# L'identità viene calcolata in una sottoquery DISTINCT, così il raw completo non viene copiato nell'ordinamento del GROUP BY.
+
+@dataclass(frozen=True)
+class _Thresholds:
+    """Plot thresholds that depend on the certificate type."""
+    top_countries: int          # Countries shown individually, the rest go to 'Others'
+    min_validity_count: int     # Min certificates for a validity duration to be shown
+    expiration_above: int       # An expiration month is shown above this many certificates
+    sct_above: int              # An SCT month is shown above this many SCTs
+
+
+_THRESHOLDS = {
+    DatabaseType.LEAF: _Thresholds(top_countries=5, min_validity_count=20, expiration_above=1100, sct_above=20),
+    DatabaseType.INTERMEDIATE: _Thresholds(top_countries=4, min_validity_count=1, expiration_above=6, sct_above=20),
+    DatabaseType.ROOT: _Thresholds(top_countries=5, min_validity_count=1, expiration_above=9, sct_above=0),
+}
+_TOP_ISSUERS = 20               # Issuers shown individually, the rest go to 'Others'
+_TOP_SCT_LOGS_ABOVE = 12000     # An SCT log is shown above this many certificates
+
+# Plot counts tell certificates apart by Subject Key Identifier; those without one (e.g. v1) fall back to the raw
+# certificate, otherwise they would all count as one (SKI = ''). The identity is computed in a DISTINCT subquery
+# so the full raw is not copied into the GROUP BY sort.
+_IDENTITY = "COALESCE(NULLIF(s.subject_key_id, ''), c.raw) AS certificate_identity"
+_CERTIFICATES = "Certificates AS c JOIN Subjects AS s ON c.subject_id = s.subject_id"
+_EXTENSIONS = ("Extensions AS e JOIN Certificates AS c ON e.certificate_id = c.certificate_id "
+               "JOIN Subjects AS s ON c.subject_id = s.subject_id")
+
+
+def _distinct_count_sql(columns: str, source: str = _CERTIFICATES, where: str = "", group_by: str = "",
+                        select: str = "", having: str = "", order_by: str = "count DESC") -> str:
+    """Count distinct certificates (by identity) grouped by the given columns."""
+    group_by = group_by or columns
+    return (f"SELECT {select or group_by}, COUNT(certificate_identity) AS count "
+            f"FROM (SELECT DISTINCT {columns}, {_IDENTITY} FROM {source}{f' WHERE {where}' if where else ''}) "
+            f"GROUP BY {group_by}{f' HAVING {having}' if having else ''}{f' ORDER BY {order_by}' if order_by else ''}")
+
+
+def _top_with_others_sql(column: str, source: str, where: str) -> str:
+    """Top N values (N as query parameter) plus the sum of the rest as 'Others'."""
+    return f"""
+        WITH Counts AS (
+            SELECT {column} AS label, COUNT(*) AS count FROM {source} WHERE {where}
+            GROUP BY {column} ORDER BY count DESC
+        ),
+        TopCounts AS (SELECT label, count FROM Counts LIMIT ?),
+        Others AS (
+            SELECT 'Others' AS label, COALESCE(SUM(count), 0) AS count
+            FROM Counts WHERE label NOT IN (SELECT label FROM TopCounts)
+        )
+        SELECT * FROM TopCounts UNION ALL SELECT * FROM Others
+    """
+
+
+def _pairs(rows: list) -> dict:
+    return {row[0]: row[1] for row in rows}
+
+
+def _nonzero_pairs(rows: list) -> dict:
+    """Like _pairs, skipping zero counts (e.g. an empty 'Others' row)."""
+    return {row[0]: row[1] for row in rows if row[1]}
+
+
+def _nested_pairs(rows: list) -> dict:
+    result = {}
+    for row in rows:
+        result.setdefault(row[0], {})[row[1]] = row[2]
+    return result
+
+
+def _usage_counts(rows: list, ignored: tuple[str, ...] = ()) -> dict:
+    """Sum the counts per set of usages (JSON keys), skipping the ignored keys."""
+    result = {}
+    for row in rows:
+        names = json.dumps(", ".join(name for name in json.loads(row[0]).keys() if name not in ignored))
+        result[names] = result.get(names, 0) + row[1]     # Different rows can share the same keys
+    return result
+
+
+def _without_user_notices(qualifiers: list | None) -> str:
+    """JSON of the policy qualifiers without UserNotice objects."""
+    return json.dumps([qualifier for qualifier in qualifiers or [] if not isinstance(qualifier, UserNotice)])
+
+
+def _joined(values: list[str]) -> str:
+    """Join attribute values, replacing characters not encodable in UTF-8."""
+    return ', '.join(values).encode('utf-8', errors='replace').decode('utf-8')
+
 
 class CertificateDAO:
-    def __init__(self, connection, certificate_type: DatabaseType):
-        self.conn = connection
-        self.cursor = self.conn.cursor()
-        self.certificate_type = certificate_type
-    
-    def get_certificate_type(self):
-        return self.certificate_type
+    """Certificate data access: zgrab2 JSON inserts, batch iteration and plot statistics."""
 
-    def insert_error_row(self, json_row):
-        """Inserisce la riga di errore nel database. Vale solo per i certificati Leaf."""
+    def __init__(self, connection: sqlite3.Connection, certificate_type: DatabaseType):
+        self._conn = connection
+        self._cursor = connection.cursor()
+        self.certificate_type = certificate_type
+        self._thresholds = _THRESHOLDS[certificate_type]
+
+    # ------------------------------------------------------------------ insertion
+
+    def insert_sct_logs(self, log_list: dict) -> None:
+        """Insert the SCT log operators and logs, plus the 'unknown' operator for logs missing from the list."""
+        for operator in log_list.get("operators", []):
+            operator_id = self._insert_log_operator(operator.get("name", ""), ', '.join(operator.get("email", [])))
+            # Newer log lists also include "tiled" logs (Static CT API)
+            for log in operator.get("logs", []) + operator.get("tiled_logs", []):
+                self._insert_log(operator_id, log)
+        self._insert_log_operator("unknown", "")
+
+    def insert_error_row(self, json_row: dict) -> None:
+        """Insert a scan error row (Leaf only)."""
         domain = json_row.get("domain", "")
         tls = json_row.get("data", {}).get("tls", {})
-        
-        status = tls.get("status", "")
-        protocol = tls.get("protocol", "")
         timestamp = tls.get("timestamp", "")
-        error_message = tls.get("error", "")
-        download_date = tls.get("timestamp", "")
-
-        self.cursor.execute('''
+        self._cursor.execute("""
             INSERT INTO Errors (domain, status, protocol, timestamp, error_message, download_date)
             VALUES (?, ?, ?, ?, ?, ?)
-        ''', (domain, status, protocol, timestamp, error_message, download_date))
-        logging.debug(f"Errore inserito per dominio: {domain}")
-        return
+        """, (domain, tls.get("status", ""), tls.get("protocol", ""), timestamp, tls.get("error", ""), timestamp))
+        logging.debug("Errore inserito per dominio: %s", domain)
 
-    def insert_issuer(self, parsed, handshake_log) -> int:
-        """Inserisce un issuer nel database e restituisce l'issuer_id."""
+    def process_insert_certificate(self, json_row: dict, certificate: dict, chain: list[dict],
+                                   certificates_emitted_up_to: int) -> None:
+        """Insert the certificate with issuer, subject, extensions, SCTs and policies; chain is the chain above it."""
+        parsed = certificate.get("parsed", {})
+        # A chain certificate without raw invalidates the whole row (KeyError), as in previous versions
+        raw = certificate.get("raw") if self.certificate_type is DatabaseType.LEAF else certificate["raw"]
+        digital_certificate = Certificate(raw)
+        extensions = parsed.get("extensions", {})
+
+        issuer_id = self._insert_issuer(parsed, chain)
+        subject_id = self._insert_subject(parsed, digital_certificate)
+        certificate_id = self._insert_certificate(json_row, certificate, parsed, chain, digital_certificate,
+                                                  issuer_id, subject_id, certificates_emitted_up_to)
+        extension_id = self._insert_extensions(certificate_id, extensions, digital_certificate)
+        self._insert_signed_certificate_timestamps(certificate_id, extensions)
+
+        policies = digital_certificate.certificate_policies()
+        if policies is not None:
+            self._cursor.executemany("""
+                INSERT INTO CertificatePolicies (extension_id, policy_identifier, cps, policy_qualifiers, is_cp_critical)
+                VALUES (?, ?, ?, ?, ?)
+            """, [(extension_id, policy['policy_identifier'], _without_user_notices(policy['cps']),
+                   _without_user_notices(policy['policy_qualifiers']), policy['is_cp_critical']) for policy in policies])
+
+    def _insert_issuer(self, parsed: dict, chain: list[dict]) -> int:
+        """Insert the issuer, with its raw certificate when found in the chain, and return its id."""
         issuer = parsed.get("issuer", {})
-        
         issuer_dn = parsed.get("issuer_dn", "")
-        issuer_common_name = ', '.join(issuer.get("common_name", [])).encode('utf-8', errors='replace').decode('utf-8')
-        issuer_organization = ', '.join(issuer.get("organization", [])).encode('utf-8', errors='replace').decode('utf-8')
-        issuer_country = ', '.join(issuer.get("country", [])).encode('utf-8', errors='replace').decode('utf-8')
-        issuer_locality = ', '.join(issuer.get("locality", []))
-        issuer_province = ', '.join(issuer.get("province", []))
-        issuer_organizational_unit = ', '.join(issuer.get("organizational_unit", []))
-
-        authority_key_id = parsed.get("extensions", {}).get("authority_key_id", "")
-
-        chain = handshake_log.get("server_certificates", {}).get("chain", [])
-        raw = find_raw_cert_issuer(chain, issuer_dn)
-
-        self.cursor.execute("""
-            INSERT INTO Issuers (common_name, organization, country, issuer_dn, locality, province, 
-            organizational_unit, authority_key_id, raw)
+        self._cursor.execute("""
+            INSERT INTO Issuers (common_name, organization, country, issuer_dn, locality, province,
+                organizational_unit, authority_key_id, raw)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
-            issuer_common_name, issuer_organization, issuer_country, issuer_dn, issuer_locality, 
-            issuer_province, issuer_organizational_unit, authority_key_id, raw
+            _joined(issuer.get("common_name", [])), _joined(issuer.get("organization", [])),
+            _joined(issuer.get("country", [])), issuer_dn, ', '.join(issuer.get("locality", [])),
+            ', '.join(issuer.get("province", [])), ', '.join(issuer.get("organizational_unit", [])),
+            parsed.get("extensions", {}).get("authority_key_id", ""), find_raw_cert_issuer(chain, issuer_dn)
         ))
+        return self._cursor.lastrowid
 
-        logging.debug(f"Issuer inserito: {issuer_dn}")
-        return (self.cursor.lastrowid, issuer_common_name, issuer_dn)
-
-    def insert_subject(self, parsed, digital_certificate: Certificate) -> int:
-        """Inserisce un subject nel database e restituisce il subject_id."""
-        subject = parsed.get("subject", {})
-        
-        subject_common_name = ', '.join(subject.get("common_name", []))
-        subject_dn = parsed.get("subject_dn", "")
-        subject_key_id = parsed.get("extensions", {}).get("subject_key_id", "")
-        subject_alt_name = json.dumps(parsed.get("extensions", {}).get("subject_alt_name", {}))
-        subject_alt_name_is_critical = digital_certificate.is_sub_alt_name_critical()
-        
-        self.cursor.execute("""
+    def _insert_subject(self, parsed: dict, digital_certificate: Certificate) -> int:
+        extensions = parsed.get("extensions", {})
+        self._cursor.execute("""
             INSERT INTO Subjects (common_name, subject_dn, subject_key_id, subject_alt_name, subject_alt_name_is_critical)
             VALUES (?, ?, ?, ?, ?)
-        """, (subject_common_name, subject_dn, subject_key_id, subject_alt_name, subject_alt_name_is_critical))
+        """, (
+            ', '.join(parsed.get("subject", {}).get("common_name", [])), parsed.get("subject_dn", ""),
+            extensions.get("subject_key_id", ""), json.dumps(extensions.get("subject_alt_name", {})),
+            digital_certificate.extension_criticality(ExtensionOID.SUBJECT_ALTERNATIVE_NAME)
+        ))
+        return self._cursor.lastrowid
 
-        logging.debug(f"Subject inserito: {subject_dn}")
-        return self.cursor.lastrowid
+    def _insert_certificate(self, json_row: dict, certificate: dict, parsed: dict, chain: list[dict],
+                            digital_certificate: Certificate, issuer_id: int, subject_id: int,
+                            certificates_emitted_up_to: int) -> int:
+        tls = json_row.get("data", {}).get("tls", {})
+        handshake_log = tls.get("result", {}).get("handshake_log", {})
+        download_date = tls["timestamp"] if "timestamp" in tls else datetime.now().isoformat()
+        subject_key_info = parsed.get("subject_key_info", {})
+        key_length = subject_key_info.get("rsa_public_key", {}).get("length", 0)
+        if key_length == 0:
+            key_length = subject_key_info.get("ecdsa_public_key", {}).get("length", 0)
+        validity = parsed.get("validity", {})
+        certificates_up_to_root_count, has_root_certificate = count_intermediates_up_to_root(chain, certificate)
 
-    def insert_certificate(self, json_row, parsed, issuer_id, subject_id, issuer_common_name, issuer_dn, 
-                           certificate_type: DatabaseType, certificates_emitted_up_to: int, 
-                           digital_certificate: Optional[Certificate] = None) -> Optional[int]:
-        """Inserisce un certificato nel database e restituisce il certificate_id."""
-        download_date = json_row.get("data", {}).get("tls", {}).get("timestamp", datetime.now().isoformat())
-        handshake_log = json_row.get("data", {}).get("tls", {}).get("result", {}).get("handshake_log", {})
-        ocsp_stapling = handshake_log.get("server_hello", {}).get("ocsp_stapling", False)
-
-        serial_number = parsed.get("serial_number", "")
-        leaf_domain = json_row.get("domain", "")
-        version = parsed.get("version", 0)
-        signature_algorithm = parsed.get("signature_algorithm", {}).get("name", "")
-        signature_algorithm = reorder_signature_algorithm(signature_algorithm)
-        key_algorithm = parsed.get("subject_key_info", {}).get("key_algorithm", {}).get("name", "")
-        
-        key_length = parsed.get("subject_key_info", {}).get("rsa_public_key", {}).get("length", 0)
-        if(key_length == 0):
-            key_length = parsed.get("subject_key_info", {}).get("ecdsa_public_key", {}).get("length", 0)
-
-        validity_start = parsed.get("validity", {}).get("start", "")
-        validity_end = parsed.get("validity", {}).get("end", "")
-        validity_length = parsed.get("validity", {}).get("length", "")
-        validation_level = parsed.get("validation_level", "")
-        redacted = parsed.get("redacted", False)
-        
-        san = ', '.join(parsed.get("names", []))
-        domain_matches_san = handshake_log.get("server_certificates", {}).get("validation", {}).get("matches_domain", False)
-        
-        raw = handshake_log.get("server_certificates", {}).get("certificate", {}).get("raw", None)
-        
-        # Evita di effettuare nuovamente il parsing del certificato se è già stato caricato
-        if(digital_certificate is None):
-            digital_certificate = Certificate(raw)
-        
-        chain = handshake_log.get("server_certificates", {}).get("chain", [])
-
-        self_signed = parsed.get("signature", {}).get("self_signed", False)
-        signature_valid = "Error"  # errore di default, nel caso non avesse alcuna catena
-        
-        if(certificate_type == DatabaseType.ROOT):
-            leaf_cert = digital_certificate.get_cert()
-            # Il certificato root si autofirma
-            signature_valid = verify_signature(cert=leaf_cert, ca_cert=leaf_cert)
-        else:
-            signature_valid = parsed.get("signature", {}).get("valid", False)
-            if(signature_valid == 1):
-                signature_valid = "Valid"
-            else:
-                signature_valid = "Not Valid"
-                    
-        ocsp_must_stapling = digital_certificate.is_ocsp_must_staple()
-        
-        extensions = parsed.get("extensions", {})
-        aia = extensions.get("authority_info_access", {})
-        authority_info_access = aia
-
-        authority_info_access_is_critical = digital_certificate.is_aia_critical(issuer_common_name)
-
-        ocsp_check = "No Request Done"
-        
-        certificate = handshake_log.get("server_certificates", {}).get("certificate", {})
-        certificates_up_to_root_count, has_root_certificate = count_intermediate_up_to_root_and_root_certificates(chain, certificate)
-        
-        self.cursor.execute("""
+        self._cursor.execute("""
             INSERT INTO Certificates (
-                serial_number, leaf_domain, version, signature_algorithm, key_algorithm, key_length, 
-                validity_start, validity_end, validity_length, SAN, domain_matches_san, issuer_id, 
-                subject_id, validation_level, redacted, signature_valid, self_signed, download_date, 
-                ocsp_stapling, ocsp_must_stapling, authority_info_access_is_critical, authority_info_access, 
+                serial_number, leaf_domain, version, signature_algorithm, key_algorithm, key_length,
+                validity_start, validity_end, validity_length, SAN, domain_matches_san, issuer_id,
+                subject_id, validation_level, redacted, signature_valid, self_signed, download_date,
+                ocsp_stapling, ocsp_must_stapling, authority_info_access_is_critical, authority_info_access,
                 ocsp_check, certificates_emitted_up_to, certificates_up_to_root_count, has_root_certificate, raw
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'No Request Done', ?, ?, ?, ?)
         """, (
-            serial_number, leaf_domain, version, signature_algorithm, key_algorithm, key_length,
-            validity_start, validity_end, validity_length, san, domain_matches_san, issuer_id,
-            subject_id, validation_level, redacted, signature_valid, self_signed, download_date, 
-            ocsp_stapling, ocsp_must_stapling, authority_info_access_is_critical, json.dumps(authority_info_access), 
-            ocsp_check, certificates_emitted_up_to, certificates_up_to_root_count, has_root_certificate, raw
+            parsed.get("serial_number", ""), json_row.get("domain", ""), parsed.get("version", 0),
+            reorder_signature_algorithm(parsed.get("signature_algorithm", {}).get("name", "")),
+            subject_key_info.get("key_algorithm", {}).get("name", ""), key_length,
+            validity.get("start", ""), validity.get("end", ""), validity.get("length", ""),
+            ', '.join(parsed.get("names", [])),
+            handshake_log.get("server_certificates", {}).get("validation", {}).get("matches_domain", False),
+            issuer_id, subject_id, parsed.get("validation_level", ""), parsed.get("redacted", False),
+            self._signature_validity(parsed, digital_certificate), parsed.get("signature", {}).get("self_signed", False),
+            download_date, handshake_log.get("server_hello", {}).get("ocsp_stapling", False),
+            digital_certificate.ocsp_must_staple(),
+            digital_certificate.extension_criticality(ExtensionOID.AUTHORITY_INFORMATION_ACCESS),
+            json.dumps(parsed.get("extensions", {}).get("authority_info_access", {})),
+            certificates_emitted_up_to, certificates_up_to_root_count, has_root_certificate, digital_certificate.raw
         ))
+        logging.debug("Certificato inserito: %s", parsed.get("serial_number", ""))
+        return self._cursor.lastrowid
 
-        logging.debug(f"Certificato inserito: {serial_number}")
-        return self.cursor.lastrowid
+    def _signature_validity(self, parsed: dict, digital_certificate: Certificate) -> str:
+        """Roots are verified against their own key; other types use the zgrab2 result."""
+        if self.certificate_type is DatabaseType.ROOT:
+            return verify_signature(digital_certificate.cert, digital_certificate.cert)
+        return "Valid" if parsed.get("signature", {}).get("valid", False) == 1 else "Not Valid"
 
-    def insert_extensions(self, certificate_id, json_row, extensions, digital_certificate: Optional[Certificate] = None) -> int:
-        """Inserisce le estensioni di un certificato nel database."""
-        handshake_log = json_row.get("data", {}).get("tls", {}).get("result", {}).get("handshake_log", {})
-        raw = handshake_log.get("server_certificates", {}).get("certificate", {}).get("raw", None)
-        
-        key_usage = json.dumps(extensions.get("key_usage", {}))
-        extended_key_usage = json.dumps(extensions.get("extended_key_usage", {}))
-        basic_constraints: dict = extensions.get("basic_constraints", {})
-        crl_distribution_points = json.dumps(extensions.get("crl_distribution_points", []))
-        
+    def _insert_extensions(self, certificate_id: int, extensions: dict, digital_certificate: Certificate) -> int:
+        # max_path_len has its own column: pop it from a copy to leave the JSON untouched
+        basic_constraints = extensions.get("basic_constraints", {})
         max_path_length = None
-        if("max_path_len" in basic_constraints):
-            max_path_length = basic_constraints.get("max_path_len", None)
-            basic_constraints.pop("max_path_len")
-        
-        # Evita di effettuare nuovamente il parsing del certificato se è già stato caricato
-        if(digital_certificate is None):
-            digital_certificate = Certificate(raw)
-        crl_distr_point_is_critical = digital_certificate.is_crl_distr_point_critical()
-        
-        
-        # TODO: richiesta funzionante ma è da velocizzare altrimenti si può fare un comando a parte per eseguire solo queste richieste
-        # crl_revocation_status = check_is_revoked_from_crl(digital_certificate.get_cert(), extensions.get("crl_distribution_points", []))
-        crl_revocation_status = 'No Request Done'
+        if "max_path_len" in basic_constraints:
+            basic_constraints = dict(basic_constraints)
+            max_path_length = basic_constraints.pop("max_path_len")
 
-        key_usage_is_critical = digital_certificate.is_key_usage_critical()
-        extended_key_usage_is_critical = digital_certificate.is_extended_key_usage_critical()
-
-        self.cursor.execute("""
+        self._cursor.execute("""
             INSERT INTO Extensions (
-                certificate_id, key_usage, key_usage_is_critical, extended_key_usage, extended_key_usage_is_critical, 
+                certificate_id, key_usage, key_usage_is_critical, extended_key_usage, extended_key_usage_is_critical,
                 basic_constraints, max_path_length, crl_distribution_points, crl_distr_point_is_critical, crl_revocation_status
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'No Request Done')
         """, (
-            certificate_id, key_usage, key_usage_is_critical, extended_key_usage, extended_key_usage_is_critical, json.dumps(basic_constraints),
-            max_path_length, crl_distribution_points, crl_distr_point_is_critical, crl_revocation_status
+            certificate_id, json.dumps(extensions.get("key_usage", {})),
+            digital_certificate.extension_criticality(ExtensionOID.KEY_USAGE),
+            json.dumps(extensions.get("extended_key_usage", {})),
+            digital_certificate.extension_criticality(ExtensionOID.EXTENDED_KEY_USAGE),
+            json.dumps(basic_constraints), max_path_length, json.dumps(extensions.get("crl_distribution_points", [])),
+            digital_certificate.extension_criticality(ExtensionOID.CRL_DISTRIBUTION_POINTS)
         ))
+        return self._cursor.lastrowid
 
-        logging.debug(f"Estensioni inserite per certificato ID: {certificate_id}")
-        return self.cursor.lastrowid
+    def _insert_signed_certificate_timestamps(self, certificate_id: int, extensions: dict) -> None:
+        """Insert the certificate SCTs, adding the logs missing from the list."""
+        rows = [
+            (certificate_id, self._log_row_id(sct.get("log_id", "")), sct.get("timestamp", ""), sct.get("version", ""),
+             sct.get("signature", ""))
+            for sct in extensions.get("signed_certificate_timestamps", [])
+        ]
+        self._cursor.executemany("""
+            INSERT INTO SignedCertificateTimestamps (certificate_id, log_id, timestamp, version, signature)
+            VALUES (?, ?, ?, ?, ?)
+        """, rows)
 
-    def insert_certificate_policies(self, extension_id, certificate_policies):
-        """Inserisce le estensioni di un certificato nel database."""
+    def _log_row_id(self, log_id: str) -> int:
+        """Row id of the SCT log; a log missing from the list is inserted under the 'unknown' operator."""
+        row = self._cursor.execute("SELECT id FROM Logs WHERE log_id = ?", (log_id,)).fetchone()
+        if row is not None:
+            return row[0]
+        return self._insert_log(self._unknown_operator_id(), {"log_id": log_id})
 
-        for policy in certificate_policies:
-            policy_identifier = policy['policy_identifier']
-            
-            # Filtra le User Notices
-            def filter_user_notice(items): 
-                if items is None:
-                    items = []
-                return list(filter(lambda item: not isinstance(item, UserNotice), items))
-            
-            cps = filter_user_notice(policy.get('cps', []))
-            policy_qualifiers = filter_user_notice(policy.get('policy_qualifiers', []))
-            
-            is_cp_critical = policy.get('is_cp_critical', False)
-            
-            self.cursor.execute("""
-                INSERT INTO CertificatePolicies (
-                    extension_id, policy_identifier, cps, policy_qualifiers, is_cp_critical
-                ) VALUES (?, ?, ?, ?, ?)
-            """, (
-                extension_id, policy_identifier, json.dumps(cps), json.dumps(policy_qualifiers), is_cp_critical
-            ))
+    def _unknown_operator_id(self) -> int:
+        """Id of the 'unknown' operator, -1 if missing."""
+        row = self._cursor.execute("SELECT id FROM LogsOperators WHERE name = 'unknown' AND email = ''").fetchone()
+        return row[0] if row is not None else -1
 
-            logging.debug(f"Policy inserita per l'extension ID: {extension_id}, policy_identifier: {policy_identifier}")
+    def _insert_log_operator(self, name: str, email: str) -> int:
+        self._cursor.execute("INSERT INTO LogsOperators (name, email) VALUES (?, ?)", (name, email))
+        return self._cursor.lastrowid
 
-    def insert_signed_certificate_timestamps(self, certificate_id, extensions):
-        """Inserisce gli SCT di un certificato nel database."""
-        signed_certificate_timestamps = extensions.get("signed_certificate_timestamps", [])
-        
-        if(len(signed_certificate_timestamps) == 0):
-            logging.debug(f"Nessun SCT trovato per il certificate ID: {certificate_id}")
-            return
-        
-        for sct in signed_certificate_timestamps:
-            log_id_str = sct.get("log_id", "")
-            log_id = self.get_sct_log(log_id_str)
-            
-            # Inserimento di un nuovo record nella tabella dei logs per log_id che non è stato trovato
-            if(log_id == -1):
-                operator_id = self.get_sct_unknown_operator()
-                json_log = {
-                    "log_id": log_id_str
-                }
-                log_id = self.insert_sct_log(operator_id, json_log)
-            
-            signature = sct.get("signature", "")
-            timestamp = sct.get("timestamp", "")
-            version = sct.get("version", "")
-
-            self.cursor.execute("""
-                INSERT INTO SignedCertificateTimestamps (
-                    certificate_id, log_id, timestamp, version, signature
-                ) VALUES (?, ?, ?, ?, ?)
-            """, (
-                certificate_id, log_id, timestamp, version, signature
-            ))
-
-            logging.debug(f"SCT inserito per il certificate ID: {certificate_id}")
-        return
-
-    def insert_certificate_full(self, json_row, parsed, digital_certificate: Certificate, issuer_id, subject_id, issuer_common_name, 
-                                issuer_dn, certificate_type: DatabaseType, certificates_emitted_up_to: int):
-        """Processa e inserisce un certificato nel database, comprese le estensioni."""
-        certificate_id = self.insert_certificate(json_row, parsed, issuer_id, subject_id, issuer_common_name, 
-                                                issuer_dn, certificate_type, certificates_emitted_up_to, digital_certificate)
-        
-        if certificate_id:
-            # Inserisce le Extensions
-            extensions = parsed.get("extensions", {})
-            extension_id = self.insert_extensions(certificate_id, json_row, extensions, digital_certificate)
-            
-            # Inserisce gli SCT
-            self.insert_signed_certificate_timestamps(certificate_id, extensions)
-
-            certificate_policies = digital_certificate.get_cp()
-
-            # Inserisce i Certificate Policies
-            if (certificate_policies is not None):
-                self.insert_certificate_policies(extension_id, certificate_policies)
-
-    def process_insert_certificate(self, json_row, certificate_type: DatabaseType, certificates_emitted_up_to: int):
-        """Processa e inserisce un certificato nel database."""
-        parsed = json_row.get("data", {}).get("tls", {}).get("result", {}).get("handshake_log", {}).get("server_certificates", {}).get("certificate", {}).get("parsed", {})
-
-        handshake_log = json_row.get("data", {}).get("tls", {}).get("result", {}).get("handshake_log", {})
-        server_certificates = handshake_log.get("server_certificates", {})
-        raw = server_certificates.get("certificate", {}).get("raw", None)
-
-        digital_certificate = Certificate(raw)
-        
-        # Inserisci Issuer
-        issuer_id, issuer_common_name, issuer_dn = self.insert_issuer(parsed, handshake_log)
-
-        # Inserisci Subject
-        subject_id = self.insert_subject(parsed, digital_certificate)
-        
-        # Inserisci Certificate e Extensions
-        self.insert_certificate_full(json_row, parsed, digital_certificate, 
-                                    issuer_id, subject_id, issuer_common_name, issuer_dn, 
-                                    certificate_type, certificates_emitted_up_to)
-        return
-
-    async def check_ocsp_status_for_certificates(self, certificate_type: DatabaseType, db, ocsp_temp_file_writer, batch_size=50000, last_certificate_id=0):
-        """Controlla lo stato OCSP per ciascun certificato nel database e aggiorna il relativo stato."""
-        global pbar_ocsp_check
-        
-        pbar_ocsp_check = None
-        
-        try:
-            logging.info(f"Inizio del controllo OCSP per i certificati. Tipo di certificati: '{certificate_type.name}', "
-             f"Batch Size: {batch_size}, Certificate ID iniziale: {last_certificate_id}.")
-            
-            # Esclude tutte le righe che non hanno un ocsp url
-            await db.execute("""
-                UPDATE Certificates
-                SET ocsp_check = 'No OCSP Url Found'
-                WHERE ocsp_check = 'No Request Done' AND 
-                    (authority_info_access LIKE '{}' OR NOT authority_info_access LIKE '%ocsp_urls%')
-            """)
-            await db.commit()
-            
-            # Esclude tutte le righe che non hanno un URL dell'emittente e il certificato dell'emittente non è presente nel database. 
-            # Questa logica si applica solo ai certificati non root, poiché i certificati root hanno il campo 'raw' uguale a quello del certificato issuer.
-            if(certificate_type != DatabaseType.ROOT):
-                await db.execute("""
-                    UPDATE Certificates
-                    SET ocsp_check = 'No Issuer Url Found'
-                    WHERE ocsp_check = 'No Request Done'
-                    AND NOT authority_info_access LIKE '{}' 
-                    AND NOT authority_info_access LIKE '%issuer_urls%' 
-                    AND issuer_id IN (
-                        SELECT issuer_id
-                        FROM Issuers
-                        WHERE raw IS NULL)
-                """)
-                await db.commit()
-            
-            logging.info("Conteggio del numero di certificati da elaborare...")
-            
-            # Conta il numero di certificati per la barra di progresso
-            async with db.execute("""
-                    SELECT COUNT(c.certificate_id)
-                    FROM Certificates AS c 
-                    INNER JOIN Issuers AS i ON c.issuer_id = i.issuer_id
-                    WHERE c.ocsp_check = 'No Request Done'
-                """) as cursor:
-                result = await cursor.fetchone()
-                total_lines = result[0]
-
-            # Controlla il conteggio
-            if total_lines == 0:
-                logging.info("Nessun certificato da analizzare è presente nel database.")
-                return
-        
-            # Inizializza la barra di caricamento
-            tqdm.write("")
-            pbar_ocsp_check = tqdm(total=total_lines, desc=" 🕵️‍♂️  [blue bold]Elaborazione Certificati[/blue bold]", unit="cert.", 
-                        colour="blue", bar_format="{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} • ⚡ {rate_fmt}")
-
-            row_to_certificate = lambda row: {
-                "certificate_id": row[0],
-                "authority_info_access": row[1],
-                "common_name": row[2],
-                "issuer_cert_raw": row[3],
-                "leaf_cert_raw": row[4],
-                "leaf_domain": row[5]
-            }
-            
-            # Limita il numero di richieste contemporanee: senza limite verrebbero aperte decine di migliaia di 
-            # connessioni insieme, esaurendo i file descriptor e producendo falsi "Impossible Retrieve OCSP Information"
-            semaphore = asyncio.Semaphore(OCSP_MAX_CONCURRENT_REQUESTS)
-            
-            async def check_ocsp_status_row_limited(row, session):
-                async with semaphore:
-                    return await check_ocsp_status_row(row_to_certificate(row), certificate_type, session)
-
-            # Un'unica sessione HTTP condivisa per tutte le richieste. Le connessioni vengono chiuse dopo ogni richiesta: 
-            # quelle inattive mantenute in keep-alive non rientrano nel limite e potrebbero esaurire i file descriptor
-            connector = aiohttp.TCPConnector(limit=OCSP_MAX_CONCURRENT_REQUESTS, force_close=True)
-            async with aiohttp.ClientSession(connector=connector) as session:
-                while True:
-                    # Paginazione per chiave: i risultati vengono scritti nel file temporaneo e non nel db, 
-                    # quindi i certificati già elaborati restano 'No Request Done' fino alla fine dell'analisi
-                    async with db.execute("""
-                        SELECT c.certificate_id, c.authority_info_access, i.common_name, i.raw AS issuer_cert_raw, c.raw AS leaf_cert_raw, c.leaf_domain
-                        FROM Certificates AS c 
-                        INNER JOIN Issuers AS i ON c.issuer_id = i.issuer_id
-                        WHERE c.ocsp_check = 'No Request Done' AND c.certificate_id > ?
-                        ORDER BY c.certificate_id
-                        LIMIT ?
-                    """, (last_certificate_id, batch_size)) as cursor:
-                    
-                        # Prende tutti i record
-                        rows = await cursor.fetchall()
-
-                    # Se non ci sono più record, interrompe il ciclo
-                    if not rows or len(rows) == 0:
-                        break
-                    
-                    tasks = [asyncio.ensure_future(check_ocsp_status_row_limited(row, session)) for row in rows]
-                    try:
-                        # Scrive ogni risultato appena disponibile nel file temporaneo (e non direttamente nel db): 
-                        # in caso di interruzione non si perde il lavoro già svolto sul batch corrente
-                        for completed_task in asyncio.as_completed(tasks):
-                            result = await completed_task
-                            ocsp_temp_file_writer.writerow((result[0], result[1], result[2]))
-                            
-                            # Aggiorna la barra di caricamento
-                            pbar_ocsp_check.update(1)
-                    finally:
-                        # In caso di interruzione cancella le richieste ancora in corso
-                        for task in tasks:
-                            task.cancel()
-
-                    # Il batch successivo parte dall'ultimo certificato elaborato
-                    last_certificate_id = rows[-1][0]
-
-                    # Aggiornamento in batch dell'OCSP status nel db
-                    # await db.executemany("""
-                    #    UPDATE Certificates
-                    #    SET ocsp_check = ?
-                    #    WHERE certificate_id = ?
-                    # """, (update_values))
-                    # await db.commit()
-                    
-        except json.JSONDecodeError as json_err:
-            logging.error(f"Errore nella deserializzazione del JSON: {json_err}")
-        except Exception as e:
-            logging.error(f"Errore generale durante il controllo dello stato OCSP: {e}")
-        finally:
-            # Chiusura barra di progresso
-            if pbar_ocsp_check is not None:
-                pbar_ocsp_check.close()
-        return
-    
-    def insert_sct_log_operator(self, operator):
-        """Inserisce un operatore SCT nel database."""
-
-        name = operator.get("name", "")
-        email = ', '.join(operator.get("email", []))
-        
-        self.cursor.execute("""
-            INSERT INTO LogsOperators (name, email) 
-            VALUES (?, ?)
-        """, (
-            name, email
-        ))
-        
-        logging.debug(f"SCT operator inserito: {self.cursor.lastrowid}")
-        return self.cursor.lastrowid
-    
-    def insert_sct_log(self, operator_id, json_log):
-        """Inserisce un log SCT nel database associandolo a un operatore."""
-        
-        description = json_log.get("description", "")
-        log_id = json_log.get("log_id", "")
-        key = json_log.get("key", "")
-        url = json_log.get("url", "")
-        mmd = json_log.get("mmd", "")
-        state_usable_timestamp = json_log.get("state", {}).get("usable", {}).get("timestamp", "")
-        state_retired_timestamp = json_log.get("state", {}).get("retired", {}).get("timestamp", "")
-        state_qualified_timestamp = json_log.get("state", {}).get("qualified", {}).get("timestamp", "")
-        temporal_start = json_log.get("temporal_interval", {}).get("start_inclusive", "")
-        temporal_end = json_log.get("temporal_interval", {}).get("end_exclusive", "")
-        
-        self.cursor.execute("""
-            INSERT INTO Logs (operator_id, description, log_id, key, url, 
-                mmd, state_usable_timestamp, state_retired_timestamp, state_qualified_timestamp, temporal_start, temporal_end) 
+    def _insert_log(self, operator_id: int, log: dict) -> int:
+        state = log.get("state", {})
+        temporal_interval = log.get("temporal_interval", {})
+        self._cursor.execute("""
+            INSERT INTO Logs (operator_id, description, log_id, key, url, mmd, state_usable_timestamp,
+                state_retired_timestamp, state_qualified_timestamp, temporal_start, temporal_end)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(log_id) DO NOTHING
         """, (
-            operator_id, description, log_id, key, url, mmd, state_usable_timestamp, state_retired_timestamp, state_qualified_timestamp,
-            temporal_start, temporal_end
+            operator_id, log.get("description", ""), log.get("log_id", ""), log.get("key", ""), log.get("url", ""),
+            log.get("mmd", ""), state.get("usable", {}).get("timestamp", ""), state.get("retired", {}).get("timestamp", ""),
+            state.get("qualified", {}).get("timestamp", ""), temporal_interval.get("start_inclusive", ""),
+            temporal_interval.get("end_exclusive", "")
         ))
-        
-        logging.debug(f"Log SCT inserito: {self.cursor.lastrowid}")
-        return self.cursor.lastrowid
+        return self._cursor.lastrowid
 
-    def get_sct_unknown_operator(self):
-        """Recupera l'id del record dell'operatore fantasma."""
-        try:
-            self.cursor.execute("""
-                SELECT id FROM LogsOperators WHERE name = 'unknown' and email = ''
-            """)
-            
-            result = self.cursor.fetchone()
-            return result['id']
-        except Exception as e:
-            logging.error("Errore: %s", str(e))
-            return -1
-        
-    def get_sct_log(self, log_id):
-        """Recupera l'id del record di log in base al log_id."""
-        try:
-            self.cursor.execute("""
-                SELECT id FROM Logs WHERE log_id = ?
-            """, (log_id, ))
-            
-            result = self.cursor.fetchone()
-            if result is not None:
-                log_id_value = result['id']
-                return log_id_value
-            
-            return -1
-        except Exception as e:
-            logging.error("Errore: %s", str(e))
-            return -1
-    
-    def get_issuer_certificate_count(self):
-        """Conta il numero di certificati per ciascun issuer."""
-        try:
-            limit_issuers = 20
-            if(self.certificate_type == DatabaseType.LEAF):
-                limit_issuers = 20
-            
-            self.cursor.execute("""
-                WITH IssuersCounts AS (
-                    SELECT Issuers.organization, COUNT(*) AS certificate_count
-                    FROM Certificates 
-                    INNER JOIN Issuers ON Certificates.issuer_id = Issuers.issuer_id 
-                    WHERE Issuers.organization IS NOT NULL AND TRIM(Issuers.organization) <> ''
-                    GROUP BY Issuers.organization
-                    ORDER BY certificate_count DESC
-                ),
-                TopIssuers AS (
-                    SELECT organization, certificate_count
-                    FROM IssuersCounts
-                    LIMIT ?
-                ),
-                Others AS (
-                    SELECT 'Others' AS organization, COALESCE(SUM(certificate_count), 0) AS certificate_count
-                    FROM IssuersCounts 
-                    WHERE organization NOT IN (SELECT organization FROM TopIssuers)
-                )
-                SELECT * FROM TopIssuers
-                UNION ALL
-                SELECT * FROM Others;
-            """, (limit_issuers, ))
-            results = self.cursor.fetchall()
+    # ------------------------------------------------------------------ iteration and updates
 
-            logging.debug(f"Risultati ottenuti: {len(results)}")
+    def get_certificates_count(self) -> int:
+        """Return the number of certificates (0 on error)."""
+        try:
+            return self._conn.execute("SELECT COUNT(certificate_id) FROM Certificates").fetchone()[0]
+        except sqlite3.Error as e:
+            logging.error(f"Errore generale durante il conteggio dei certificati: {e}")
+            return 0
 
-            # Esclude la riga 'Others' quando vale 0 (nessun issuer oltre ai primi)
-            issuer_count_dict = {row[0]: row[1] for row in results if row[1]}
-            
-            logging.debug(f"Totale trovati: {len(issuer_count_dict)}")
-            return issuer_count_dict
+    def iter_leaf_domains(self, batch_size: int = 5000) -> Iterator[list[tuple[int, str]]]:
+        """Yield batches of (certificate_id, leaf_domain) for all certificates."""
+        return self._iter_batches("""
+            SELECT certificate_id, leaf_domain
+            FROM Certificates
+            WHERE certificate_id > ?
+            ORDER BY certificate_id
+            LIMIT ?
+        """, batch_size)
+
+    def iter_raw_certificates(self, batch_size: int = 5000) -> Iterator[list[tuple[int, str, str, str, str, str]]]:
+        """Yield batches of (certificate_id, leaf_domain, raw, common_name, organization, issuer_dn)."""
+        return self._iter_batches("""
+            SELECT c.certificate_id, c.leaf_domain, c.raw, i.common_name, i.organization, i.issuer_dn
+            FROM Certificates AS c INNER JOIN Issuers AS i ON c.issuer_id = i.issuer_id
+            WHERE c.certificate_id > ?
+            ORDER BY c.certificate_id
+            LIMIT ?
+        """, batch_size)
+
+    def update_signature_validity(self, values: list[tuple[str, int]]) -> None:
+        """Update signature_valid from (signature_valid, certificate_id) pairs."""
+        self._conn.executemany("UPDATE Certificates SET signature_valid = ? WHERE certificate_id = ?", values)
+
+    def _iter_batches(self, sql: str, batch_size: int) -> Iterator[list[tuple]]:
+        """Keyset pagination (certificate_id > last seen): OFFSET would rescan every previous row on millions of rows.
+
+        Each batch uses its own cursor and returns plain tuples.
+        """
+        last_certificate_id = 0
+        while True:
+            cursor = self._conn.cursor()
+            cursor.row_factory = None
+            rows = cursor.execute(sql, (last_certificate_id, batch_size)).fetchall()
+            if not rows:
+                return
+            yield rows
+            last_certificate_id = rows[-1][0]
+
+    # ------------------------------------------------------------------ plot statistics
+
+    def _query(self, sql: str, params: tuple = (), build: Callable[[list], dict] = _pairs) -> dict:
+        """Run the query and build the result dict; {} on error."""
+        try:
+            rows = self._conn.execute(sql, params).fetchall()
+            logging.debug("Risultati ottenuti: %d", len(rows))
+            result = build(rows)
+            logging.debug("Totale trovati: %d", len(result))
+            return result
         except Exception as e:
             logging.error("Errore: %s", str(e))
             return {}
-    
+
+    def get_issuer_certificate_count(self) -> dict:
+        """Certificates per issuer organization (top issuers plus 'Others')."""
+        return self._query(_top_with_others_sql(
+            "Issuers.organization", "Certificates INNER JOIN Issuers ON Certificates.issuer_id = Issuers.issuer_id",
+            "Issuers.organization IS NOT NULL AND TRIM(Issuers.organization) <> ''"
+        ), (_TOP_ISSUERS,), _nonzero_pairs)
+
     def get_certificates_per_country(self) -> dict:
-        """Conta quanti certificati sono stati emessi per ciascun paese."""
-        try:
-            limit_issuers = 5
-            if(self.certificate_type == DatabaseType.INTERMEDIATE):
-                limit_issuers = 4
-            elif(self.certificate_type == DatabaseType.ROOT):
-                limit_issuers = 5
-                
-            self.cursor.execute("""
-                WITH IssuersCounts AS (
-                    SELECT Issuers.country, COUNT(*) AS country_count
-                    FROM Issuers
-                    WHERE TRIM(Issuers.country) <> '' AND TRIM(Issuers.country) <> '--'
-                    GROUP BY Issuers.country
-                    ORDER BY country_count DESC
-                ),
-                TopCountry AS (
-                    SELECT country, country_count
-                    FROM IssuersCounts
-                    LIMIT ?
-                ),
-                Others AS (
-                    SELECT 'Others' AS country, COALESCE(SUM(country_count), 0) AS country_count
-                    FROM IssuersCounts 
-                    WHERE country NOT IN (SELECT country FROM TopCountry)
-                )
-                SELECT * FROM TopCountry
-                UNION ALL
-                SELECT * FROM Others;
-            """, (limit_issuers, ))
-            results = self.cursor.fetchall()
-
-            logging.debug(f"Risultati ottenuti: {len(results)}")
-
-            # Esclude la riga 'Others' quando vale 0 (nessun paese oltre ai primi)
-            count_dict = {row[0]: row[1] for row in results if row[1]}
-
-            logging.debug(f"Totale trovati: {len(count_dict)}")
-            return count_dict
-        except Exception as e:
-            logging.error("Errore: %s", str(e))
-            return {}
+        """Certificates per issuer country (top countries plus 'Others')."""
+        return self._query(_top_with_others_sql(
+            "Issuers.country", "Issuers", "TRIM(Issuers.country) <> '' AND TRIM(Issuers.country) <> '--'"
+        ), (self._thresholds.top_countries,), _nonzero_pairs)
 
     def get_validity_duration_distribution(self) -> dict:
-        """Mostra la distribuzione delle durate di validità dei certificati."""
-        try:
-            count_certs = 20
-            
-            if(self.certificate_type == DatabaseType.INTERMEDIATE):
-                count_certs = 1
-            elif(self.certificate_type == DatabaseType.ROOT):
-                count_certs = 1
-            
-            # Le durate negative sono raggruppate nella categoria -1: con la divisione intera di SQLite 
-            # (es. -100/31536000 = 0) finirebbero nella stessa categoria dei certificati con durata inferiore all'anno
-            self.cursor.execute("""
-                SELECT -1, COUNT(certificate_identity) AS count
-                FROM (
-                    SELECT DISTINCT COALESCE(NULLIF(s.subject_key_id, ''), c.raw) AS certificate_identity
-                    FROM Certificates AS c JOIN Subjects AS s ON c.subject_id = s.subject_id
-                    WHERE validity_length < 0
-                )
-                UNION ALL
-                SELECT years, COUNT(certificate_identity) AS count
-                FROM (
-                    SELECT DISTINCT validity_length/31536000 AS years, COALESCE(NULLIF(s.subject_key_id, ''), c.raw) AS certificate_identity
-                    FROM Certificates AS c JOIN Subjects AS s ON c.subject_id = s.subject_id
-                    WHERE c.validity_length IS NOT NULL AND validity_length >= 0
-                )
-                GROUP BY years
-                HAVING count >= ?;
-            """, (count_certs,))
-            
-            # AND validity_length <= 630720000
-            
-            results = self.cursor.fetchall()
-
-            logging.debug(f"Risultati ottenuti: {len(results)}")
-
-            """
-            convert_to_year = lambda seconds: seconds // 31536000
-            count_dict = {}
-            for row in results:
-                year = convert_to_year(row[0])
-                value = row[1]
-                if year in count_dict:
-                    count_dict[year] += value
-                else:
-                    count_dict[year] = value
-            """
-            
-            # La prima SELECT è un'aggregazione senza GROUP BY: senza durate negative restituisce comunque la riga (-1, 0)
-            count_dict = {row[0]: row[1] for row in results if row[0] is not None and row[1] > 0}
-            
-            logging.debug(f"Totale trovati: {len(count_dict)}")
-            return count_dict
-        except Exception as e:
-            logging.error("Errore: %s", str(e))
-            return {}
+        """Certificates per validity duration in years; negative durations go to -1."""
+        # SQLite integer division truncates toward zero (-100/31536000 = 0), so negative durations need their own
+        # bucket. The first SELECT has no GROUP BY and always returns a row: (-1, 0) is filtered out below.
+        return self._query(f"""
+            SELECT -1, COUNT(certificate_identity) AS count
+            FROM (SELECT DISTINCT {_IDENTITY} FROM {_CERTIFICATES} WHERE validity_length < 0)
+            UNION ALL
+            SELECT years, COUNT(certificate_identity) AS count
+            FROM (
+                SELECT DISTINCT validity_length/31536000 AS years, {_IDENTITY}
+                FROM {_CERTIFICATES}
+                WHERE c.validity_length IS NOT NULL AND validity_length >= 0
+            )
+            GROUP BY years
+            HAVING count >= ?
+        """, (self._thresholds.min_validity_count,),
+            lambda rows: {row[0]: row[1] for row in rows if row[0] is not None and row[1] > 0})
 
     def get_certificate_expiration_trend(self) -> dict:
-        """Rappresenta il numero di certificati che scadranno nel tempo."""
-        try:
-            count_certs = 1100
-            
-            if(self.certificate_type == DatabaseType.INTERMEDIATE):
-                count_certs = 6
-            elif(self.certificate_type == DatabaseType.ROOT):
-                count_certs = 9
-            
-            self.cursor.execute("""
-                SELECT month, COUNT(certificate_identity) AS count
-                FROM (
-                    SELECT DISTINCT strftime('%Y-%m', validity_end) AS month, COALESCE(NULLIF(s.subject_key_id, ''), c.raw) AS certificate_identity
-                    FROM Certificates AS c JOIN Subjects AS s ON c.subject_id = s.subject_id
-                    WHERE validity_end IS NOT NULL
-                )
-                GROUP BY month
-                HAVING count > ?
-                ORDER BY month ASC;
-            """, (count_certs,))
-            
-            results = self.cursor.fetchall()
+        """Certificates expiring per month."""
+        return self._query(_distinct_count_sql(
+            "strftime('%Y-%m', validity_end) AS month", where="validity_end IS NOT NULL", group_by="month",
+            having="count > ?", order_by="month ASC"
+        ), (self._thresholds.expiration_above,))
 
-            logging.debug(f"Risultati ottenuti: {len(results)}")
-
-            count_dict = {row[0]: row[1] for row in results}
-
-            logging.debug(f"Totale trovati: {len(count_dict)}")
-            return count_dict
-        except Exception as e:
-            logging.error("Errore: %s", str(e))
-            return {}
-    
     def get_signature_algorithm_distribution(self) -> dict:
-        """Mostra la distribuzione degli algoritmi di firma utilizzati."""
-        try:
-            self.cursor.execute("""
-                SELECT signature_algorithm, COUNT(certificate_identity) AS sign_algorithm_count
-                FROM (
-                    SELECT DISTINCT signature_algorithm, COALESCE(NULLIF(s.subject_key_id, ''), c.raw) AS certificate_identity
-                    FROM Certificates AS c INNER JOIN Subjects AS s ON c.subject_id = s.subject_id
-                    WHERE signature_algorithm IS NOT NULL
-                )
-                GROUP BY signature_algorithm
-                ORDER BY sign_algorithm_count DESC;
-            """)
-            
-            results = self.cursor.fetchall()
+        """Certificates per signature algorithm."""
+        return self._query(_distinct_count_sql("signature_algorithm", where="signature_algorithm IS NOT NULL"))
 
-            logging.debug(f"Risultati ottenuti: {len(results)}")
-
-            count_dict = {row[0]: row[1] for row in results}
-
-            logging.debug(f"Totale trovati: {len(count_dict)}")
-            return count_dict
-        except Exception as e:
-            logging.error("Errore: %s", str(e))
-            return {}
-        
     def get_key_algorithm_length_distribution(self) -> dict:
-        """Esegue una query per ottenere conteggi per un'entità specifica."""
-        try:
-            self.cursor.execute("""
-                SELECT 
-                    key_algorithm, 
-                    key_length, 
-                    COUNT(certificate_identity) AS certificate_count
-                FROM (
-                    SELECT DISTINCT key_algorithm, key_length, COALESCE(NULLIF(s.subject_key_id, ''), c.raw) AS certificate_identity
-                    FROM 
-                        Certificates AS c INNER JOIN Subjects AS s ON c.subject_id = s.subject_id
-                    WHERE 
-                        key_algorithm IS NOT NULL AND key_algorithm <> '' AND
-                        key_length IS NOT NULL AND key_length <> ''
-                )
-                GROUP BY 
-                    key_algorithm, 
-                    key_length
-                ORDER BY 
-                    key_algorithm, 
-                    key_length;
-            """)
-            
-            results = self.cursor.fetchall()
+        """Certificates per key algorithm and key length."""
+        return self._query(_distinct_count_sql(
+            "key_algorithm, key_length", order_by="key_algorithm, key_length",
+            where="key_algorithm IS NOT NULL AND key_algorithm <> '' AND key_length IS NOT NULL AND key_length <> ''"
+        ), build=_nested_pairs)
 
-            logging.debug(f"Risultati ottenuti: {len(results)}")
-
-            count_dict = {}
-            for row in results:
-                algorithm = row[0]
-                length = row[1]
-                count = row[2]
-                
-                if algorithm not in count_dict:
-                    count_dict[algorithm] = {}
-                count_dict[algorithm][length] = count
-            
-            logging.debug(f"Totale trovati: {len(count_dict)}")
-            return count_dict
-        except Exception as e:
-            logging.error("Errore: %s", str(e))
-            return {}
-        
     def get_ocsp_status_distribution(self) -> dict:
-        """Mostra la distribuzione degli stati OCSP come "Good", "Revoked", ecc..."""
-        try:
-            self.cursor.execute("""
-                SELECT ocsp_check, COUNT(*) AS count
-                FROM Certificates
-                GROUP BY ocsp_check;
-            """)
-            
-            results = self.cursor.fetchall()
+        """Certificates per OCSP status (Good, Revoked, ...)."""
+        return self._query("SELECT ocsp_check, COUNT(*) AS count FROM Certificates GROUP BY ocsp_check")
 
-            logging.debug(f"Risultati ottenuti: {len(results)}")
-
-            count_dict = {row[0]: row[1] for row in results}
-            
-            logging.debug(f"Totale trovati: {len(count_dict)}")
-            return count_dict
-        except Exception as e:
-            logging.error("Errore: %s", str(e))
-            return {}
-    
     def get_count_critical_non_critical_extensions(self) -> dict:
-        """Conta il numero di certificati che hanno implementato estensioni critiche rispetto a quelle non critiche dell'AIA."""
-        try:
-            self.cursor.execute("""
-                SELECT authority_info_access_is_critical, COUNT(certificate_identity) AS count
-                FROM (
-                    SELECT DISTINCT authority_info_access_is_critical, COALESCE(NULLIF(s.subject_key_id, ''), c.raw) AS certificate_identity
-                    FROM Certificates AS c JOIN Subjects AS s ON c.subject_id = s.subject_id
-                )
-                GROUP BY authority_info_access_is_critical
-                ORDER BY count DESC;
-            """)
-            
-            results = self.cursor.fetchall()
+        """Certificates with a critical vs non-critical AIA extension."""
+        return self._query(_distinct_count_sql("authority_info_access_is_critical"))
 
-            logging.debug(f"Risultati ottenuti: {len(results)}")
-
-            count_dict = {row[0]: row[1] for row in results}
-
-            logging.debug(f"Totale trovati: {len(count_dict)}")
-            return count_dict
-        except Exception as e:
-            logging.error("Errore: %s", str(e))
-            return {}
-        
     def get_self_signed_vs_ca_signed(self) -> dict:
-        """Rappresenta la proporzione di certificati auto-firmati rispetto a quelli firmati da una CA."""
-        try:
-            self.cursor.execute("""
-                SELECT 
-                    CASE 
-                        WHEN self_signed = 1 THEN 'True' 
-                        ELSE 'False' 
-                    END AS is_self_signed,
-                    COUNT(certificate_identity) AS count
-                FROM (
-                    SELECT DISTINCT self_signed, COALESCE(NULLIF(s.subject_key_id, ''), c.raw) AS certificate_identity
-                    FROM Certificates AS c JOIN Subjects AS s ON c.subject_id = s.subject_id
-                )
-                GROUP BY self_signed;
-            """)
-            
-            results = self.cursor.fetchall()
+        """Self-signed vs CA-signed certificates."""
+        return self._query(_distinct_count_sql(
+            "self_signed", select="CASE WHEN self_signed = 1 THEN 'True' ELSE 'False' END AS is_self_signed", order_by=""
+        ))
 
-            logging.debug(f"Risultati ottenuti: {len(results)}")
-
-            count_dict = {row[0]: row[1] for row in results}
-
-            logging.debug(f"Totale trovati: {len(count_dict)}")
-            return count_dict
-        except Exception as e:
-            logging.error("Errore: %s", str(e))
-            return {}
-        
     def get_validation_level_distribution(self) -> dict:
-        """Mostra la distribuzione dei diversi validation_level dei certificati."""
-        try:
-            self.cursor.execute("""
-                SELECT validation_level, COUNT(certificate_identity) AS count
-                FROM (
-                    SELECT DISTINCT validation_level, COALESCE(NULLIF(s.subject_key_id, ''), c.raw) AS certificate_identity
-                    FROM Certificates AS c JOIN Subjects AS s ON c.subject_id = s.subject_id
-                )
-                GROUP BY validation_level;
-            """)
-            
-            results = self.cursor.fetchall()
+        """Certificates per validation level."""
+        return self._query(_distinct_count_sql("validation_level", order_by=""))
 
-            logging.debug(f"Risultati ottenuti: {len(results)}")
-
-            count_dict = {row[0]: row[1] for row in results}
-
-            logging.debug(f"Totale trovati: {len(count_dict)}")
-            return count_dict
-        except Exception as e:
-            logging.error("Errore: %s", str(e))
-            return {}
-        
     def get_certificate_version_distribution(self) -> dict:
-        """Mostra la distribuzione delle versioni dei certificati (es. v1, v2, v3)."""
-        try:
-            self.cursor.execute("""
-                SELECT version, COUNT(certificate_identity) AS count
-                FROM (
-                    SELECT DISTINCT version, COALESCE(NULLIF(s.subject_key_id, ''), c.raw) AS certificate_identity
-                    FROM Certificates AS c JOIN Subjects AS s ON c.subject_id = s.subject_id
-                )
-                GROUP BY version;
-            """)
-            
-            results = self.cursor.fetchall()
+        """Certificates per X.509 version."""
+        return self._query(_distinct_count_sql("version", order_by=""))
 
-            logging.debug(f"Risultati ottenuti: {len(results)}")
-
-            count_dict = {row[0]: row[1] for row in results}
-
-            logging.debug(f"Totale trovati: {len(count_dict)}")
-            return count_dict
-        except Exception as e:
-            logging.error("Errore: %s", str(e))
-            return {}
-        
     def get_signature_validity_distribution(self) -> dict:
-        """Rappresenta la proporzione di firme valide rispetto a quelle non valide."""
-        try:
-            self.cursor.execute("""
-                SELECT signature_valid AS is_valid_signature, COUNT(certificate_identity) AS count
-                FROM (
-                    SELECT DISTINCT signature_valid, COALESCE(NULLIF(s.subject_key_id, ''), c.raw) AS certificate_identity
-                    FROM Certificates AS c INNER JOIN Subjects AS s ON c.subject_id = s.subject_id
-                )
-                GROUP BY signature_valid
-                ORDER BY count DESC;
-            """)
-            
-            results = self.cursor.fetchall()
+        """Certificates per signature validity."""
+        return self._query(_distinct_count_sql("signature_valid"))
 
-            logging.debug(f"Risultati ottenuti: {len(results)}")
-
-            count_dict = {row[0]: row[1] for row in results}
-
-            logging.debug(f"Totale trovati: {len(count_dict)}")
-            return count_dict
-        except Exception as e:
-            logging.error("Errore: %s", str(e))
-            return {}
-        
     def get_status_analysis(self) -> dict:
-        """Mostra il numero di Success dei certificati e la frequenza dei diversi tipi di errori nei certificati."""
-        try:
-            self.cursor.execute("""
-                SELECT 'success', COUNT(*) AS count
-                FROM Certificates
-                UNION ALL
-                SELECT status, COUNT(*) AS count
-                FROM Errors
-                GROUP BY status;
-            """)
-            
-            results = self.cursor.fetchall()
+        """Successful certificates and scan errors per status."""
+        return self._query("""
+            SELECT 'success', COUNT(*) AS count FROM Certificates
+            UNION ALL
+            SELECT status, COUNT(*) AS count FROM Errors GROUP BY status
+        """)
 
-            logging.debug(f"Risultati ottenuti: {len(results)}")
-
-            count_dict = {row[0]: row[1] for row in results}
-
-            logging.debug(f"Totale trovati: {len(count_dict)}")
-            return count_dict
-        except Exception as e:
-            logging.error("Errore: %s", str(e))
-            return {}
-        
     def get_key_usage_distribution(self) -> dict:
-        """Mostra quali key_usage sono più comunemente utilizzati nei certificati."""
-        try:
-            self.cursor.execute("""
-                SELECT key_usage, COUNT(certificate_identity) AS count
-                FROM (
-                    SELECT DISTINCT e.key_usage, COALESCE(NULLIF(s.subject_key_id, ''), c.raw) AS certificate_identity
-                    FROM Extensions AS e JOIN Certificates AS c ON e.certificate_id = c.certificate_id 
-                    JOIN Subjects AS s ON c.subject_id = s.subject_id
-                )
-                GROUP BY key_usage
-                ORDER BY count DESC;
-            """)
-            
-            results = self.cursor.fetchall()
+        """Certificates per key usage set."""
+        return self._query(_distinct_count_sql("key_usage", source=_EXTENSIONS),
+                           build=lambda rows: _usage_counts(rows, ignored=("value",)))
 
-            logging.debug(f"Risultati ottenuti: {len(results)}")
-
-            count_dict = {}
-            for row in results:
-                key_usage = json.loads(row[0])
-                key_usage.pop('value', None)
-                key = json.dumps(", ".join(key_usage.keys()))
-                count_dict[key] = count_dict.get(key, 0) + row[1]     # Righe diverse possono avere le stesse chiavi
-
-            logging.debug(f"Totale trovati: {len(count_dict)}")
-            return count_dict
-        except Exception as e:
-            logging.error("Errore: %s", str(e))
-            return {}
-        
     def get_critical_vs_non_critical_key_usage(self) -> dict:
-        """Mostra la proporzione di key_usage critici rispetto a quelli non critici."""
-        try:
-            self.cursor.execute("""
-                SELECT key_usage_is_critical, COUNT(certificate_identity) AS count
-                FROM (
-                    SELECT DISTINCT key_usage_is_critical, COALESCE(NULLIF(s.subject_key_id, ''), c.raw) AS certificate_identity
-                    FROM Extensions AS e JOIN Certificates AS c ON e.certificate_id = c.certificate_id
-                    JOIN Subjects AS s ON c.subject_id = s.subject_id
-                )
-                GROUP BY key_usage_is_critical
-                ORDER BY count DESC;
-            """)
-            
-            results = self.cursor.fetchall()
+        """Critical vs non-critical key usage."""
+        return self._query(_distinct_count_sql("key_usage_is_critical", source=_EXTENSIONS))
 
-            logging.debug(f"Risultati ottenuti: {len(results)}")
-
-            count_dict = {row[0]: row[1] for row in results}
-
-            logging.debug(f"Totale trovati: {len(count_dict)}")
-            return count_dict
-        except Exception as e:
-            logging.error("Errore: %s", str(e))
-            return {}
-    
     def get_extended_key_usage_distribution(self) -> dict:
-        """Visualizza quali extended_key_usage sono più comuni nei certificati."""
-        try:
-            self.cursor.execute("""
-                SELECT extended_key_usage, COUNT(certificate_identity) AS count
-                FROM (
-                    SELECT DISTINCT e.extended_key_usage, COALESCE(NULLIF(s.subject_key_id, ''), c.raw) AS certificate_identity
-                    FROM Extensions AS e JOIN Certificates AS c ON e.certificate_id = c.certificate_id 
-                    JOIN Subjects AS s ON c.subject_id = s.subject_id
-                )
-                GROUP BY extended_key_usage
-                ORDER BY count DESC;
-            """)
-            
-            results = self.cursor.fetchall()
+        """Certificates per extended key usage set."""
+        return self._query(_distinct_count_sql("extended_key_usage", source=_EXTENSIONS), build=_usage_counts)
 
-            logging.debug(f"Risultati ottenuti: {len(results)}")
-
-            count_dict = {}
-            for row in results:
-                key_usage = json.loads(row[0])
-                key = json.dumps(", ".join(key_usage.keys()))
-                count_dict[key] = count_dict.get(key, 0) + row[1]     # Righe diverse (es. OID sconosciuti) possono avere le stesse chiavi
-
-            logging.debug(f"Totale trovati: {len(count_dict)}")
-            return count_dict
-        except Exception as e:
-            logging.error("Errore: %s", str(e))
-            return {}
-    
     def get_critical_vs_non_critical_extended_key_usage(self) -> dict:
-        """Mostra la proporzione di extended_key_usage critici rispetto a quelli non critici."""
-        try:
-            self.cursor.execute("""
-                SELECT extended_key_usage_is_critical, COUNT(certificate_identity) AS count
-                FROM (
-                    SELECT DISTINCT e.extended_key_usage_is_critical, COALESCE(NULLIF(s.subject_key_id, ''), c.raw) AS certificate_identity
-                    FROM Extensions AS e JOIN Certificates AS c ON e.certificate_id = c.certificate_id 
-                    JOIN Subjects AS s ON c.subject_id = s.subject_id
-                )
-                GROUP BY extended_key_usage_is_critical
-                ORDER BY count DESC;
-            """)
-            
-            results = self.cursor.fetchall()
+        """Critical vs non-critical extended key usage."""
+        return self._query(_distinct_count_sql("extended_key_usage_is_critical", source=_EXTENSIONS))
 
-            logging.debug(f"Risultati ottenuti: {len(results)}")
-
-            count_dict = {row[0]: row[1] for row in results}
-
-            logging.debug(f"Totale trovati: {len(count_dict)}")
-            return count_dict
-        except Exception as e:
-            logging.error("Errore: %s", str(e))
-            return {}
-    
     def get_basic_constraints_distribution(self) -> dict:
-        """Mostra la distribuzione dei Basic Constraints nei certificati."""
-        try:
-            self.cursor.execute("""
-                SELECT basic_constraints, COUNT(certificate_identity) AS count
-                FROM (
-                    SELECT DISTINCT e.basic_constraints, COALESCE(NULLIF(s.subject_key_id, ''), c.raw) AS certificate_identity
-                    FROM Extensions AS e JOIN Certificates AS c ON e.certificate_id = c.certificate_id
-                    JOIN Subjects AS s ON c.subject_id = s.subject_id
-                )
-                GROUP BY basic_constraints
-                ORDER BY count DESC;
-            """)
-            
-            results = self.cursor.fetchall()
-
-            logging.debug(f"Risultati ottenuti: {len(results)}")
-
-            count_dict = {row[0]: row[1] for row in results}
-
-            logging.debug(f"Totale trovati: {len(count_dict)}")
-            return count_dict
-        except Exception as e:
-            logging.error("Errore: %s", str(e))
-            return {}
+        """Certificates per Basic Constraints value."""
+        return self._query(_distinct_count_sql("basic_constraints", source=_EXTENSIONS))
 
     def get_critical_vs_non_critical_crl_distribution(self) -> dict:
-        """Mostra la proporzione di estensioni CRL critical vs non critical."""
-        try:
-            self.cursor.execute("""
-                SELECT crl_distr_point_is_critical, COUNT(certificate_identity) AS count
-                FROM (
-                    SELECT DISTINCT crl_distr_point_is_critical, COALESCE(NULLIF(s.subject_key_id, ''), c.raw) AS certificate_identity
-                    FROM Extensions AS e JOIN Certificates AS c ON e.certificate_id = c.certificate_id
-                    JOIN Subjects AS s ON c.subject_id = s.subject_id
-                )
-                GROUP BY crl_distr_point_is_critical
-                ORDER BY count DESC;
-            """)
-            
-            results = self.cursor.fetchall()
+        """Critical vs non-critical CRL Distribution Points."""
+        return self._query(_distinct_count_sql("crl_distr_point_is_critical", source=_EXTENSIONS))
 
-            logging.debug(f"Risultati ottenuti: {len(results)}")
-
-            count_dict = {row[0]: row[1] for row in results}
-
-            logging.debug(f"Totale trovati: {len(count_dict)}")
-            return count_dict
-        except Exception as e:
-            logging.error("Errore: %s", str(e))
-            return {}
-        
     def get_signed_certificate_timestamp_trend(self) -> dict:
-        """Mostra la distribuzione temporale per mese e anno dei Signed Certificate Timestamps."""
-        try:
-            count = 20
-            if(self.certificate_type == DatabaseType.ROOT):
-                count = 0
-                
-            self.cursor.execute("""
-                SELECT 
-                    strftime('%Y-%m', datetime(timestamp, 'unixepoch')) AS month_year, 
-                    COUNT(*) AS count
-                FROM SignedCertificateTimestamps
-                GROUP BY month_year
-                HAVING count > ?
-                ORDER BY month_year ASC;
-            """, (count,))
-            
-            results = self.cursor.fetchall()
+        """SCTs per month."""
+        return self._query("""
+            SELECT strftime('%Y-%m', datetime(timestamp, 'unixepoch')) AS month_year, COUNT(*) AS count
+            FROM SignedCertificateTimestamps
+            GROUP BY month_year
+            HAVING count > ?
+            ORDER BY month_year ASC
+        """, (self._thresholds.sct_above,))
 
-            logging.debug(f"Risultati ottenuti: {len(results)}")
-
-            count_dict = {row[0]: row[1] for row in results}
-
-            logging.debug(f"Totale trovati: {len(count_dict)}")
-            return count_dict
-        except Exception as e:
-            logging.error("Errore: %s", str(e))
-            return {}
-        
     def get_sct_count_per_certificate(self) -> dict:
-        """Conta quanti certificati hanno 1 SCT, 2 SCT, e così via."""
-        try:
-            self.cursor.execute("""
-                SELECT count_sct, COUNT(*) AS certificate_count
-                FROM (
-                    SELECT COUNT(s.certificate_id) AS count_sct
-                    FROM Certificates AS c LEFT JOIN SignedCertificateTimestamps s
-                    ON s.certificate_id = c.certificate_id 
-                    GROUP BY c.certificate_id) AS sct_counts
-                GROUP BY count_sct
-                ORDER BY count_sct ASC;
-            """)
-            
-            results = self.cursor.fetchall()
+        """Certificates per number of SCTs."""
+        return self._query("""
+            SELECT count_sct, COUNT(*) AS certificate_count
+            FROM (
+                SELECT COUNT(t.certificate_id) AS count_sct
+                FROM Certificates AS c LEFT JOIN SignedCertificateTimestamps AS t ON t.certificate_id = c.certificate_id
+                GROUP BY c.certificate_id
+            )
+            GROUP BY count_sct
+            ORDER BY count_sct ASC
+        """)
 
-            logging.debug(f"Risultati ottenuti: {len(results)}")
-
-            count_dict = {row[0]: row[1] for row in results}
-
-            logging.debug(f"Totale trovati: {len(count_dict)}")
-            return count_dict
-        except Exception as e:
-            logging.error("Errore: %s", str(e))
-            return {}
-        
     def get_top_sct_logs(self) -> dict:
-        """Mostra quali log di SCT sono stati usati più spesso."""
-        try:
-            self.cursor.execute("""
-                SELECT description, COUNT(certificate_identity) AS count
-                FROM (
-                    SELECT DISTINCT l.description, COALESCE(NULLIF(su.subject_key_id, ''), c.raw) AS certificate_identity
-                    FROM SignedCertificateTimestamps AS s INNER JOIN Logs AS l ON s.log_id = l.id
-                    INNER JOIN Certificates AS c ON s.certificate_id = c.certificate_id
-                    INNER JOIN Subjects AS su ON c.subject_id = su.subject_id
-                )
-                GROUP BY description
-                HAVING count > 12000
-                ORDER BY count DESC;
-            """)
-            results = self.cursor.fetchall()
+        """Certificates per SCT log, most used logs only."""
+        return self._query(_distinct_count_sql(
+            "description", having="count > ?",
+            source=("SignedCertificateTimestamps AS t INNER JOIN Logs AS l ON t.log_id = l.id "
+                    "INNER JOIN Certificates AS c ON t.certificate_id = c.certificate_id "
+                    "INNER JOIN Subjects AS s ON c.subject_id = s.subject_id")
+        ), (_TOP_SCT_LOGS_ABOVE,))
 
-            logging.debug(f"Risultati ottenuti: {len(results)}")
-
-            count_dict = {row[0]: row[1] for row in results}
-
-            logging.debug(f"Totale trovati: {len(count_dict)}")
-            return count_dict
-        except Exception as e:
-            logging.error("Errore: %s", str(e))
-            return {}
-    
     def get_top_sct_log_operators(self) -> dict:
-        """Conta i log di SCT per ogni operatore, mostrando quelli più utilizzati."""
-        try:
-            self.cursor.execute("""
-                SELECT lo.name, COUNT(*) AS count
-                FROM SignedCertificateTimestamps AS s INNER JOIN Logs AS l ON s.log_id = l.id
-                INNER JOIN LogsOperators AS lo ON l.operator_id = lo.id
-                GROUP BY lo.name
-                ORDER BY count DESC;
-            """)
-            results = self.cursor.fetchall()
+        """SCTs per log operator, most used first."""
+        return self._query("""
+            SELECT lo.name, COUNT(*) AS count
+            FROM SignedCertificateTimestamps AS t INNER JOIN Logs AS l ON t.log_id = l.id
+            INNER JOIN LogsOperators AS lo ON l.operator_id = lo.id
+            GROUP BY lo.name
+            ORDER BY count DESC
+        """)
 
-            logging.debug(f"Risultati ottenuti: {len(results)}")
-
-            count_dict = {row[0]: row[1] for row in results}
-
-            logging.debug(f"Totale trovati: {len(count_dict)}")
-            return count_dict
-        except Exception as e:
-            logging.error("Errore: %s", str(e))
-            return {}
-        
     def get_critical_vs_non_critical_san_extensions(self) -> dict:
-        """Mostra la proporzione di estensioni critiche vs non critiche nelle Subject Alternative Name."""
-        try:
-            self.cursor.execute("""
-                SELECT subject_alt_name_is_critical, COUNT(certificate_identity) AS count
-                FROM (
-                    SELECT DISTINCT s.subject_alt_name_is_critical, COALESCE(NULLIF(s.subject_key_id, ''), c.raw) AS certificate_identity
-                    FROM Subjects AS s JOIN Certificates AS c ON c.subject_id = s.subject_id
-                )
-                GROUP BY subject_alt_name_is_critical
-                ORDER BY count DESC;
-            """)
-            
-            results = self.cursor.fetchall()
+        """Critical vs non-critical Subject Alternative Name extensions."""
+        return self._query(_distinct_count_sql(
+            "subject_alt_name_is_critical", source="Subjects AS s JOIN Certificates AS c ON c.subject_id = s.subject_id"
+        ))
 
-            logging.debug(f"Risultati ottenuti: {len(results)}")
-
-            count_dict = {row[0]: row[1] for row in results}
-
-            logging.debug(f"Totale trovati: {len(count_dict)}")
-            return count_dict
-        except Exception as e:
-            logging.error("Errore: %s", str(e))
-            return {}
-    
     def get_critical_vs_non_critical_cp_policies(self) -> dict:
-        """Mostra la proporzione di certificate policies critici rispetto a quelli non critici."""
-        try:
-            self.cursor.execute("""
-                SELECT is_cp_critical, COUNT(certificate_identity) AS count
-                FROM (
-                    SELECT DISTINCT c.is_cp_critical, COALESCE(NULLIF(s.subject_key_id, ''), cc.raw) AS certificate_identity
-                    FROM CertificatePolicies AS c JOIN Extensions AS e ON c.extension_id = e.extension_id 
-                    JOIN Certificates AS cc ON e.certificate_id = cc.certificate_id
-                    JOIN Subjects AS s ON cc.subject_id = s.subject_id
-                )
-                GROUP BY is_cp_critical
-                ORDER BY count DESC;
-            """)
-            
-            results = self.cursor.fetchall()
-
-            logging.debug(f"Risultati ottenuti: {len(results)}")
-
-            count_dict = {row[0]: row[1] for row in results}
-
-            logging.debug(f"Totale trovati: {len(count_dict)}")
-            return count_dict
-        except Exception as e:
-            logging.error("Errore: %s", str(e))
-            return {}
-    
-    def get_raw_certificates(self, batch_size=1500, last_certificate_id=0):
-        """
-            Recupera un batch di certificati dal database, insieme al loro ID e dominio di origine.
-            Usa la paginazione per chiave (certificate_id > last_certificate_id) invece di OFFSET, 
-            che su milioni di righe costringerebbe a riscandire tutte le righe già lette.
-        """
-        
-        try:
-            self.cursor.execute("""
-                SELECT c.certificate_id, c.leaf_domain, c.raw, i.common_name, i.organization, i.issuer_dn
-                FROM Certificates AS c INNER JOIN Issuers AS i ON c.issuer_id = i.issuer_id
-                WHERE c.certificate_id > ?
-                ORDER BY c.certificate_id
-                LIMIT ?
-            """, (last_certificate_id, batch_size))
-            
-            # Prende tutti i record
-            rows = self.cursor.fetchall()
-            
-            if not rows:
-                return []
-                    
-            return rows
-        except Exception as e:
-            # Propaga l'errore: restituire una lista vuota farebbe terminare l'analisi come se fosse completa
-            logging.error(f"Errore generale durante il recupero dei certificati: {e}")
-            raise
-    
-    def get_certificates_count(self):
-        """Restituisce il numero di certificati."""
-        try:
-            self.cursor.execute("""
-                SELECT COUNT(certificate_id) AS count
-                FROM Certificates
-            """, ())
-            
-            row = self.cursor.fetchone()
-            
-            if row is None:
-                return 0
-
-            return row[0]
-        except Exception as e:
-            logging.error(f"Errore generale durante il conteggio dei certificati: {e}")
-        return 0
-    
-    def get_leaf_domain_certificates(self, batch_size=1500, last_certificate_id=0):
-        """
-            Recupera un batch di certificati dal database, insieme al loro ID e dominio di origine.
-            Usa la paginazione per chiave (certificate_id > last_certificate_id) invece di OFFSET.
-        """
-        
-        try:
-            self.cursor.execute("""
-                SELECT certificate_id, leaf_domain
-                FROM Certificates
-                WHERE certificate_id > ?
-                ORDER BY certificate_id
-                LIMIT ?
-            """, (last_certificate_id, batch_size))
-            
-            # Prende tutti i record
-            rows = self.cursor.fetchall()
-            
-            if not rows or len(rows) == 0:
-                return []
-                    
-            return rows
-        except Exception as e:
-            # Propaga l'errore: restituire una lista vuota farebbe terminare l'analisi come se fosse completa
-            logging.error(f"Errore generale durante il recupero della lista dei certificati: {e}")
-            raise
-    
-    def update_leaf_certificate_validity(self, signature_valid, certificate_id) -> dict:
-        """Aggiorna la validità della firma di un certificato specificato dal suo ID."""
-        try:
-            self.cursor.execute('''
-                UPDATE Certificates
-                SET signature_valid = ?
-                WHERE certificate_id = ?
-            ''', (signature_valid, certificate_id))
-            logging.debug(f"Signature Validity aggiornato per il certificate ID: {certificate_id}")
-        
-        except Exception as e:
-            logging.error("Errore durante l'aggionamento della signature validity: %s", str(e))
-            return
-        
-    """
-    def get_count_per_entity(self) -> dict:
-        "" Commento. ""
-        try:
-            self.cursor.execute("""""")
-            results = self.cursor.fetchall()
-
-            logging.debug(f"Risultati ottenuti: {len(results)}")
-
-            count_dict = {row[0]: row[1] for row in results}
-
-            logging.debug(f"Totale trovati: {len(count_dict)}")
-            return count_dict
-        except Exception as e:
-            logging.error("Errore: %s", str(e))
-            return {}
-    """
+        """Critical vs non-critical certificate policies."""
+        return self._query(_distinct_count_sql(
+            "is_cp_critical",
+            source=("CertificatePolicies AS p JOIN Extensions AS e ON p.extension_id = e.extension_id "
+                    "JOIN Certificates AS c ON e.certificate_id = c.certificate_id "
+                    "JOIN Subjects AS s ON c.subject_id = s.subject_id")
+        ))

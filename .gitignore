@@ -1,25 +1,33 @@
 
-# Output File of zgrab2
+# zgrab2 output
 certs_polito.json
 
-# Input File for analysis
+# Analysis input files
 top-10m-websites-dom-cop.txt
 domini_europei_google.txt
 domini_italiani_google.txt
 
-# DB files
+# SQLite databases and journals
 *.db
 *.db-journal
 *.db-shm
 *.db-wal
 
-# BACKUP files
+# OCSP backup/resume files
 *ocsp_certificates_backup.csv
 *ocsp_check_results_temp.csv
 
 CARTELLA/
 
-# Python bytecode e log dell'applicazione
+# Python bytecode and app log
 __pycache__/
 *.pyc
 app.log
+
+# Test cache
+.pytest_cache/
+
+# Virtual environments
+env/
+venv/
+.venv/

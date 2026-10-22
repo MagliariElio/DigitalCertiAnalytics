@@ -3,9 +3,6 @@
 
 BEGIN TRANSACTION;
 
--- -----------------------------------------------------
--- Table `certificates_db`.`Issuers`
--- -----------------------------------------------------
 DROP TABLE IF EXISTS `Issuers`;
 
 CREATE TABLE IF NOT EXISTS Issuers (
@@ -21,9 +18,6 @@ CREATE TABLE IF NOT EXISTS Issuers (
     raw BLOB DEFAULT NULL
 );
 
--- -----------------------------------------------------
--- Table `certificates_db`.`Subjects`
--- -----------------------------------------------------
 DROP TABLE IF EXISTS `Subjects`;
 
 CREATE TABLE IF NOT EXISTS Subjects (
@@ -35,9 +29,6 @@ CREATE TABLE IF NOT EXISTS Subjects (
     subject_alt_name_is_critical VARCHAR(12) CHECK (subject_alt_name_is_critical IN ('Critical', 'Not Critical', 'Not Found', 'Error'))
 );
 
--- -----------------------------------------------------
--- Table `certificates_db`.`Certificates`
--- -----------------------------------------------------
 DROP TABLE IF EXISTS `Certificates`;
 
 CREATE TABLE IF NOT EXISTS Certificates (
@@ -73,9 +64,6 @@ CREATE TABLE IF NOT EXISTS Certificates (
     FOREIGN KEY (subject_id) REFERENCES Subjects(subject_id)
 );
 
--- -----------------------------------------------------
--- Table `certificates_db`.`Extensions`
--- -----------------------------------------------------
 DROP TABLE IF EXISTS `Extensions`;
 
 CREATE TABLE IF NOT EXISTS Extensions (
@@ -93,9 +81,6 @@ CREATE TABLE IF NOT EXISTS Extensions (
     FOREIGN KEY (certificate_id) REFERENCES Certificates(certificate_id)
 );
 
--- -----------------------------------------------------
--- Table `certificates_db`.`SignedCertificateTimestamps`
--- -----------------------------------------------------
 DROP TABLE IF EXISTS `SignedCertificateTimestamps`;
 
 CREATE TABLE IF NOT EXISTS SignedCertificateTimestamps (
@@ -109,9 +94,6 @@ CREATE TABLE IF NOT EXISTS SignedCertificateTimestamps (
     FOREIGN KEY (log_id) REFERENCES Logs(id)
 );
 
--- -----------------------------------------------------
--- Table `certificates_db`.`CertificatePolicies`
--- -----------------------------------------------------
 DROP TABLE IF EXISTS `CertificatePolicies`;
 
 CREATE TABLE IF NOT EXISTS CertificatePolicies (
@@ -124,9 +106,6 @@ CREATE TABLE IF NOT EXISTS CertificatePolicies (
     FOREIGN KEY (extension_id) REFERENCES Extensions(extension_id)
 );
 
--- -----------------------------------------------------
--- Table `certificates_db`.`Errors`
--- -----------------------------------------------------
 DROP TABLE IF EXISTS `Errors`;
 
 CREATE TABLE IF NOT EXISTS Errors (
@@ -139,9 +118,6 @@ CREATE TABLE IF NOT EXISTS Errors (
     download_date TIMESTAMP
 );
 
--- -----------------------------------------------------
--- Table `certificates_db`.`LogsOperators`
--- -----------------------------------------------------
 DROP TABLE IF EXISTS `LogsOperators`;
 CREATE TABLE IF NOT EXISTS LogsOperators (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -149,9 +125,6 @@ CREATE TABLE IF NOT EXISTS LogsOperators (
     email TEXT
 );
 
--- -----------------------------------------------------
--- Table `certificates_db`.`Logs`
--- -----------------------------------------------------
 DROP TABLE IF EXISTS `Logs`;
 CREATE TABLE IF NOT EXISTS Logs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

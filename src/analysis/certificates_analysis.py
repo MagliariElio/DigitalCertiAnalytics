@@ -1,776 +1,411 @@
-import json, csv
-import aiosqlite, asyncio
-import logging
-import argparse
-import pyfiglet
-import os, shutil, signal
-from tqdm.rich import tqdm
-from rich.console import Console
-from db.database import Database, DatabaseType
-from dao.certificate_dao import CertificateDAO
-from utils.utils import find_next_intermediate_certificate, count_certificates_to_root, setup_logging, ArgparseFormatter 
-from utils.utils import update_certificates_ocsp_status_db, save_certificates_ocsp_status_file, check_certificate_chain
-from utils.plotter_utils import plot_general_certificates_analysis, plot_leaf_certificates_analysis, plot_leaf_and_root_certificates_analysis
-from utils.graph_plotter import GraphPlotter
-from utils.zlint_utils import run_zlint_check
+from __future__ import annotations
 
-# Admin: Anuar Elio Magliari 
+import argparse
+import json
+import logging
+from contextlib import ExitStack, contextmanager
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Callable, Iterator
+
+import pyfiglet
+from rich.console import Console
+
+from dao.certificate_dao import CertificateDAO
+from db.database import Database, DatabaseType
+from utils.chain_utils import find_root_certificate, intermediate_certificates, validate_leaf_certificate_chains
+from utils.utils import ArgparseFormatter, progress_bar, setup_logging
+
+# Admin: Anuar Elio Magliari
 # Politecnico di Torino
 
-async def close_connections():
-    """Funzione per gestire la chiusura delle connessioni ai database."""
-    global pbar_ocsp_check, pbar_zlint
-    
-    logging.info("Inizio chiusura delle connessioni ai database...")
-    
-    if 'leaf_database' in globals():
-        leaf_database.close()
-        
-    if 'intermediate_database' in globals():
-        intermediate_database.close()
-        
-    if 'root_database' in globals():
-        root_database.close()
-    
-    if globals().get('pbar_leaf') is not None:
-        pbar_leaf.close()
-    
-    if globals().get('pbar_intermediate') is not None:
-        pbar_intermediate.close()
-    
-    if globals().get('pbar_root') is not None:
-        pbar_root.close()
-    
-    if globals().get('pbar_zlint') is not None:
-        pbar_zlint.close()
-    
-    if globals().get('pbar_leaf_chain_check') is not None:
-        pbar_leaf_chain_check.close()
-    
-    if globals().get('pbar_ocsp_check') is not None:
-        pbar_ocsp_check.close()
-    
-    if 'plotter' in globals():
-        plotter.close_all_plots()
-        
-    logging.info("Tutte le connessioni ai database sono state chiuse.")
-    return
+# Paths resolved from the package, independent of the working directory
+SRC_DIR = Path(__file__).resolve().parents[1]
+RESULTS_DIR = SRC_DIR / "analysis"
+SCHEMA_PATH = SRC_DIR / "db" / "schema_db.sql"
+CERTIFICATES_FILE = SRC_DIR.parent / "res" / "certs_polito.json"     # zgrab2 output
+LOG_LIST_FILE = SRC_DIR.parent / "res" / "log_list.json"             # SCT log list
 
-async def handle_exit_signal(loop, signal=None):
-    """Cancella i task e chiude il loop in modo ordinato."""
-    if signal:
-        logging.info(f"Ricevuto segnale di interruzione ({signal.name}). Inizio della procedura di chiusura...")
+# Read buffer for the zgrab2 JSON file (~80 GB)
+_READ_BUFFER_SIZE = 1 << 20
 
-    tasks = [t for t in asyncio.all_tasks(loop) if t is not asyncio.current_task(loop)]
-    for task in tasks:
-        task.cancel()
+# Boolean CLI flags: (names, help text)
+_CLI_FLAGS = (
+    (('--delete_all_db',), 'Se presenti, elimina tutti i database prima di iniziare.'),
+    (('--delete_leaf_db',), 'Se presente, elimina il database leaf prima di iniziare.'),
+    (('--delete_intermediate_db',), 'Se presente, elimina il database intermediate prima di iniziare.'),
+    (('--delete_root_db',), 'Se presente, elimina il database root prima di iniziare.\n\n'),
 
-    # Attende la cancellazione di tutti i task
-    await asyncio.gather(*tasks, return_exceptions=True)
-    
-    await close_connections()
-    logging.info("Uscita dell'applicazione in corso...\n")
+    (('--leaf_analysis',), 'Rimuove il database esistente e analizza i certificati leaf nel file JSON generato da zgrab2.'),
+    (('--leaf_ocsp_analysis',), 'Esegue l\'analisi OCSP per i certificati leaf presenti nel database.'),
+    (('--leaf_zlint_check',), 'Esegue l\'analisi Zlint sui certificati leaf per verificare eventuali vulnerabilità e '
+                              'configurazioni errate secondo determinati requisiti ufficiali.'),
+    (('--leaf_chain_validation',), 'Esegue la validazione della catena dei certificati leaf per verificare la conformità '
+                                   'e l\'affidabilità della catena di trust.\n\n'),
 
-    loop.stop()
-    return
+    (('--intermediate_analysis',), 'Rimuove il database esistente e analizza ed analizza i certificati intermediate '
+                                   'nel file JSON generato da zgrab2.'),
+    (('--intermediate_ocsp_analysis',), 'Esegue l\'analisi OCSP per i certificati intermediate presenti nel database.'),
+    (('--intermediate_zlint_check',), 'Esegue l\'analisi Zlint sui certificati intermediate per verificare eventuali '
+                                      'vulnerabilità e configurazioni errate secondo determinati requisiti ufficiali.\n\n'),
 
-def setup_signal_handlers(loop):
-    """Configura i gestori dei segnali per gestire SIGINT."""
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, lambda s=sig: asyncio.create_task(handle_exit_signal(loop, signal=s)))
-    return
+    (('--root_analysis',), 'Rimuove il database esistente e analizza i certificati root nel file JSON generato da zgrab2.'),
+    (('--root_ocsp_analysis',), 'Esegue l\'analisi OCSP per i certificati root presenti nel database.\n\n'),
 
-def leaf_certificates_analysis(certificates_file, dao: CertificateDAO, database: Database, total_lines:int=0):
-    """Analizza e inserisce i certificati leaf dal file JSON nel database."""
-    global pbar_leaf
-    
-    with open(certificates_file, 'r', encoding='utf-8') as certificates_reader:
-        # Inizializza la barra di caricamento
-        tqdm.write("")
-        pbar_leaf = tqdm(total=total_lines, desc=" 🔍  [magenta bold]Elaborazione Certificati[/magenta bold]", unit="cert.", 
-                    colour="magenta", bar_format="{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} • ⚡ {rate_fmt}")
-        try:
-            for line_number, row in enumerate(certificates_reader, start=1):
-                try:
-                    json_row = json.loads(row)
-                    status = json_row.get("data", {}).get("tls", {}).get("status", "")
+    (('--plot_all_results',), 'Genera e visualizza i grafici per tutti i dati analizzati sui certificati.'),
+    (('--plot_leaf_results',), 'Genera e visualizza i grafici per i risultati dell\'analisi dei certificati leaf.'),
+    (('--plot_intermediate_results',), 'Genera e visualizza i grafici per i risultati dell\'analisi dei certificati '
+                                       'intermedi.'),
+    (('--plot_root_results',), 'Genera e visualizza i grafici per i risultati dell\'analisi dei certificati root.\n\n'),
+    (('-v', '--verbose'), 'Attiva la modalità verbose per una registrazione dettagliata.'),
+)
 
-                    # Aggiorna la barra di caricamento
-                    pbar_leaf.update(1)
 
-                    with database.transaction():
-                        if status == "success":
-                            dao.process_insert_certificate(json_row, database.db_type, 0)
-                        else:
-                            dao.insert_error_row(json_row)
-                            
-                except json.JSONDecodeError:
-                    logging.error(f"Errore nel parsing della riga {line_number}: {row.strip()}")
-                except Exception as e:
-                    logging.error(f"Errore nell'elaborazione della riga {line_number}: {e}")
-        except KeyboardInterrupt:
-            logging.info(f"Ricevuto segnale di interruzione (SIGINT). Inizio della procedura di chiusura...")
-            raise   # Interrompe l'applicazione invece di proseguire con le analisi successive
-        finally:
-            pbar_leaf.close()   # Chiusura barra di progresso
-    return
+@dataclass(frozen=True)
+class StageConfig:
+    """Stages requested on the command line for one certificate type."""
+    db_type: DatabaseType
+    analysis: bool = False
+    ocsp: bool = False
+    zlint: bool = False
+    chain_validation: bool = False
+    plot: bool = False
+    delete: bool = False
 
-def intermediate_certificates_analysis(certificates_file, dao: CertificateDAO, database: Database, total_lines:int=0):
-    """Analizza e inserisce i certificati intermediate dal file JSON nel database."""
-    global pbar_intermediate
-    
-    with open(certificates_file, 'r', encoding='utf-8') as certificates_reader:
-        # Inizializza la barra di caricamento
-        tqdm.write("")
-        pbar_intermediate = tqdm(total=total_lines, desc=" 📜  [green bold]Righe elaborate[/green bold]", unit="rows", 
-                    colour="green", bar_format="{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} • ⚡ {rate_fmt}")
+    @property
+    def name(self) -> str:
+        """'leaf', 'intermediate' or 'root'."""
+        return self.db_type.value
 
-        try:
-            for line_number, row in enumerate(certificates_reader, start=1):
-                try:
-                    json_row = json.loads(row)
-                    status = json_row.get("data", {}).get("tls", {}).get("status", "")
+    @property
+    def label(self) -> str:
+        """Capitalized name used in log messages."""
+        return self.name.capitalize()
 
-                    # Aggiorna la barra di caricamento
-                    pbar_intermediate.update(1)
-                    
-                    with database.transaction():
-                        if status == "success":
-                            handshake_log = json_row.get("data", {}).get("tls", {}).get("result", {}).get("handshake_log", {})
-                            server_certificates = handshake_log.get("server_certificates", {})
-                            chain: list = server_certificates.get("chain", [])
-                            current_cert = server_certificates.get("certificate", {})
-                            certificates_emitted_up_to = 0          # Numero di certificati presenti tra il certificato leaf fino all'intermediate
-                            
-                            while True:
-                                # Estrae il certificato intermedio dalla catena. 
-                                # Restituisce None se l'issuer del certificato corrente non è presente o se è un certificato root.
-                                intermediate_cert = find_next_intermediate_certificate(chain, current_cert)
-                                            
-                                # Se non è stato trovato alcun certificato intermedio, interrompe il ciclo.
-                                if(intermediate_cert is None):
-                                    break
-                                
-                                # Aggiorna il certificato corrente per la prossima iterazione
-                                current_cert = intermediate_cert
-                                
-                                raw_intermediate = intermediate_cert.get("raw", {})
-                                parsed_intermediate = intermediate_cert.get("parsed", {})
-                            
-                                # Rimuove dalla catena il certificato intermedio estratto (per identità: altri certificati 
-                                # della catena potrebbero avere lo stesso numero di serie pur essendo emessi da CA diverse)
-                                chain = [cert for cert in chain if cert is not intermediate_cert]
-                            
-                                # Aggiorna i dati del certificato nel server_certificates
-                                server_certificates["certificate"]["raw"] = raw_intermediate
-                                server_certificates["certificate"]["parsed"] = parsed_intermediate
-                                server_certificates["chain"] = chain
-                                certificates_emitted_up_to += 1
-                                
-                                # Inizia l'analisi del certificato intermediate
-                                dao.process_insert_certificate(json_row, database.db_type, certificates_emitted_up_to)
+    @property
+    def results_dir(self) -> Path:
+        """Holds the database, the OCSP CSV files and the plots."""
+        return RESULTS_DIR / self.name
 
-                except json.JSONDecodeError:
-                    logging.error(f"Errore nel parsing della riga {line_number}: {row.strip()}")
-                except Exception as e:
-                    logging.error(f"Errore nell'elaborazione della riga {line_number}: {e}")
-        except KeyboardInterrupt:
-            logging.info(f"Ricevuto segnale di interruzione (SIGINT). Inizio della procedura di chiusura...")
-            raise   # Interrompe l'applicazione invece di proseguire con le analisi successive
-        finally:
-            pbar_intermediate.close()   # Chiusura barra di progresso
-    return
+    @property
+    def db_path(self) -> Path:
+        return self.results_dir / f"{self.name}_certificates.db"
 
-def root_certificates_analysis(certificates_file, dao: CertificateDAO, database: Database, total_lines: int=0):
-    """Analizza e inserisce i certificati root dal file JSON nel database."""
-    global pbar_root
-    
-    with open(certificates_file, 'r', encoding='utf-8') as certificates_reader:
-        # Inizializza la barra di caricamento
-        tqdm.write("")
-        pbar_root = tqdm(total=total_lines, desc=" 🛠️  [blue bold]Elaborazione Certificati[/blue bold]", unit="cert.", 
-                    colour="blue", bar_format="{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} • ⚡ {rate_fmt}")
+    @property
+    def has_stages(self) -> bool:
+        """True if any stage working on an already populated database is requested."""
+        return self.ocsp or self.zlint or self.chain_validation or self.plot
 
-        # TODO: da rimuovere
-        # for _ in range(800000): # 800000
-        #   next(certificates_reader)
-        
-        try:
-            for line_number, row in enumerate(certificates_reader, start=1):
-                try:
-                    json_row = json.loads(row)
-                    status = json_row.get("data", {}).get("tls", {}).get("status", "")
+    @property
+    def delete_only(self) -> bool:
+        """True if the database is deleted without a new analysis."""
+        return self.delete and not self.analysis
 
-                    # Aggiorna la barra di caricamento
-                    pbar_root.update(1)
-                    
-                    with database.transaction():
-                        if status == "success":
-                            handshake_log = json_row.get("data", {}).get("tls", {}).get("result", {}).get("handshake_log", {})
-                            server_certificates = handshake_log.get("server_certificates", {})
-                            chain:list = server_certificates.get("chain", [])
-                            current_cert = server_certificates.get("certificate", {})
-                                                    
-                            # Estrae il certificato intermedio dalla catena. 
-                            # Restituisce None se l'issuer del certificato corrente non è presente o se è un certificato root.
-                            root_cert, certificates_emitted_up_to = count_certificates_to_root(chain, current_cert)
-                                                    
-                            # Se non è stato trovato alcun certificato root, passa alla prossima riga nel file JSON.
-                            if(root_cert is None):
-                                continue
-                            
-                            raw_root = root_cert.get("raw", {})
-                            parsed_root = root_cert.get("parsed", {})
-                        
-                            # Imposta la catena ad una lista vuota essendo il certificato root
-                            chain = []
-                        
-                            # Aggiorna i dati del certificato nel server_certificates
-                            server_certificates["certificate"]["raw"] = raw_root
-                            server_certificates["certificate"]["parsed"] = parsed_root
-                            server_certificates["chain"] = chain
+    @property
+    def needs_database(self) -> bool:
+        """True if the database must be opened for the analysis or the other stages."""
+        return not self.delete_only and (self.analysis or self.has_stages)
 
-                            # Inizia l'analisi del certificato root
-                            dao.process_insert_certificate(json_row, database.db_type, certificates_emitted_up_to)
 
-                except json.JSONDecodeError:
-                    logging.error(f"Errore nel parsing della riga {line_number}: {row.strip()}")
-                except Exception as e:
-                    logging.error(f"Errore nell'elaborazione della riga {line_number}: {e}")
-        
-        except KeyboardInterrupt:
-            logging.info(f"Ricevuto segnale di interruzione (SIGINT). Inizio della procedura di chiusura...")
-            raise   # Interrompe l'applicazione invece di proseguire con le analisi successive
-        finally:
-            pbar_root.close()   # Chiusura barra di progresso
-    return
+@dataclass(frozen=True)
+class _Target:
+    """Open database of one certificate type and its DAO."""
+    config: StageConfig
+    database: Database
+    dao: CertificateDAO
 
-async def process_ocsp_check_status_request(dao: CertificateDAO, database: Database, main_path):
-    """Elabora la richiesta per controllare lo stato OCSP di tutti i certificati nel DAO."""
-    try:
-        ocsp_temp_file = os.path.abspath(f'{main_path}/ocsp_check_results_temp.csv')
-        ocsp_backup_file = os.path.abspath(f'{main_path}/ocsp_certificates_backup.csv')
-        
-        # Rimuove gli indici non necessari che rallentano le operazioni di aggiornamento del database
-        database.drop_indexes_for_table()
-        
-        async with aiosqlite.connect(database.db_path) as db:
-            # Ripristina prima il backup (risultati delle esecuzioni completate) che viene mantenuto su disco
-            if(os.path.exists(ocsp_backup_file)):
-                await update_certificates_ocsp_status_db(db, ocsp_backup_file, True)
-            
-            # Poi applica i risultati più recenti di un'esecuzione interrotta: se il file esiste e ha delle righe, salva questi dati nel db e lo cancella
-            if os.path.exists(ocsp_temp_file) and os.path.getsize(ocsp_temp_file) > 0:
-                await update_certificates_ocsp_status_db(db, ocsp_temp_file)
-             
-            # Esegue l'ocsp check prendendo i dati dal db e scrive nel file temporaneo
-            with open(ocsp_temp_file, mode="a", newline="") as ocsp_temp_file_csv:
-                ocsp_temp_file_writer = csv.writer(ocsp_temp_file_csv)
-                await dao.check_ocsp_status_for_certificates(database.db_type, db, ocsp_temp_file_writer)
-            
-            # Esegue il salvataggio dei dati presenti nel file al db
-            await update_certificates_ocsp_status_db(db, ocsp_temp_file)
-            
-            tqdm.write("")
-            logging.info(f"Salvataggio dei dati dello stato OCSP come backup eseguito con successo: 'file://{ocsp_backup_file}'")
-            
-            # Scrive su un file CSV i lo status OCSP relativi ai certificati come backup
-            await save_certificates_ocsp_status_file(db, ocsp_backup_file)
-            
-            logging.info("Analisi OCSP per i certificati completata.")
-    except asyncio.CancelledError:
-        logging.info("Elaborazione della richiesta di controllo OCSP cancellata.")
-        raise   # Propaga la cancellazione per non proseguire con le analisi successive
-    except Exception as e:
-        logging.error(f"Errore nell'elaborazione della richiesta di controllo OCSP: {e}")
-        
-def process_insert_sct_logs(log_list_path, dao: CertificateDAO, database: Database):
-    """Elabora e inserisce i log SCT nel database a partire da un file JSON."""
-    
-    with open(log_list_path, 'r', encoding='utf-8') as log_list_reader:
-        try:
-            data = json.load(log_list_reader)
-            operators = data.get("operators", [])
-        except json.JSONDecodeError as e:
-            logging.error(f"Errore nel parsing del file JSON: {e}")
-            return
-        except Exception as e:
-            logging.error(f"Errore nell'apertura del file: {e}")
-            return
-        
-        for operator in operators:
-            with database.transaction():
-                operator_id = dao.insert_sct_log_operator(operator)
-                # Le versioni più recenti della lista includono anche i log "tiled" (Static CT API)
-                logs = operator.get("logs", []) + operator.get("tiled_logs", [])
-                for json_log in logs:
-                    dao.insert_sct_log(operator_id, json_log)
-        
-        # Inserimento di un operatore fantasma in caso non un log id non appartenesse all'elenco
-        operator = {
-            "name": "unknown",
-            "email": ""
-        }
-        with database.transaction():
-            dao.insert_sct_log_operator(operator)
-        logging.info("SCT Operators e SCT Logs memorizzati con successo.")
 
-    return
+_RowInserter = Callable[[CertificateDAO, dict, dict | None, list[dict]], None]
 
-def plot_leaf_certificates(dao: CertificateDAO, is_verbose: bool):
-    """Genera e salva vari grafici relativi all'analisi dei certificati."""
-    global plotter
-    
-    plots_path = 'analysis/leaf/plots'
-    
-    plotter = GraphPlotter()
-    plotter.disable_logging(is_verbose)
-    
-    # Rimuovi la cartella se esiste
-    if os.path.exists(plots_path):
-        shutil.rmtree(plots_path)
-        logging.info(f"La cartella '{plots_path}' è stata rimossa.")
 
-    # Crea la cartella per il plot leaf
-    os.makedirs(plots_path)
-    logging.info(f"La cartella '{plots_path}' è stata creata.")
-    
-    # Generazione grafici
-    plot_general_certificates_analysis(dao, plotter, plots_path)
-    plot_leaf_certificates_analysis(dao, plotter, plots_path)
-    plot_leaf_and_root_certificates_analysis(dao, plotter, plots_path)
-    
-    logging.info("Generazione dei grafici per l'analisi dei certificati Leaf completata.")
-    return
-
-def plot_intermediate_certificates(dao: CertificateDAO, is_verbose: bool):
-    """Genera e salva vari grafici relativi all'analisi dei certificati."""
-    global plotter
-    
-    plots_path = 'analysis/intermediate/plots'
-    
-    plotter = GraphPlotter()
-    plotter.disable_logging(is_verbose)
-    
-    # Rimuovi la cartella se esiste
-    if os.path.exists(plots_path):
-        shutil.rmtree(plots_path)
-        logging.info(f"La cartella '{plots_path}' è stata rimossa.")
-
-    # Crea la cartella per il plot intermediate
-    os.makedirs(plots_path)
-    logging.info(f"La cartella '{plots_path}' è stata creata.")
-    
-    # Generazione grafici
-    plot_general_certificates_analysis(dao, plotter, plots_path)
-    
-    logging.info("Generazione dei grafici per l'analisi dei certificati Intermediate completata.")
-    return
-
-def plot_root_certificates(dao: CertificateDAO, is_verbose: bool):
-    """Genera e salva vari grafici relativi all'analisi dei certificati."""
-    global plotter
-
-    plots_path = 'analysis/root/plots'
-    
-    plotter = GraphPlotter()
-    plotter.disable_logging(is_verbose)
-    
-    # Rimuovi la cartella se esiste
-    if os.path.exists(plots_path):
-        shutil.rmtree(plots_path)
-        logging.info(f"La cartella '{plots_path}' è stata rimossa.")
-
-    # Crea la cartella per il plot root
-    os.makedirs(plots_path)
-    logging.info(f"La cartella '{plots_path}' è stata creata.")
-    
-    # Generazione grafici
-    plot_general_certificates_analysis(dao, plotter, plots_path)
-    plot_leaf_and_root_certificates_analysis(dao, plotter, plots_path)
-        
-    logging.info("Generazione dei grafici per l'analisi dei certificati Root completata.")
-    return
-
-def start_leaf_certificate_chain_check(dao: CertificateDAO, database: Database):
-    global pbar_leaf_chain_check
-    
-    pbar_leaf_chain_check = None
-    
-    try:
-        logging.info("Inizio controllo della validità della catena sui certificati...")
-        
-        # Senza sslyze ogni certificato verrebbe aggiornato con 'Error', sovrascrivendo il valore esistente
-        if shutil.which('sslyze') is None:
-            logging.error("Eseguibile 'sslyze' non trovato nel PATH: impossibile eseguire la validazione delle catene.")
-            return
-        
-        total_lines = dao.get_certificates_count()
-        
-        tqdm.write("")
-        pbar_leaf_chain_check = tqdm(total=total_lines, desc=" 🔍  [magenta bold]Elaborazione Certificati[/magenta bold]", unit="cert.", 
-                    colour="magenta", bar_format="{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} • ⚡ {rate_fmt}")
-        
-        batch_size = 5000
-        last_certificate_id = 0
-            
-        while(True):
-            certificates = dao.get_leaf_domain_certificates(batch_size, last_certificate_id)
-                
-            if not certificates or len(certificates) == 0:
-                break
-            
-            # Paginazione per chiave: il batch successivo parte dall'ultimo certificate_id elaborato
-            last_certificate_id = certificates[-1][0]
-        
-            for certificate in certificates:
-                # Aggiorna la barra di caricamento
-                pbar_leaf_chain_check.update(1)
-            
-                certificate_id, leaf_domain = certificate
-                signature_valid = check_certificate_chain(leaf_domain)
-                with database.transaction():
-                    dao.update_leaf_certificate_validity(signature_valid, certificate_id)
-
-    except Exception as e:
-        logging.error(f"Errore durante l'esecuzione della funzione start_leaf_certificate_chain_check: {str(e)}")
-    except KeyboardInterrupt:
-        logging.info(f"Ricevuto segnale di interruzione (SIGINT). Inizio della procedura di chiusura...")
-        raise   # Interrompe l'applicazione invece di proseguire con le analisi successive
-    finally:
-        if pbar_leaf_chain_check is not None:
-            pbar_leaf_chain_check.close()
-    return
-    
-async def certificates_analysis_main():
-    global leaf_database, intermediate_database, root_database
-    
-    # Pulisce la console
-    console = Console()
-    console.clear()
-    
-    # Stampa il logo dell'applicazione
-    tqdm.write("\n")
-    tqdm.write(pyfiglet.figlet_format("        DigitalCertiAnalytics", font="standard", width=150))
-    tqdm.write("\n")
-
-    # Configura argparse per gestire gli argomenti della riga di comando
+def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog='python -m analysis.main',
         description='Strumento per l\'analisi dei certificati digitali.',
-        epilog='Utilizza le opzioni disponibili per eseguire diverse analisi sui certificati e generare report visivi. Usa -v per attivare la modalità verbose per ulteriori dettagli.',
+        epilog='Utilizza le opzioni disponibili per eseguire diverse analisi sui certificati e generare report visivi. '
+               'Usa -v per attivare la modalità verbose per ulteriori dettagli.',
         add_help=False,
         formatter_class=ArgparseFormatter
     )
-    
-    parser.add_argument('-h', '--help', action='help', default=argparse.SUPPRESS, help='Mostra le opzioni disponibili per l\'analisi dei certificati digitali e la generazione di grafici.\n\n')
+    parser.add_argument('-h', '--help', action='help', default=argparse.SUPPRESS,
+                        help='Mostra le opzioni disponibili per l\'analisi dei certificati digitali '
+                             'e la generazione di grafici.\n\n')
+    for names, help_text in _CLI_FLAGS:
+        parser.add_argument(*names, action='store_true', help=help_text)
+    return parser
 
-    parser.add_argument('--delete_all_db', action='store_true', help='Se presenti, elimina tutti i database prima di iniziare.')
-    parser.add_argument('--delete_leaf_db', action='store_true', help='Se presente, elimina il database leaf prima di iniziare.')
-    parser.add_argument('--delete_intermediate_db', action='store_true', help='Se presente, elimina il database intermediate prima di iniziare.')
-    parser.add_argument('--delete_root_db', action='store_true', help='Se presente, elimina il database root prima di iniziare.\n\n')
-    
-    parser.add_argument('--leaf_analysis', action='store_true', help='Rimuove il database esistente e analizza i certificati leaf nel file JSON generato da zgrab2.')
-    parser.add_argument('--leaf_ocsp_analysis', action='store_true', help='Esegue l\'analisi OCSP per i certificati leaf presenti nel database.')
-    parser.add_argument('--leaf_zlint_check', action='store_true', help='Esegue l\'analisi Zlint sui certificati leaf per verificare eventuali vulnerabilità e configurazioni errate secondo determinati requisiti ufficiali.')
-    parser.add_argument('--leaf_chain_validation', action='store_true', help='Esegue la validazione della catena dei certificati leaf per verificare la conformità e l\'affidabilità della catena di trust.\n\n')
 
-    parser.add_argument('--intermediate_analysis', action='store_true', help='Rimuove il database esistente e analizza ed analizza i certificati intermediate nel file JSON generato da zgrab2.')
-    parser.add_argument('--intermediate_ocsp_analysis', action='store_true', help='Esegue l\'analisi OCSP per i certificati intermediate presenti nel database.')
-    parser.add_argument('--intermediate_zlint_check', action='store_true', help='Esegue l\'analisi Zlint sui certificati intermediate per verificare eventuali vulnerabilità e configurazioni errate secondo determinati requisiti ufficiali.\n\n')
-    
-    parser.add_argument('--root_analysis', action='store_true', help='Rimuove il database esistente e analizza i certificati root nel file JSON generato da zgrab2.')
-    parser.add_argument('--root_ocsp_analysis', action='store_true', help='Esegue l\'analisi OCSP per i certificati root presenti nel database.\n\n')
-    
-    parser.add_argument('--plot_all_results', action='store_true', 
-                    help='Genera e visualizza i grafici per tutti i dati analizzati sui certificati.')
-    parser.add_argument('--plot_leaf_results', action='store_true', 
-                    help='Genera e visualizza i grafici per i risultati dell\'analisi dei certificati leaf.')
-    parser.add_argument('--plot_intermediate_results', action='store_true', 
-                    help='Genera e visualizza i grafici per i risultati dell\'analisi dei certificati intermedi.')
-    parser.add_argument('--plot_root_results', action='store_true', 
-                    help='Genera e visualizza i grafici per i risultati dell\'analisi dei certificati root.\n\n')
-    parser.add_argument('-v', '--verbose', action='store_true', 
-                    help='Attiva la modalità verbose per una registrazione dettagliata.')
+def _build_stage_configs(args: argparse.Namespace) -> list[StageConfig]:
+    """Build one StageConfig per certificate type; analysis implies deleting the database."""
+    configs = []
+    for db_type in DatabaseType:
+        name = db_type.value
+        analysis = getattr(args, f"{name}_analysis")
+        configs.append(StageConfig(
+            db_type=db_type,
+            analysis=analysis,
+            ocsp=getattr(args, f"{name}_ocsp_analysis"),
+            # Zlint and chain validation flags exist only for some types
+            zlint=getattr(args, f"{name}_zlint_check", False),
+            chain_validation=getattr(args, f"{name}_chain_validation", False),
+            plot=getattr(args, f"plot_{name}_results") or args.plot_all_results,
+            delete=getattr(args, f"delete_{name}_db") or analysis or args.delete_all_db,
+        ))
+    return configs
 
-    # Estrai gli argomenti dalla riga di comando
-    args = parser.parse_args()
-    
-    # Setup del logger
-    setup_logging(args.verbose)
-    logging.info("Inizio dell'applicazione.")
 
-    # Imposta le cancellazioni dei database
-    args.delete_leaf_db =         args.delete_leaf_db         or args.leaf_analysis         or args.delete_all_db
-    args.delete_intermediate_db = args.delete_intermediate_db or args.intermediate_analysis or args.delete_all_db
-    args.delete_root_db =         args.delete_root_db         or args.root_analysis         or args.delete_all_db
-    
-    # Imposta il plot dei risutalti    
-    args.plot_leaf_results =         args.plot_leaf_results           or args.plot_all_results
-    args.plot_intermediate_results = args.plot_intermediate_results   or args.plot_all_results
-    args.plot_root_results =         args.plot_root_results           or args.plot_all_results
-    
-    # Funzione lambda per creare una cartella se non esiste
-    create_directory = lambda path: os.makedirs(path) if not os.path.exists(path) else None
-    
-    # Definizione delle cartelle per il risultato delle analisi
-    leaf_path = 'analysis/leaf'
-    intermediate_path = 'analysis/intermediate'
-    root_path = 'analysis/root'
-    create_directory(leaf_path)
-    create_directory(intermediate_path)
-    create_directory(root_path)
-    
-    # File di output di Zgrab2 pronto per l'analisi
-    result_json_file = os.path.abspath('../res/certs_polito.json')
-    if not os.path.exists(result_json_file) and (args.leaf_analysis or args.intermediate_analysis or args.root_analysis):
+def _print_banner() -> None:
+    """Clear the console and print the application logo."""
+    Console().clear()
+    print("\n")
+    print(pyfiglet.figlet_format("        DigitalCertiAnalytics", font="standard", width=150))
+    print("\n")
+
+
+def _check_input_files(configs: list[StageConfig]) -> bool:
+    """Check that the input files exist when at least one analysis is requested."""
+    if not any(config.analysis for config in configs):
+        return True
+
+    if not CERTIFICATES_FILE.exists():
         logging.error(
-            f"Il file '{result_json_file}' non esiste. Oppure il nome del file output non coincide! "
+            f"Il file '{CERTIFICATES_FILE}' non esiste. Oppure il nome del file output non coincide! "
             "Si prega di consultare il README per istruzioni su come generare questo file utilizzando il programma Zgrab2."
         )
-        return
-    
-    # File contenente la lista dei log SCT più utilizzati
-    log_list_file = os.path.abspath('../res/log_list.json')
-    if not os.path.exists(log_list_file) and (args.leaf_analysis or args.intermediate_analysis or args.root_analysis):
+        return False
+
+    if not LOG_LIST_FILE.exists():
         logging.error(
-            f"Il file {log_list_file} non esiste. Puoi scaricarlo direttamente da questo link: "
+            f"Il file {LOG_LIST_FILE} non esiste. Puoi scaricarlo direttamente da questo link: "
             "https://www.gstatic.com/ct/log_list/v3/all_logs_list.json"
         )
-        return
-    
-    if(args.leaf_analysis or args.intermediate_analysis or args.root_analysis):
-        logging.info("Inizio il conteggio delle righe del file JSON contenente i certificati.")
+        return False
+    return True
 
-        """
-        total_lines = 0
 
-        tqdm.write(" ")
-        with open(result_json_file, 'r') as certificates_reader:
-            with Progress(
-                TextColumn(19*" "),
-                SpinnerColumn("dots", style="cyan"),
-                TextColumn("⚙️  Conteggio dei Certificati in Corso... {task.description}"),
-                console=console
-            ) as progress:
-                task = progress.add_task(description=f"[bold]{total_lines:,.0f}[/bold] certificati letti", total=None)
-                for _ in certificates_reader:
-                    total_lines += 1
-                    progress.update(task, description=f"[bold]{total_lines:,.0f}[/bold] certificati letti")
+def _delete_database(config: StageConfig) -> None:
+    """Delete the database without re-analysing it; the other requested stages are skipped."""
+    if config.db_path.exists():
+        config.db_path.unlink()
+        logging.info("Database '%s' eliminato con successo.", config.db_path)
 
-        """
-        # TODO: rimuovere i commenti precedenti se non si conoscono il numero delle righe del file output JSON di Zgrab2, 
-        # TODO: altrimenti scrivere qui sotto il numero esatto per risparmiare tempo
-        total_lines = 10000000
-        
-        logging.info(f"Conteggio completato: {total_lines:,.0f} certificati trovati.")
+    if config.has_stages:
+        logging.warning(f"Il database {config.name} è stato eliminato senza eseguire --{config.name}_analysis: "
+                        f"le altre analisi sui certificati '{config.label}' non vengono eseguite.")
 
-    # Analisi Certificati Leaf
-    db_leaf_path = os.path.abspath(f'{leaf_path}/leaf_certificates.db')
-    # Eliminazione senza una nuova analisi: le altre fasi richieste lavorerebbero su un database vuoto e vengono saltate
-    if(args.delete_leaf_db and not args.leaf_analysis):
-        if os.path.exists(db_leaf_path):
-            os.remove(db_leaf_path)
-            logging.info("Database '%s' eliminato con successo.", db_leaf_path)
-        
-        if(args.leaf_ocsp_analysis or args.plot_leaf_results or args.leaf_zlint_check or args.leaf_chain_validation):
-            logging.warning("Il database leaf è stato eliminato senza eseguire --leaf_analysis: le altre analisi sui certificati 'Leaf' non vengono eseguite.")
-            
-    elif(args.delete_leaf_db or args.leaf_analysis or args.leaf_ocsp_analysis or args.plot_leaf_results or args.leaf_zlint_check or args.leaf_chain_validation):
-        if((args.leaf_ocsp_analysis or args.plot_leaf_results or args.leaf_zlint_check or args.leaf_chain_validation) and (not os.path.exists(db_leaf_path))):
+
+def _prepare_databases(configs: list[StageConfig]) -> bool:
+    """Handle delete-only databases and check that the databases needed by the other stages exist."""
+    for config in configs:
+        if config.delete_only:
+            _delete_database(config)
+        elif config.has_stages and not config.analysis and not config.db_path.exists():
             logging.error(
-                "Il database leaf non è stato trovato nel percorso '%s'. "
+                "Il database %s non è stato trovato nel percorso '%s'. "
                 "Per eseguire la seguente analisi è necessario eseguire prima l'analisi "
                 "dei certificati dal file JSON per creare il database. "
                 "In alternativa, assicurati di posizionare il database nel percorso corretto.",
-                db_leaf_path
+                config.name, config.db_path
             )
-            return
-        
-        # Inizializza la connessione al database leaf
-        schema_leaf_db_path = os.path.abspath('db/schema_db.sql')
-        leaf_database = Database(db_path=db_leaf_path, schema_path=schema_leaf_db_path, db_type=DatabaseType.LEAF)
-        leaf_database.connect(delete_database=args.delete_leaf_db)
+            return False
+    return True
 
-        # Crea un'istanza del DAO
-        leaf_dao = CertificateDAO(leaf_database.conn, DatabaseType.LEAF)
 
-        # Inserisce gli SCT Operators e SCT Logs 
-        if(args.delete_leaf_db):
-            process_insert_sct_logs(log_list_file, leaf_dao, leaf_database)
+def _load_log_list() -> dict | None:
+    """Read the SCT log list; on error return None and the logs are not inserted."""
+    try:
+        with open(LOG_LIST_FILE, encoding='utf-8') as log_list_reader:
+            return json.load(log_list_reader)
+    except json.JSONDecodeError as e:
+        logging.error(f"Errore nel parsing del file JSON: {e}")
+    except (OSError, ValueError) as e:
+        logging.error(f"Errore nell'apertura del file: {e}")
+    return None
 
-        # Esegui l'analisi dei certificati
-        if(args.leaf_analysis):
-            logging.info("Inizio analisi certificati 'Leaf'.")
-            leaf_database.set_bulk_insert_mode(True)
-            try:
-                leaf_certificates_analysis(result_json_file, leaf_dao, leaf_database, total_lines)
-            finally:
-                leaf_database.set_bulk_insert_mode(False)
-            logging.info("Analisi dei certificati 'Leaf' completata con successo.")
-            
-            # Rimuove i dati non necessari
-            leaf_database.cleanup_unused_tables()
-            leaf_database.remove_columns()
-        
-        # Esegui l'analisi OCSP dei certificati
-        if(args.leaf_ocsp_analysis):
-            logging.info("Inizio dell'analisi OCSP per i certificati 'Leaf'.")  
-            await process_ocsp_check_status_request(leaf_dao, leaf_database, leaf_path)
-        
-        if(args.leaf_zlint_check):
-            logging.info("Inizio dell'analisi dei certificati 'Leaf' con Zlint.")
-            run_zlint_check(leaf_dao)
-            logging.info("Controllo ZLint completato.")
-        
-        if(args.leaf_chain_validation):
-            logging.info("Inizio del controllo della validità delle catene dei certificati 'Leaf' con 'sslyze'.")
-            start_leaf_certificate_chain_check(leaf_dao, leaf_database)
-            logging.info("Controllo Validità completato.")
-        
-        # Esegui la generazione dei grafici per i certificati leaf
-        if(args.plot_leaf_results):
-            # Crea gli indici e applica delle correzioni ai dati
-            leaf_database.create_indexes()
-            leaf_database.apply_database_corrections()
-            logging.info("Inizio generazione grafici per certificati 'Leaf'.")        
-            plot_leaf_certificates(leaf_dao, args.verbose)
 
-        # Chiude la connessione al database
-        leaf_database.close()
-    
-    # Analisi Certificati Intermediate
-    db_intermediate_path = os.path.abspath(f'{intermediate_path}/intermediate_certificates.db')
-    # Eliminazione senza una nuova analisi: le altre fasi richieste lavorerebbero su un database vuoto e vengono saltate
-    if(args.delete_intermediate_db and not args.intermediate_analysis):
-        if os.path.exists(db_intermediate_path):
-            os.remove(db_intermediate_path)
-            logging.info("Database '%s' eliminato con successo.", db_intermediate_path)
-        
-        if(args.intermediate_ocsp_analysis or args.plot_intermediate_results or args.intermediate_zlint_check):
-            logging.warning("Il database intermediate è stato eliminato senza eseguire --intermediate_analysis: le altre analisi sui certificati 'Intermediate' non vengono eseguite.")
+def _open_database(config: StageConfig, log_list: dict | None, stack: ExitStack) -> _Target:
+    """Open the database (recreated if analysed) and insert the SCT operators and logs."""
+    database = Database(db_path=config.db_path, schema_path=SCHEMA_PATH, db_type=config.db_type)
+    stack.callback(database.close)
+    database.connect(delete_database=config.analysis)
+    dao = CertificateDAO(database.conn, config.db_type)
 
-    elif(args.delete_intermediate_db or args.intermediate_analysis or args.intermediate_ocsp_analysis or args.plot_intermediate_results or args.intermediate_zlint_check):
-        if((args.intermediate_ocsp_analysis or args.plot_intermediate_results or args.intermediate_zlint_check) and (not os.path.exists(db_intermediate_path))):
-            logging.error(
-                "Il database intermedio non è stato trovato nel percorso '%s'. "
-                "Per eseguire l'analisi OCSP o visualizzare i risultati, "
-                "è necessario eseguire prima l'analisi dei certificati dal file JSON per creare il database. "
-                "In alternativa, assicurati di posizionare il database nel percorso corretto.",
-                db_intermediate_path
-            )
-            return
-        
-        # Inizializza la connessione al database intermediate
-        schema_intermediate_db_path = os.path.abspath('db/schema_db.sql')
-        intermediate_database = Database(db_path=db_intermediate_path, schema_path=schema_intermediate_db_path, db_type=DatabaseType.INTERMEDIATE)
-        intermediate_database.connect(delete_database=args.delete_intermediate_db)
+    if config.analysis and log_list is not None:
+        with database.transaction():
+            dao.insert_sct_logs(log_list)
+        logging.info("SCT Operators e SCT Logs memorizzati con successo.")
+    return _Target(config, database, dao)
 
-        # Crea un'istanza del DAO
-        intermediate_dao = CertificateDAO(intermediate_database.conn, DatabaseType.INTERMEDIATE)
 
-        # Inserisce gli SCT Operators e SCT Logs 
-        if(args.delete_intermediate_db):
-            process_insert_sct_logs(log_list_file, intermediate_dao, intermediate_database)
+def _open_databases(configs: list[StageConfig], stack: ExitStack) -> list[_Target]:
+    """Open the needed databases; the stack closes them even on error or interrupt."""
+    log_list = _load_log_list() if any(config.analysis for config in configs) else None
+    return [_open_database(config, log_list, stack) for config in configs if config.needs_database]
 
-        # Esegui l'analisi dei certificati
-        if(args.intermediate_analysis):
-            logging.info("Inizio analisi certificati 'Intermediate'.")      
-            intermediate_database.set_bulk_insert_mode(True)
-            try:
-                intermediate_certificates_analysis(result_json_file, intermediate_dao, intermediate_database, total_lines)
-            finally:
-                intermediate_database.set_bulk_insert_mode(False)
-            logging.info("Analisi dei certificati 'Intermediate' completata con successo.")
-            
-            # Rimuove i dati non necessari, crea gli indici e applica delle correzioni ai dati
-            intermediate_database.cleanup_unused_tables()
-            intermediate_database.remove_columns()
 
-        # Esegui l'analisi OCSP dei certificati
-        if(args.intermediate_ocsp_analysis):
-            logging.info("Inizio dell'analisi OCSP per i certificati 'Intermediate'.")  
-            await process_ocsp_check_status_request(intermediate_dao, intermediate_database, intermediate_path)
-        
-        if(args.intermediate_zlint_check):
-            logging.info("Inizio dell'analisi dei certificati 'Intermediate' con Zlint.")
-            run_zlint_check(intermediate_dao)
-            logging.info("Controllo ZLint completato.")
-            
-        # Esegui la generazione dei grafici per i certificati Intermediate
-        if(args.plot_intermediate_results):
-            # Crea gli indici e applica delle correzioni ai dati
-            intermediate_database.create_indexes()
-            intermediate_database.apply_database_corrections()
-            logging.info("Inizio generazione grafici per certificati 'Intermediate'.")        
-            plot_intermediate_certificates(intermediate_dao, args.verbose)
+def _server_certificates(row: dict) -> tuple[dict | None, list[dict]]:
+    """Server certificate and chain of a zgrab2 row; (None, []) if the scan failed."""
+    tls = row.get("data", {}).get("tls", {})
+    if tls.get("status", "") != "success":
+        return None, []
 
-        # Chiude la connessione al database
-        intermediate_database.close()
-    
-    # Analisi Certificati Root
-    db_root_path = os.path.abspath(f'{root_path}/root_certificates.db')
-    # Eliminazione senza una nuova analisi: le altre fasi richieste lavorerebbero su un database vuoto e vengono saltate
-    if(args.delete_root_db and not args.root_analysis):
-        if os.path.exists(db_root_path):
-            os.remove(db_root_path)
-            logging.info("Database '%s' eliminato con successo.", db_root_path)
-        
-        if(args.root_ocsp_analysis or args.plot_root_results):
-            logging.warning("Il database root è stato eliminato senza eseguire --root_analysis: le altre analisi sui certificati 'Root' non vengono eseguite.")
+    certificates = tls.get("result", {}).get("handshake_log", {}).get("server_certificates", {})
+    certificate = certificates.get("certificate", {})
+    if certificate is None:
+        # None means a failed scan to the inserters: a null certificate makes the row invalid instead
+        raise ValueError("certificato del server nullo")
+    return certificate, certificates.get("chain", [])
 
-    elif(args.delete_root_db or args.root_analysis or args.root_ocsp_analysis or args.plot_root_results):
-        if((args.root_ocsp_analysis or args.plot_root_results) and (not os.path.exists(db_root_path))):
-            logging.error(
-                "Il database root non è stato trovato nel percorso '%s'. "
-                "Per eseguire l'analisi OCSP o visualizzare i risultati, "
-                "è necessario eseguire prima l'analisi dei certificati dal file JSON per creare il database. "
-                "In alternativa, assicurati di posizionare il database nel percorso corretto.",
-                db_root_path
-            )
-            return
-        
-        # Inizializza la connessione al database root
-        schema_root_db_path = os.path.abspath('db/schema_db.sql')
-        root_database = Database(db_path=db_root_path, schema_path=schema_root_db_path, db_type=DatabaseType.ROOT)
-        root_database.connect(delete_database=args.delete_root_db)
 
-        # Crea un'istanza del DAO
-        root_dao = CertificateDAO(root_database.conn, DatabaseType.ROOT)
+def _insert_leaf(dao: CertificateDAO, row: dict, certificate: dict | None, chain: list[dict]) -> None:
+    """Insert the server certificate, or an error row if the scan failed."""
+    if certificate is None:
+        dao.insert_error_row(row)
+    else:
+        dao.process_insert_certificate(row, certificate, chain, 0)
 
-        # Inserisce gli SCT Operators e SCT Logs 
-        if(args.delete_root_db):
-            process_insert_sct_logs(log_list_file, root_dao, root_database)
 
-        # Esegui l'analisi dei certificati
-        if(args.root_analysis):
-            logging.info("Inizio analisi certificati 'Root'.")      
-            root_database.set_bulk_insert_mode(True)
-            try:
-                root_certificates_analysis(result_json_file, root_dao, root_database, total_lines)
-            finally:
-                root_database.set_bulk_insert_mode(False)
-            logging.info("Analisi dei certificati 'Root' completata con successo.")
-            
-            # Rimuove i dati non necessari, crea gli indici e applica delle correzioni ai dati
-            root_database.cleanup_unused_tables()
-            root_database.remove_columns()
+def _insert_intermediates(dao: CertificateDAO, row: dict, certificate: dict | None, chain: list[dict]) -> None:
+    """Insert every intermediate of the chain with its distance from the leaf."""
+    if certificate is None:
+        return
 
-        # Esegui l'analisi OCSP dei certificati
-        if(args.root_ocsp_analysis):
-            logging.info("Inizio dell'analisi OCSP per i certificati 'Root'.")  
-            await process_ocsp_check_status_request(root_dao, root_database, root_path)
-        
-        # Esegui la generazione dei grafici per i certificati Root
-        if(args.plot_root_results):
-            # Crea gli indici e applica delle correzioni ai dati
-            root_database.create_indexes()
-            root_database.apply_database_corrections()
-            logging.info("Inizio generazione grafici per certificati 'Root'.")
-            plot_root_certificates(root_dao, args.verbose)
+    for emitted_up_to, (intermediate, remaining_chain) in enumerate(intermediate_certificates(chain, certificate), start=1):
+        dao.process_insert_certificate(row, intermediate, remaining_chain, emitted_up_to)
 
-        # Chiude la connessione al database
-        root_database.close()
-    
+
+def _insert_root(dao: CertificateDAO, row: dict, certificate: dict | None, chain: list[dict]) -> None:
+    """Insert the root certificate of the chain, if any."""
+    if certificate is None:
+        return
+
+    root, emitted_up_to = find_root_certificate(chain, certificate)
+    if root is not None:
+        dao.process_insert_certificate(row, root, [], emitted_up_to)
+
+
+_ROW_INSERTERS: dict[DatabaseType, _RowInserter] = {
+    DatabaseType.LEAF: _insert_leaf,
+    DatabaseType.INTERMEDIATE: _insert_intermediates,
+    DatabaseType.ROOT: _insert_root,
+}
+
+
+def _ingest_line(line_number: int, line: bytes, targets: list[_Target]) -> None:
+    """Insert one JSON line into every database, each in its own transaction."""
+    try:
+        row = json.loads(line)
+        certificate, chain = _server_certificates(row)
+    except json.JSONDecodeError:
+        logging.error(f"Errore nel parsing della riga {line_number}: {line.decode('utf-8', errors='replace').strip()}")
+        return
+    except Exception as e:
+        logging.error(f"Errore nell'elaborazione della riga {line_number}: {e}")
+        return
+
+    for target in targets:
+        try:
+            with target.database.row_transaction():
+                _ROW_INSERTERS[target.config.db_type](target.dao, row, certificate, chain)
+        except Exception as e:
+            logging.error(f"Errore nell'elaborazione della riga {line_number}: {e}")
+
+
+def _read_certificates_file(targets: list[_Target]) -> None:
+    """Read the zgrab2 JSON file once, inserting each line into all target databases."""
+    with ExitStack() as stack:
+        for target in targets:
+            stack.enter_context(target.database.bulk_insert_mode())
+
+        reader = stack.enter_context(open(CERTIFICATES_FILE, 'rb', buffering=_READ_BUFFER_SIZE))
+        pbar = stack.enter_context(progress_bar(
+            total=CERTIFICATES_FILE.stat().st_size, description=" 🔍  [magenta bold]Elaborazione Certificati[/magenta bold]",
+            colour="magenta", unit="B", unit_scale=True, unit_divisor=1024
+        ))
+
+        for line_number, line in enumerate(reader, start=1):
+            pbar.update(len(line))
+            _ingest_line(line_number, line, targets)
+
+
+def _analyse_certificates(targets: list[_Target]) -> None:
+    """Populate the databases to analyse in a single pass over the JSON file, then drop unneeded data."""
+    analysed = [target for target in targets if target.config.analysis]
+    if not analysed:
+        return
+
+    for target in analysed:
+        logging.info(f"Inizio analisi certificati '{target.config.label}'.")
+
+    _read_certificates_file(analysed)
+
+    for target in analysed:
+        logging.info(f"Analisi dei certificati '{target.config.label}' completata con successo.")
+        target.database.finalize_analysis()
+
+
+@contextmanager
+def _stage(start_message: str, end_message: str | None = None) -> Iterator[None]:
+    """Log the start and end of a stage; an error stops only the current stage, not the following ones."""
+    logging.info(start_message)
+    try:
+        yield
+    except Exception as e:
+        logging.error(f"Errore durante l'esecuzione della fase: {e}")
+        return
+
+    if end_message:
+        logging.info(end_message)
+
+
+async def _run_stages(target: _Target, is_verbose: bool) -> None:
+    """Run the requested stages: OCSP, Zlint, chain validation and plots."""
+    config, database, dao = target.config, target.database, target.dao
+
+    # Stage modules are imported lazily: pandas/matplotlib/seaborn and pymongo slow down startup
+    if config.ocsp:
+        from utils.ocsp_utils import run_ocsp_analysis
+        with _stage(f"Inizio dell'analisi OCSP per i certificati '{config.label}'."):
+            await run_ocsp_analysis(database, config.results_dir)
+
+    if config.zlint:
+        from utils.zlint_utils import run_zlint_check
+        with _stage(f"Inizio dell'analisi dei certificati '{config.label}' con Zlint.", "Controllo ZLint completato."):
+            run_zlint_check(dao)
+
+    if config.chain_validation:
+        with _stage(f"Inizio del controllo della validità delle catene dei certificati '{config.label}' con 'sslyze'.",
+                    "Controllo Validità completato."):
+            validate_leaf_certificate_chains(dao, database)
+
+    if config.plot:
+        from utils.plotter_utils import plot_certificates
+        with _stage(f"Inizio generazione grafici per certificati '{config.label}'."):
+            database.prepare_for_plots()
+            plot_certificates(dao, config.results_dir / "plots", is_verbose)
+
+
+async def certificates_analysis_main() -> None:
+    """Parse the command line and run the requested analyses on leaf, intermediate and root certificates."""
+    _print_banner()
+    args = _build_parser().parse_args()
+
+    setup_logging(args.verbose)
+    logging.info("Inizio dell'applicazione.")
+
+    configs = _build_stage_configs(args)
+    for config in configs:
+        config.results_dir.mkdir(parents=True, exist_ok=True)
+
+    if not (_check_input_files(configs) and _prepare_databases(configs)):
+        return
+
+    with ExitStack() as stack:
+        targets = _open_databases(configs, stack)
+        _analyse_certificates(targets)
+
+        for target in targets:
+            await _run_stages(target, args.verbose)
+            target.database.close()
+
     logging.info("Applicazione terminata correttamente.\n")
-

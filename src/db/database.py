@@ -1,349 +1,276 @@
-import sqlite3
-from sqlite3 import Connection
-from contextlib import contextmanager
+from __future__ import annotations
+
 import logging
 import os
+import sqlite3
+from contextlib import contextmanager
 from enum import Enum
+from typing import Iterator
 
-# Admin: Anuar Elio Magliari 
+# Admin: Anuar Elio Magliari
 # Politecnico di Torino
+
 
 class DatabaseType(Enum):
     LEAF = "leaf"
     INTERMEDIATE = "intermediate"
     ROOT = "root"
 
-class Database:
-    def __init__(self, db_path: str, schema_path: str, db_type: DatabaseType):
-        self.db_path = db_path
-        self.schema_path = schema_path
-        self.conn: Connection = None
-        self.db_type = db_type
-        return
 
-    def connect(self, delete_database=True):
-        """Crea una connessione al database SQLite."""
-        if(delete_database == True and os.path.exists(self.db_path)):
+# 'Certificates' columns not meaningful for each type, dropped by finalize_analysis()
+_REMOVED_COLUMNS = {
+    DatabaseType.LEAF: ("certificates_emitted_up_to",),
+    DatabaseType.INTERMEDIATE: ("ocsp_stapling", "ocsp_must_stapling", "signature_valid", "SAN", "domain_matches_san"),
+    DatabaseType.ROOT: ("ocsp_stapling", "ocsp_must_stapling", "certificates_up_to_root_count", "has_root_certificate",
+                        "SAN", "domain_matches_san"),
+}
+
+# Plot query indexes as (name, "Table(columns)")
+_CERTIFICATE_ID_INDEX = ("idx_certificate_id_leaf_domain", "Certificates(certificate_id, leaf_domain)")
+CERTIFICATE_ID_INDEX_SQL = "CREATE INDEX IF NOT EXISTS %s ON %s" % _CERTIFICATE_ID_INDEX
+_COMMON_INDEXES = (
+    _CERTIFICATE_ID_INDEX,
+    ("idx_certificates_issuer_id", "Certificates(issuer_id)"),
+    ("idx_certificates_subject_id", "Certificates(subject_id)"),
+    ("idx_certificates_ocsp_check", "Certificates(ocsp_check)"),
+    ("idx_certificates_authority_info_access", "Certificates(authority_info_access)"),
+    ("idx_certificates_validity_end", "Certificates(validity_end)"),
+    ("idx_certificates_version", "Certificates(version)"),
+    ("idx_issuers_common_name", "Issuers(common_name)"),
+    ("idx_issuers_organization", "Issuers(organization)"),
+    ("idx_subjects_subject_dn", "Subjects(subject_dn)"),
+    ("idx_subjects_common_name", "Subjects(common_name)"),
+    ("idx_subjects_subject_key_id", "Subjects(subject_key_id)"),
+    ("idx_extensions_certificate_id", "Extensions(certificate_id)"),
+    ("idx_extensions_key_usage", "Extensions(key_usage)"),
+    ("idx_extensions_extended_key_usage", "Extensions(extended_key_usage)"),
+)
+_TYPE_INDEXES = {
+    DatabaseType.LEAF: (
+        ("idx_certificates_self_signed", "Certificates(self_signed)"),
+        ("idx_certificates_signature_valid", "Certificates(signature_valid)"),
+        ("idx_signed_cert_timestamps_certificate_id", "SignedCertificateTimestamps(certificate_id)"),
+        ("idx_signed_cert_timestamps_log_id", "SignedCertificateTimestamps(log_id)"),
+        ("idx_errors_domain", "Errors(domain)"),
+        ("idx_errors_status", "Errors(status)"),
+        ("idx_logs_operator_id", "Logs(operator_id)"),
+        ("idx_logs_log_id", "Logs(log_id)"),
+    ),
+    DatabaseType.INTERMEDIATE: (("idx_certificates_self_signed", "Certificates(self_signed)"),),
+    DatabaseType.ROOT: (("idx_certificates_signature_valid", "Certificates(signature_valid)"),),
+}
+
+# JSON rows per commit in bulk insert mode
+ROWS_PER_COMMIT = 1000
+
+# Indexes kept by drop_secondary_indexes(): the OCSP analysis selects and updates through them
+_OCSP_KEPT_INDEXES = frozenset({
+    'idx_certificates_ocsp_check',
+    'idx_certificates_authority_info_access',
+    'idx_logs_log_id',
+    'idx_certificate_id_leaf_domain',
+})
+
+
+def _column_definition(column: sqlite3.Row, single_primary_key: bool) -> str:
+    """SQL column definition from a PRAGMA table_info row (cid, name, type, notnull, dflt_value, pk)."""
+    _, name, column_type, not_null, default, primary_key = column
+    definition = f"{name} {column_type}".strip()
+    if single_primary_key and primary_key:
+        definition += " PRIMARY KEY"
+    if not_null:
+        definition += " NOT NULL"
+    if default is not None:
+        definition += f" DEFAULT {default}"
+    return definition
+
+
+class Database:
+    """SQLite certificate database of one type."""
+
+    def __init__(self, db_path: str | os.PathLike, schema_path: str | os.PathLike, db_type: DatabaseType):
+        self.db_path = os.path.abspath(db_path)
+        self.schema_path = schema_path
+        self.db_type = db_type
+        self.conn: sqlite3.Connection | None = None
+        self._rows_per_commit = 1       # row_transaction() rows per commit
+        self._pending_rows = 0
+
+    def connect(self, delete_database: bool = False) -> None:
+        """Connect, optionally deleting the file first; an empty database gets the schema."""
+        if delete_database and os.path.exists(self.db_path):
             os.remove(self.db_path)
             logging.info(f"Database eliminato con successo: {self.db_path}")
 
         self.conn = sqlite3.connect(self.db_path)
-        self.conn.row_factory = sqlite3.Row  # per accedere ai risultati come dizionari
-        self._initialize_database()
-        return
-
-    def _initialize_database(self):
-        """Crea le tabelle e gli indici se non esistono."""
-        cursor = self.conn.cursor()
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
-        tables = cursor.fetchall()
-        if not tables:
-            self.create_tables()
+        self.conn.row_factory = sqlite3.Row
+        if self.conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchone() is None:
+            self._create_tables()
         else:
             self._ensure_certificate_id_index()
-        
         logging.info(f"Connessione al database esistente: 'file://{self.db_path}'")
-        return
 
-    def _ensure_certificate_id_index(self):
-        """
-            Garantisce un indice su certificate_id per i database generati dalle versioni precedenti, 
-            in cui la rimozione delle colonne faceva perdere la PRIMARY KEY della tabella 'Certificates'.
-            Senza indice ogni ricerca per certificate_id richiederebbe la scansione dell'intera tabella.
-        """
-        cursor = self.conn.cursor()
-        cursor.execute("PRAGMA table_info(Certificates);")
-        columns = cursor.fetchall()
-        
-        if any(col[1] == 'certificate_id' and col[5] == 0 for col in columns):
-            logging.info("Creazione dell'indice su 'certificate_id' per un database senza PRIMARY KEY in corso...")
-            cursor.execute("CREATE INDEX IF NOT EXISTS idx_certificate_id_leaf_domain ON Certificates(certificate_id, leaf_domain);")
-            self.conn.commit()
-        return
-
-    def create_tables(self):
-        """Crea le tabelle nel database utilizzando lo schema SQL."""
-        logging.info(f"Creazione tabelle nel database in corso...")
-        
-        with open(self.schema_path, 'r') as f:
-            schema_sql = f.read()
-        cursor = self.conn.cursor()
-        cursor.executescript(schema_sql)
-        self.conn.commit()
-        logging.info("Tabelle create con successo.")
-        return
-
-    def create_indexes(self):
-        """Crea gli indici per migliorare le prestazioni delle query."""
-
-        logging.info(f"Creazione indici nel database in corso...")
-        
-        cursor = self.conn.cursor()
-        cursor.executescript("""
-            -- Indici per la tabella Certificates
-            CREATE INDEX IF NOT EXISTS idx_certificate_id_leaf_domain ON Certificates(certificate_id, leaf_domain);
-            CREATE INDEX IF NOT EXISTS idx_certificates_issuer_id ON Certificates(issuer_id);
-            CREATE INDEX IF NOT EXISTS idx_certificates_subject_id ON Certificates(subject_id);
-            CREATE INDEX IF NOT EXISTS idx_certificates_ocsp_check ON Certificates(ocsp_check);
-            CREATE INDEX IF NOT EXISTS idx_certificates_authority_info_access ON Certificates(authority_info_access);
-            CREATE INDEX IF NOT EXISTS idx_certificates_validity_end ON Certificates(validity_end);
-            CREATE INDEX IF NOT EXISTS idx_certificates_version ON Certificates(version);
-
-            -- Indici per la tabella Issuers
-            CREATE INDEX IF NOT EXISTS idx_issuers_common_name ON Issuers(common_name);
-            CREATE INDEX IF NOT EXISTS idx_issuers_organization ON Issuers(organization);
-
-            -- Indici per la tabella Subjects
-            CREATE INDEX IF NOT EXISTS idx_subjects_subject_dn ON Subjects(subject_dn);
-            CREATE INDEX IF NOT EXISTS idx_subjects_common_name ON Subjects(common_name);
-            CREATE INDEX IF NOT EXISTS idx_subjects_subject_key_id ON Subjects(subject_key_id);
-
-            -- Indici per la tabella Extensions
-            CREATE INDEX IF NOT EXISTS idx_extensions_certificate_id ON Extensions(certificate_id);
-            CREATE INDEX IF NOT EXISTS idx_extensions_key_usage ON Extensions(key_usage);
-            CREATE INDEX IF NOT EXISTS idx_extensions_extended_key_usage ON Extensions(extended_key_usage);
-        """)
-        
-        if self.db_type == DatabaseType.LEAF:
-            # Inserisci qui gli indici specifici solo per il database leaf
-            cursor.executescript("""
-                -- Indici per la tabella Certificates
-                CREATE INDEX IF NOT EXISTS idx_certificates_self_signed ON Certificates(self_signed);
-                CREATE INDEX IF NOT EXISTS idx_certificates_signature_valid ON Certificates(signature_valid);
-
-                -- Indici per la tabella SignedCertificateTimestamps
-                CREATE INDEX IF NOT EXISTS idx_signed_cert_timestamps_certificate_id ON SignedCertificateTimestamps(certificate_id);
-                CREATE INDEX IF NOT EXISTS idx_signed_cert_timestamps_log_id ON SignedCertificateTimestamps(log_id);
-
-                -- Indici per la tabella Errors
-                CREATE INDEX IF NOT EXISTS idx_errors_domain ON Errors(domain);
-                CREATE INDEX IF NOT EXISTS idx_errors_status ON Errors(status);
-
-                -- Indici per la tabella Logs
-                CREATE INDEX IF NOT EXISTS idx_logs_operator_id ON Logs(operator_id);
-                CREATE INDEX IF NOT EXISTS idx_logs_log_id ON Logs(log_id);
-            """)
-        elif self.db_type == DatabaseType.INTERMEDIATE:
-            # Inserisci qui gli indici specifici solo per il database intermediate
-            cursor.executescript("""
-                -- Indici per la tabella Certificates
-                CREATE INDEX IF NOT EXISTS idx_certificates_self_signed ON Certificates(self_signed);
-            """)
-        elif self.db_type == DatabaseType.ROOT:
-            # Inserisci qui gli indici specifici solo per il database root
-            cursor.executescript("""
-                -- Indici per la tabella Certificates
-                CREATE INDEX IF NOT EXISTS idx_certificates_signature_valid ON Certificates(signature_valid);
-            """)
-        
-        self.conn.commit()
-        logging.info("Indici creati con successo.")
-        return
-    
-    def apply_database_corrections(self):
-        """Applica correzioni ai dati nel database."""
-        logging.info("Inizio delle correzioni al database.")
-        
-        try:            
-            cursor = self.conn.cursor()
-            cursor.executescript("""
-                -- Rename DigiCert
-                UPDATE Issuers
-                SET organization = 'DigiCert Inc'
-                WHERE organization = 'DigiCert, Inc.';
-            """)
-
-            self.conn.commit()
-            logging.info("Correzioni al database applicate.")
-        except Exception as e:
-            logging.error(f"Errore nell'applicare le correzioni: {e}")
-            self.conn.rollback()
-        return
-    
-    def _restructure_table_remove_columns(self, table_name: str, columns_to_remove: list[str]):
-        """
-            Ristruttura la tabella specificata rimuovendo le colonne indicate.
-            Crea una nuova tabella con le colonne rimanenti (mantenendo tipo, NOT NULL, DEFAULT e PRIMARY KEY), 
-            copia i dati dalla tabella originale e rinomina la nuova tabella.
-        """
-        cursor = self.conn.cursor()
-        
-        # Legge la definizione delle colonne della tabella originale: (cid, name, type, notnull, dflt_value, pk)
-        cursor.execute(f"PRAGMA table_info({table_name});")
-        columns = [col for col in cursor.fetchall() if col[1] not in columns_to_remove]
-        
-        # Costruisce la definizione delle colonne mantenendo tipo e vincoli, così da non perdere 
-        # la PRIMARY KEY (es. certificate_id resta alias del rowid e quindi indicizzato)
-        primary_keys = [col for col in columns if col[5] > 0]
-        column_definitions = []
-        for col in columns:
-            definition = f"{col[1]} {col[2]}".strip()
-            if(len(primary_keys) == 1 and col[5] > 0):
-                definition += " PRIMARY KEY"
-            if(col[3]):
-                definition += " NOT NULL"
-            if(col[4] is not None):
-                definition += f" DEFAULT {col[4]}"
-            column_definitions.append(definition)
-        
-        if(len(primary_keys) > 1):
-            primary_keys.sort(key=lambda col: col[5])
-            column_definitions.append(f"PRIMARY KEY ({', '.join(col[1] for col in primary_keys)})")
-        
-        new_columns = [col[1] for col in columns]
-        new_table_name = f"{table_name}_new"
-        columns_to_select = ', '.join(new_columns)
-        
-        try:
-            # Rimuove eventuali residui di una ristrutturazione precedente non completata
-            cursor.execute(f"DROP TABLE IF EXISTS {new_table_name};")
-            cursor.execute(f"CREATE TABLE {new_table_name} ({', '.join(column_definitions)});")
-            
-            # Copia i dati nella nuova tabella
-            cursor.execute(f"INSERT INTO {new_table_name} ({columns_to_select}) SELECT {columns_to_select} FROM {table_name};")
-            
-            cursor.execute(f"DROP TABLE {table_name};")                                 # Eliminare la tabella originale
-            cursor.execute(f"ALTER TABLE {new_table_name} RENAME TO {table_name};")     # Rinominare la nuova tabella
-            
-            self.conn.commit()
-        except Exception:
-            # Evita che una ristrutturazione parziale (es. tabella originale eliminata ma non rinominata) venga confermata in seguito
-            self.conn.rollback()
-            raise
-        return
-
-    def remove_columns(self):
-        """Rimuove colonne specifiche dalla tabella 'Certificates' in base al tipo di database."""
-        try:
-            logging.info(f"Rimozione colonne non necessarie dal database in corso...")
-            
-            # Elimina le colonne dalle tabelle specificate
-            if(self.db_type == DatabaseType.LEAF):
-                columns = [
-                    "certificates_emitted_up_to"
-                ]
-                self._restructure_table_remove_columns("Certificates", columns)
-                logging.info("Colonne specificate rimosse dalla tabella 'Certificates'.")
-            elif(self.db_type == DatabaseType.INTERMEDIATE):
-                columns = [
-                    "ocsp_stapling",
-                    "ocsp_must_stapling",
-                    "signature_valid",
-                    "SAN",
-                    "domain_matches_san"
-                ]
-                self._restructure_table_remove_columns("Certificates", columns)
-                logging.info("Colonne specificate rimosse dalla tabella 'Certificates'.")
-            elif(self.db_type == DatabaseType.ROOT):
-                columns = [
-                    "ocsp_stapling",
-                    "ocsp_must_stapling",
-                    "certificates_up_to_root_count",
-                    "has_root_certificate",
-                    "SAN",
-                    "domain_matches_san"
-                ]
-                self._restructure_table_remove_columns("Certificates", columns)
-                logging.info("Colonne specificate rimosse dalla tabella 'Certificates'.")
-            
-        except Exception as e:
-            logging.error("Errore durante la rimozione delle colonne: %s", e)
-        return
-
-    def cleanup_unused_tables(self):
-        """
-            Elimina le tabelle non necessarie in base al tipo di database.
-        """
-        try:
-            logging.info(f"Rimozione tabelle non necessarie in corso...")
-            
-            cursor = self.conn.cursor()
-            
-            if self.db_type in {DatabaseType.INTERMEDIATE, DatabaseType.ROOT}:
-                cursor.executescript("""
-                    DROP TABLE IF EXISTS Errors;
-                """)
-                self.conn.commit()
-                logging.info("La tabella 'Errors' è stata eliminata con successo.")
-        
-        except Exception as e:
-            logging.error("Errore durante la pulizia delle tabelle non utilizzate: %s", e)
-        return
-
-    def drop_indexes_for_table(self):
-        """Rimuove tutti gli indici esistenti."""
-        try:
-            logging.info(f"Rimozione indici dal database in corso...")
-            
-            cursor = self.conn.cursor()
-            # Gli indici automatici (UNIQUE/PRIMARY KEY) non possono essere eliminati
-            cursor.execute(f"SELECT name FROM sqlite_master WHERE type='index' AND name NOT LIKE 'sqlite_autoindex_%';")
-            indexes = cursor.fetchall()
-            
-            # Lista di indici da ignorare durante la rimozione
-            ignore = ['idx_certificates_ocsp_check', 
-                      'idx_certificates_authority_info_access', 
-                      'idx_logs_log_id', 
-                      'sqlite_autoindex_Logs_1',
-                      'idx_certificate_id_leaf_domain']
-            
-            if indexes:
-                for index in indexes:
-                    index_name = index[0]
-                    if(index_name not in ignore):
-                        cursor.execute(f"DROP INDEX IF EXISTS {index_name};")
-                self.conn.commit()
-                logging.info(f"Tutti gli indici, eccetto quelli ignorati, sono stati rimossi dal database.")
-            else:
-                logging.info(f"Nessun indice trovato nel database.")
-        except Exception as e:
-            logging.error(f"Errore nel rimuovere gli indici: {e}")
-            self.conn.rollback()
-
-    def set_bulk_insert_mode(self, enabled: bool):
-        """
-            Durante l'inserimento massivo dal file JSON (un commit per ogni riga) mantiene il journal in memoria e disabilita 
-            l'fsync ad ogni commit: il database viene comunque ricreato da zero ad ogni analisi.
-            Il rollback della singola riga in caso di errore continua a funzionare.
-        """
-        self.conn.commit()      # Il journal_mode non può essere modificato durante una transazione
-        
-        cursor = self.conn.cursor()
-        if(enabled):
-            cursor.execute("PRAGMA journal_mode = MEMORY;")
-            cursor.execute("PRAGMA synchronous = OFF;")
-            logging.info("Modalità di inserimento massivo attivata.")
-        else:
-            cursor.execute("PRAGMA journal_mode = DELETE;")
-            cursor.execute("PRAGMA synchronous = FULL;")
-            logging.info("Modalità di inserimento massivo disattivata.")
-        return
+    def close(self) -> None:
+        """Close the connection."""
+        if self.conn is None:
+            return
+        self.conn.close()
+        self.conn = None
+        logging.info(f"Connessione al database {self.db_type.value.capitalize()} chiusa con successo: 'file://{self.db_path}'")
 
     @contextmanager
-    def transaction(self):
-        """Gestisce una transazione con commit o rollback."""
+    def transaction(self) -> Iterator[None]:
+        """Run the block in one transaction: commit on success, rollback on error or interrupt."""
+        # Explicit BEGIN so DDL (CREATE, DROP, ALTER) is part of the transaction too
+        if not self.conn.in_transaction:
+            self.conn.execute("BEGIN")
         try:
             yield
             self.conn.commit()
-        except Exception as e:
+        except BaseException as e:
+            # KeyboardInterrupt must roll back partial work too
             self.conn.rollback()
-            logging.error(f"Transazione fallita: {e}")
-            raise e
-        except BaseException:
-            # Interruzione (es. KeyboardInterrupt): annulla le operazioni parziali, evitando che vengano confermate in seguito
-            self.conn.rollback()
+            if isinstance(e, Exception):
+                logging.error(f"Transazione fallita: {e}")
             raise
-        return
 
-    def close(self):
-        """Chiude la connessione al database."""
-        if self.conn:
-            self.conn.close()
-            self.conn = None    # Evita una doppia chiusura (es. da close_connections a fine esecuzione)
-            if(self.db_type == DatabaseType.LEAF):
-                logging.info(f"Connessione al database Leaf chiusa con successo: 'file://{self.db_path}'")
-            elif(self.db_type == DatabaseType.INTERMEDIATE):
-                logging.info(f"Connessione al database Intermediate chiusa con successo: 'file://{self.db_path}'")
-            elif(self.db_type == DatabaseType.ROOT):
-                logging.info(f"Connessione al database Root chiusa con successo: 'file://{self.db_path}'")
-        return
+    @contextmanager
+    def bulk_insert_mode(self) -> Iterator[None]:
+        """No fsync and one commit every ROWS_PER_COMMIT rows of row_transaction().
+
+        Acceptable because the database is rebuilt on every analysis. The journal stays on disk, so a killed process
+        is rolled back on the next open (a power loss is not); completed rows are committed even on Ctrl+C.
+        """
+        self._set_journal("TRUNCATE", "OFF")
+        self._rows_per_commit = ROWS_PER_COMMIT
+        logging.info("Modalità di inserimento massivo attivata.")
+        try:
+            yield
+        finally:
+            self._rows_per_commit = 1
+            self._set_journal("DELETE", "FULL")
+            logging.info("Modalità di inserimento massivo disattivata.")
+
+    @contextmanager
+    def row_transaction(self) -> Iterator[None]:
+        """Run one row in a SAVEPOINT, so an error or interrupt discards only that row.
+
+        Commits every ROWS_PER_COMMIT rows in bulk insert mode, otherwise after every row.
+        """
+        if not self.conn.in_transaction:
+            self.conn.execute("BEGIN")
+        self.conn.execute("SAVEPOINT row_transaction")
+        try:
+            yield
+        except BaseException as e:
+            if self.conn.in_transaction:
+                self.conn.execute("ROLLBACK TO SAVEPOINT row_transaction")
+                self.conn.execute("RELEASE SAVEPOINT row_transaction")
+            else:
+                # SQLite already rolled back the whole transaction (e.g. disk full): the pending rows are lost too
+                logging.error(f"Transazione annullata da SQLite: perse le {self._pending_rows} righe non ancora confermate.")
+                self._pending_rows = 0
+            if isinstance(e, Exception):
+                logging.error(f"Transazione fallita: {e}")
+            raise
+
+        self.conn.execute("RELEASE SAVEPOINT row_transaction")
+        self._pending_rows += 1
+        if self._pending_rows >= self._rows_per_commit:
+            self.conn.commit()
+            self._pending_rows = 0
+
+    def finalize_analysis(self) -> None:
+        """Drop the tables and columns not needed by this database type."""
+        drop_errors = self.db_type in (DatabaseType.INTERMEDIATE, DatabaseType.ROOT)
+        logging.info("Rimozione tabelle e colonne non necessarie dal database in corso...")
+        try:
+            with self.transaction():
+                if drop_errors:
+                    self.conn.execute("DROP TABLE IF EXISTS Errors")
+                self._drop_columns("Certificates", _REMOVED_COLUMNS[self.db_type])
+        except Exception as e:
+            logging.error("Errore durante la rimozione delle tabelle e delle colonne non necessarie: %s", e)
+            return
+        if drop_errors:
+            logging.info("La tabella 'Errors' è stata eliminata con successo.")
+        logging.info("Colonne specificate rimosse dalla tabella 'Certificates'.")
+
+    def prepare_for_plots(self) -> None:
+        """Create the plot indexes and apply the data corrections."""
+        self._create_indexes()
+        self._apply_database_corrections()
+
+    def drop_secondary_indexes(self) -> None:
+        """Drop the indexes that slow down bulk updates, keeping those used by the OCSP analysis."""
+        logging.info("Rimozione indici dal database in corso...")
+        try:
+            # Automatic UNIQUE/PRIMARY KEY indexes cannot be dropped
+            indexes = [row[0] for row in self.conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='index' AND name NOT LIKE 'sqlite_autoindex_%'")]
+            if not indexes:
+                logging.info("Nessun indice trovato nel database.")
+                return
+            with self.transaction():
+                for name in indexes:
+                    if name not in _OCSP_KEPT_INDEXES:
+                        self.conn.execute(f'DROP INDEX IF EXISTS "{name}"')
+            logging.info("Tutti gli indici, eccetto quelli ignorati, sono stati rimossi dal database.")
+        except Exception as e:
+            logging.error(f"Errore nel rimuovere gli indici: {e}")
+
+    def _set_journal(self, journal_mode: str, synchronous: str) -> None:
+        """Commit first: journal_mode cannot change inside a transaction."""
+        self.conn.commit()
+        self._pending_rows = 0
+        self.conn.execute(f"PRAGMA journal_mode = {journal_mode}")
+        self.conn.execute(f"PRAGMA synchronous = {synchronous}")
+
+    def _create_tables(self) -> None:
+        logging.info("Creazione tabelle nel database in corso...")
+        with open(self.schema_path, 'r') as schema:
+            self.conn.executescript(schema.read())
+        logging.info("Tabelle create con successo.")
+
+    def _ensure_certificate_id_index(self) -> None:
+        """Index certificate_id on databases from older versions, whose column drop lost the 'Certificates' PRIMARY KEY."""
+        columns = self.conn.execute("PRAGMA table_info(Certificates)").fetchall()
+        if any(column[1] == 'certificate_id' and column[5] == 0 for column in columns):
+            logging.info("Creazione dell'indice su 'certificate_id' per un database senza PRIMARY KEY in corso...")
+            with self.transaction():
+                self.conn.execute(CERTIFICATE_ID_INDEX_SQL)
+
+    def _create_indexes(self) -> None:
+        logging.info("Creazione indici nel database in corso...")
+        with self.transaction():
+            for index in _COMMON_INDEXES + _TYPE_INDEXES[self.db_type]:
+                self.conn.execute("CREATE INDEX IF NOT EXISTS %s ON %s" % index)
+        logging.info("Indici creati con successo.")
+
+    def _apply_database_corrections(self) -> None:
+        logging.info("Inizio delle correzioni al database.")
+        try:
+            with self.transaction():
+                self.conn.execute("UPDATE Issuers SET organization = 'DigiCert Inc' WHERE organization = 'DigiCert, Inc.'")
+            logging.info("Correzioni al database applicate.")
+        except Exception as e:
+            logging.error(f"Errore nell'applicare le correzioni: {e}")
+
+    def _drop_columns(self, table: str, removed_columns: tuple[str, ...]) -> None:
+        """Recreate the table without the given columns; must run inside a transaction.
+
+        Type, NOT NULL, DEFAULT and PRIMARY KEY of the other columns are kept, so certificate_id stays a rowid alias.
+        """
+        columns = [column for column in self.conn.execute(f"PRAGMA table_info({table})") if column[1] not in removed_columns]
+        primary_keys = sorted((column for column in columns if column[5] > 0), key=lambda column: column[5])
+        definitions = [_column_definition(column, len(primary_keys) == 1) for column in columns]
+        if len(primary_keys) > 1:
+            definitions.append(f"PRIMARY KEY ({', '.join(column[1] for column in primary_keys)})")
+
+        names = ', '.join(column[1] for column in columns)
+        new_table = f"{table}_new"
+        self.conn.execute(f"DROP TABLE IF EXISTS {new_table}")
+        self.conn.execute(f"CREATE TABLE {new_table} ({', '.join(definitions)})")
+        self.conn.execute(f"INSERT INTO {new_table} ({names}) SELECT {names} FROM {table}")
+        self.conn.execute(f"DROP TABLE {table}")
+        self.conn.execute(f"ALTER TABLE {new_table} RENAME TO {table}")

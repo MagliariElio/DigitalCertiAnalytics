@@ -1,170 +1,77 @@
+from __future__ import annotations
+
 import base64
 import logging
+
 from cryptography import x509
 from cryptography.x509.oid import ExtensionOID
-from cryptography.hazmat.backends import default_backend
-from typing import Optional
 
-# Admin: Anuar Elio Magliari 
+# Admin: Anuar Elio Magliari
 # Politecnico di Torino
 
-class Certificate:
-    def __init__(self, cert_string):
-        self.cert_string = cert_string
-        self.cert = self.get_certificate_from_raw(cert_string)
 
-    def get_cert(self):
-        return self.cert
+class Certificate:
+    """X.509 certificate loaded from zgrab2's raw format (base64 DER, no PEM headers)."""
+
+    def __init__(self, raw: str | None):
+        self.raw = raw
+        self.cert = self.load(raw)
 
     @staticmethod
-    def load_cert_from_string(raw):
-        """Crea una stringa PEM da un certificato raw."""
-        if(raw is None):
+    def to_pem(raw: str | None) -> str | None:
+        """Wrap a raw certificate in PEM headers."""
+        if raw is None:
             return None
-        
-        # Aggiungi le intestazioni PEM
-        pem = f"-----BEGIN CERTIFICATE-----\n{raw}\n-----END CERTIFICATE-----"
-        return pem
+        return f"-----BEGIN CERTIFICATE-----\n{raw}\n-----END CERTIFICATE-----"
 
-    def get_certificate_from_raw(self, raw):
-        """Carica il certificato da una stringa."""
-        if(raw is None):
+    @staticmethod
+    def load(raw: str | None) -> x509.Certificate | None:
+        """Parse the raw certificate; return None if missing or invalid."""
+        if raw is None:
             return None
-        
         try:
-            # Aggiungi le intestazioni PEM
-            pem = self.load_cert_from_string(raw)
-            
-            # Decodifica la stringa PEM e carica il certificato
-            cert_bytes = pem.encode('utf-8')
-            return x509.load_pem_x509_certificate(cert_bytes, default_backend())
+            # raw is base64 DER: decoding it directly avoids a PEM round-trip; line breaks are tolerated as by PEM
+            return x509.load_der_x509_certificate(base64.b64decode("".join(raw.split()), validate=True))
         except Exception as e:
             logging.error(f"Certificato non valido, errore nel parsing: {e}")
             return None
-    
-    def is_aia_critical(self, issuer):
-        """Controlla se l'AIA è critico, non critico o non trovato."""
+
+    def extension_criticality(self, oid: x509.ObjectIdentifier) -> str:
+        """Return 'Critical', 'Not Critical', 'Not Found' or 'Error' for the extension."""
+        if self.cert is None:
+            return "Not Found"
         try:
-            if(self.cert is None):
-                return "Not Found"
-            
-            aia_ext = self.cert.extensions.get_extension_for_oid(ExtensionOID.AUTHORITY_INFORMATION_ACCESS)
-            if aia_ext is None:
-                return "Not Found"
-            
-            return "Critical" if aia_ext.critical else "Not Critical"
+            extension = self.cert.extensions.get_extension_for_oid(oid)
         except x509.ExtensionNotFound:
             return "Not Found"
         except Exception as e:
-            logging.error(f"Errore imprevisto durante il controllo AIA ({issuer}): {e}")
+            logging.error(f"Errore imprevisto durante il controllo dell'estensione {oid.dotted_string}: {e}")
             return "Error"
-    
-    def get_cp(self) -> Optional[list[dict]]:
-        """Restituisce il certificate policies relativo al certificato"""
+        return "Critical" if extension.critical else "Not Critical"
+
+    def ocsp_must_staple(self) -> str:
+        """Return 'Enabled' if the TLS Feature (OCSP must-staple) extension is present, else 'Not Found' or 'Error'."""
+        status = self.extension_criticality(ExtensionOID.TLS_FEATURE)
+        return status if status in ("Not Found", "Error") else "Enabled"
+
+    def certificate_policies(self) -> list[dict] | None:
+        """Return the certificate policies, or None if absent or unreadable."""
+        if self.cert is None:
+            return None
         try:
-            if(self.cert is None):
-                return None
-            
-            cp_ext = self.cert.extensions.get_extension_for_oid(ExtensionOID.CERTIFICATE_POLICIES)
-            policies = []
-
-            for policy_info in cp_ext.value:
-                policy = {
-                    'policy_identifier': policy_info.policy_identifier.dotted_string,
-                    'cps': policy_info.policy_qualifiers,  
-                    'policy_qualifiers': policy_info.policy_qualifiers,  
-                    'is_cp_critical': "Critical" if cp_ext.critical else "Not Critical"  
+            extension = self.cert.extensions.get_extension_for_oid(ExtensionOID.CERTIFICATE_POLICIES)
+            is_critical = "Critical" if extension.critical else "Not Critical"
+            return [
+                {
+                    'policy_identifier': policy.policy_identifier.dotted_string,
+                    'cps': policy.policy_qualifiers,
+                    'policy_qualifiers': policy.policy_qualifiers,
+                    'is_cp_critical': is_critical,
                 }
-                policies.append(policy)
-
-            return policies
+                for policy in extension.value
+            ]
         except x509.ExtensionNotFound:
             return None
         except Exception as e:
             logging.error(f"Errore imprevisto nel recupero delle CERTIFICATE_POLICIES: {e}")
             return None
-        
-    def is_crl_distr_point_critical(self):
-        """Controlla se il crl distribution point sia critico, non critico o non trovato."""
-        try:
-            if(self.cert is None):
-                return "Not Found"
-            
-            ext = self.cert.extensions.get_extension_for_oid(ExtensionOID.CRL_DISTRIBUTION_POINTS)
-            if ext is None:
-                return "Not Found"
-            
-            return "Critical" if ext.critical else "Not Critical"
-        except x509.ExtensionNotFound:
-            return "Not Found"
-        except Exception as e:
-            logging.error(f"Errore imprevisto durante il controllo Crl Distr Point: {e}")
-            return "Error"
-    
-    def is_key_usage_critical(self):
-        """Controlla se il key usage sia critico, non critico o non trovato."""
-        try:
-            if(self.cert is None):
-                return "Not Found"
-            
-            ext = self.cert.extensions.get_extension_for_oid(ExtensionOID.KEY_USAGE)
-            if ext is None:
-                return "Not Found"
-            
-            return "Critical" if ext.critical else "Not Critical"
-        except x509.ExtensionNotFound:
-            return "Not Found"
-        except Exception as e:
-            logging.error(f"Errore imprevisto durante il controllo Key Usage: {e}")
-            return "Error"
-        
-    def is_extended_key_usage_critical(self):
-        """Controlla se l'extended key usage sia critico, non critico o non trovato."""
-        try:
-            if(self.cert is None):
-                return "Not Found"
-            
-            ext = self.cert.extensions.get_extension_for_oid(ExtensionOID.EXTENDED_KEY_USAGE)
-            if ext is None:
-                return "Not Found"
-            
-            return "Critical" if ext.critical else "Not Critical"
-        except x509.ExtensionNotFound:
-            return "Not Found"
-        except Exception as e:
-            logging.error(f"Errore imprevisto durante il controllo Extended Key Usage: {e}")
-            return "Error"
-    
-    def is_sub_alt_name_critical(self):
-        """Controlla se il subject alternative name sia critico, non critico o non trovato."""
-        try:
-            if(self.cert is None):
-                return "Not Found"
-            
-            ext = self.cert.extensions.get_extension_for_oid(ExtensionOID.SUBJECT_ALTERNATIVE_NAME)
-            if ext is None:
-                return "Not Found"
-            
-            return "Critical" if ext.critical else "Not Critical"
-        except x509.ExtensionNotFound:
-            return "Not Found"
-        except Exception as e:
-            logging.error(f"Errore imprevisto durante il controllo Sub Alt Name: {e}")
-            return "Error"
-    
-    def is_ocsp_must_staple(self):
-        """Controlla se l'OCSP must staple sia abilitato o meno."""
-        try:
-            if(self.cert is None):
-                return "Not Found"
-            
-            ext = self.cert.extensions.get_extension_for_oid(ExtensionOID.TLS_FEATURE)
-            if ext is None:
-                return "Not Found"
-            
-            return "Enabled"
-        except x509.ExtensionNotFound:
-            return "Not Found"
-        except Exception as e:
-            logging.error(f"Errore imprevisto durante il controllo OCSP must stapling: {e}")
-            return "Error"

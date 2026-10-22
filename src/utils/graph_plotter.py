@@ -1,364 +1,159 @@
+from __future__ import annotations
+
+import logging
 import os
-import logging, warnings
-import pandas as pd
+import warnings
+from typing import Callable
+
 import matplotlib.pyplot as plt
+import pandas as pd
 import seaborn as sns
+from matplotlib.axes import Axes
+from matplotlib.figure import Figure
+
+# Admin: Anuar Elio Magliari
+# Politecnico di Torino
+
+# Shared chart style, applied via plt.rc_context so global rcParams stay untouched
+_BASE_STYLE = {
+    **sns.axes_style("whitegrid"),
+    'font.family': 'serif',
+    'font.size': 12,
+    'axes.titlesize': 16,
+    'axes.titleweight': 'bold',
+}
+_DPI = 300
+_BAR_LABEL_OFFSET = 3
+
+
+def _autopct(pct: float) -> str:
+    """Pie wedge label; empty for negligible wedges."""
+    return f'{pct:.1f}%' if pct > 0.1 else ''
+
+
+def _rotate_xticks(ax: Axes) -> None:
+    plt.setp(ax.get_xticklabels(), rotation=45, ha='right', fontsize=12)
+
 
 class GraphPlotter:
-    def close_all_plots(self):
-        """Chiude tutte le figure aperte."""
-        logging.info("Chiusura di tutti i grafici aperti...")
-        plt.close('all')
-        return
-        
-    def _is_empty(self, data, title):
-        """Controlla se non ci sono dati da rappresentare: seaborn e pandas sollevano eccezioni con dati vuoti."""
-        if data is None or data.empty:
-            logging.warning(f"Nessun dato disponibile per il grafico '{title}': grafico non generato.")
-            return True
-        return False
+    """Renders the certificate analysis charts to image files."""
 
-    def disable_logging(self, is_verbose:bool):
-        """Disabilita il logging dettagliato per alcune librerie se la modalità verbose è disattivata."""
+    def __init__(self, is_verbose: bool = False) -> None:
+        """Silence plotting-library logging (seaborn too, unless verbose)."""
         logging.getLogger('PIL.PngImagePlugin').setLevel(logging.ERROR)
         logging.getLogger('matplotlib').setLevel(logging.ERROR)
         warnings.filterwarnings("ignore", category=FutureWarning)
-        if(not is_verbose):
+        if not is_verbose:
             logging.getLogger('seaborn').setLevel(logging.ERROR)
-        return
 
-    def plot_bar_chart(self, data, x, y, title, xlabel, ylabel, filename, text_offset=3):
-        """Crea un grafico a barre ottimizzato per la visualizzazione dei dati."""
-        if self._is_empty(data, title):
+    def plot_bar_chart(self, data: pd.DataFrame, y: str, title: str, xlabel: str, ylabel: str, filename: str) -> None:
+        """Vertical bar chart of `y` per index category, with value labels."""
+        def draw(ax: Axes) -> None:
+            # A color list keeps the mapping categorical even for numeric indexes
+            # (same colors as palette='viridis' without hue, deprecated since seaborn 0.13)
+            palette = sns.color_palette('viridis', n_colors=data.index.nunique())
+            sns.barplot(x=data.index, y=y, data=data, hue=data.index, palette=palette, legend=False, ax=ax)
+            ax.set_title(title, fontsize=16, fontweight='bold', pad=30)
+            ax.set_xlabel(xlabel, fontsize=14)
+            ax.set_ylabel(ylabel, fontsize=14)
+            _rotate_xticks(ax)
+            plt.setp(ax.get_yticklabels(), fontsize=12)
+            ax.grid(axis='y', linestyle='--', alpha=0.7)
+            for patch in ax.patches:
+                height = patch.get_height()
+                ax.text(patch.get_x() + patch.get_width() / 2.0, height + _BAR_LABEL_OFFSET, f'{height:.0f}',
+                        ha='center', va='bottom', fontsize=10)
+
+        self._render(data, title, filename, draw, figsize=(14, 7), dpi=_DPI, bbox_inches='tight')
+
+    def plot_pie_chart(self, data: pd.DataFrame, column: str, title: str, filename: str) -> None:
+        """Pie chart of `column`, with the index categories in the legend."""
+        def draw(ax: Axes) -> None:
+            wedges, _, autotexts = ax.pie(
+                data[column],
+                autopct=_autopct,
+                startangle=140,
+                colors=sns.color_palette('muted', n_colors=len(data)),
+                wedgeprops={'edgecolor': 'white', 'linewidth': 1.5},
+                pctdistance=1.05,
+                explode=[0.06] * len(data)
+            )
+            plt.setp(autotexts, fontsize=10, fontweight='medium', color='black')
+            ax.set_title(title, pad=20)
+            ax.axis('equal')
+            legend = ax.legend(wedges, data.index, title="Legend", loc='best', bbox_to_anchor=(1.1, 1), fontsize=10,
+                               frameon=True, framealpha=0.9, borderpad=1)
+            plt.setp(legend.get_title(), fontsize=10, fontweight='bold')
+
+        self._render(data, title, filename, draw, figsize=(9, 9), dpi=_DPI, bbox_inches='tight')
+
+    def plot_line_chart(self, data: pd.DataFrame, y: str, title: str, xlabel: str, ylabel: str, filename: str) -> None:
+        """Line chart of `y` over the index."""
+        def draw(ax: Axes) -> None:
+            sns.lineplot(x=data.index, y=y, data=data, marker='o', linewidth=2, markersize=6, color='blue', ax=ax)
+            ax.set_title(title, fontsize=18, fontweight='bold', pad=20)
+            ax.set_xlabel(xlabel, fontsize=16, labelpad=10)
+            ax.set_ylabel(ylabel, fontsize=16, labelpad=10)
+            _rotate_xticks(ax)
+            plt.setp(ax.get_yticklabels(), fontsize=12)
+            ax.grid(True, linestyle='--', alpha=0.7)
+
+        self._render(data, title, filename, draw, figsize=(14, 7))
+
+    def plot_stacked_bar_chart(self, data: pd.DataFrame, title: str, xlabel: str, ylabel: str, filename: str) -> None:
+        """Stacked bar chart: one bar per row, one segment per column."""
+        def draw(ax: Axes) -> None:
+            data.plot(kind='bar', stacked=True, ax=ax, color=sns.color_palette('Set2', n_colors=len(data.columns)))
+            ax.set_title(title, fontsize=16, fontweight='bold')
+            ax.set_xlabel(xlabel, fontsize=14)
+            ax.set_ylabel(ylabel, fontsize=14)
+            _rotate_xticks(ax)
+            ax.grid(axis='y', linestyle='--', alpha=0.7)
+
+        self._render(data, title, filename, draw, figsize=(12, 6))
+
+    def plot_horizontal_bar(self, data: pd.DataFrame, x: str, title: str, xlabel: str, ylabel: str, filename: str) -> None:
+        """Horizontal bar chart of `x` per index category, with value labels."""
+        def draw(ax: Axes) -> None:
+            categories = data.index.unique()
+            palette = dict(zip(categories, sns.color_palette('viridis', n_colors=len(categories))))
+            sns.barplot(x=x, y=data.index, data=data, hue=data.index, dodge=False, palette=palette, errorbar=None, ax=ax)
+            ax.set_title(title, pad=20)
+            ax.set_xlabel(xlabel, fontsize=16)
+            ax.set_ylabel(ylabel, fontsize=16)
+            ax.tick_params(labelsize=14)
+            ax.grid(axis='x', linestyle='--', alpha=0.7)
+            for patch in ax.patches:
+                width = patch.get_width()
+                ax.text(width + 0.01 * width, patch.get_y() + patch.get_height() / 2, f'{width:.0f}',
+                        ha='left', va='center', fontsize=12)
+
+        self._render(data, title, filename, draw, figsize=(20, 14), dpi=_DPI, bbox_inches='tight',
+                     style={'axes.titlesize': 20})
+
+    def _render(self, data: pd.DataFrame, title: str, filename: str, draw: Callable[[Axes], None],
+                figsize: tuple[float, float], dpi: float | None = None, bbox_inches: str | None = None,
+                style: dict | None = None) -> None:
+        """Draw with the shared style and save; the figure is always closed."""
+        # seaborn and pandas raise on empty data
+        if data is None or data.empty:
+            logging.warning(f"Nessun dato disponibile per il grafico '{title}': grafico non generato.")
             return
 
-        sns.set_style("whitegrid")
-        plt.rcParams.update({
-            'font.family': 'serif',
-            'font.size': 12,
-            'axes.titlesize': 16,
-            'axes.titleweight': 'bold'
-        })
+        with plt.rc_context({**_BASE_STYLE, **(style or {})}):
+            fig, ax = plt.subplots(figsize=figsize, dpi=dpi)
+            try:
+                draw(ax)
+                fig.tight_layout()
+                self._save(fig, title, filename, bbox_inches)
+            finally:
+                plt.close(fig)
 
-        fig, ax = plt.subplots(figsize=(14, 7), dpi=300)
-
-        sns.barplot(x=x, y=y, data=data, palette='viridis', ax=ax)
-
-        ax.set_title(title, fontsize=16, fontweight='bold', pad=30)
-        ax.set_xlabel(xlabel, fontsize=14)
-        ax.set_ylabel(ylabel, fontsize=14)
-
-        plt.xticks(rotation=45, ha='right', fontsize=12)
-        plt.yticks(fontsize=12)
-
-        ax.grid(axis='y', linestyle='--', alpha=0.7)
-
-        for patch in ax.patches:
-            height = patch.get_height()
-            value_text = f'{height:.0f}'
-            x_position = patch.get_x() + patch.get_width() / 2.0
-            ax.text(x_position, height + text_offset, value_text,
-                    ha='center', va='bottom', fontsize=10)
-
-        plt.tight_layout()
-
+    @staticmethod
+    def _save(fig: Figure, title: str, filename: str, bbox_inches: str | None) -> None:
+        """Save the figure, creating its directory if needed."""
         directory = os.path.dirname(filename)
-        if directory and not os.path.exists(directory):
-            os.makedirs(directory)
-
-        plt.savefig(filename, dpi=300, bbox_inches='tight')
+        if directory:
+            os.makedirs(directory, exist_ok=True)
+        fig.savefig(filename, dpi=_DPI, bbox_inches=bbox_inches)
         logging.info(f"Grafico '{title}' generato con successo e salvato in file://{filename}.")
-        plt.close()
-    
-    def plot_pie_chart(self, data, column, title, filename, legend_loc='best', 
-                   legend_fontsize=10, autopct_fontsize=10):
-        """Crea un grafico a torta ottimizzato per la visualizzazione dei dati."""
-        if self._is_empty(data, title):
-            return
-        
-        sns.set_style("whitegrid")
-        plt.rcParams.update({
-            'font.family': 'serif',
-            'font.size': 12,
-            'axes.titlesize': 16,
-            'axes.titleweight': 'bold'
-        })
-        
-        fig, ax = plt.subplots(figsize=(9, 9), dpi=300)
-        colors = sns.color_palette('muted', n_colors=len(data))
-        
-        def autopct_format(pct):
-            return f'{pct:.1f}%' if pct > 0.1 else ''
-        
-        explode = [0.06] * len(data)
-        
-        wedges, _, autotexts = ax.pie(
-            data[column],
-            autopct=autopct_format,
-            startangle=140,
-            colors=colors,
-            wedgeprops={'edgecolor': 'white', 'linewidth': 1.5},
-            pctdistance=1.05,
-            explode=explode
-        )
-        
-        for autotext in autotexts:
-            autotext.set_fontsize(autopct_fontsize)
-            autotext.set_fontweight('medium')
-            autotext.set_color('black')
-        
-        ax.set_title(title, pad=20)
-        ax.axis('equal')
-        
-        legend = ax.legend(
-            wedges,
-            data.index,
-            title="Legend",
-            loc=legend_loc,
-            bbox_to_anchor=(1.1, 1),
-            fontsize=legend_fontsize,
-            frameon=True,
-            framealpha=0.9,
-            borderpad=1
-        )
-        plt.setp(legend.get_title(), fontsize=legend_fontsize, fontweight='bold')
-        
-        directory = os.path.dirname(filename)
-        if directory and not os.path.exists(directory):
-            os.makedirs(directory)
-        
-        plt.tight_layout()
-        plt.savefig(filename, dpi=300, bbox_inches='tight')
-        logging.info(f"Grafico '{title}' generato con successo e salvato in file://{filename}.")
-        plt.close()
-
-    def plot_histogram(self, data, y, title, xlabel, ylabel, filename):
-        if self._is_empty(data, title):
-            return
-
-        plt.figure(figsize=(14, 8))
-        
-        colors = sns.color_palette("Set2")
-        counts, bins, patches = plt.hist(data[y], bins=20, color=colors[0], edgecolor='black', alpha=0.7)
-
-        plt.title(title, fontsize=16, fontweight='bold', pad=20)
-        plt.xlabel(xlabel, fontsize=14)
-        plt.ylabel(ylabel, fontsize=14)
-        plt.xticks(fontsize=12)
-        plt.yticks(fontsize=12)
-        plt.grid(axis='y', linestyle='--', alpha=0.7)
-
-        bin_centers = 0.5 * (bins[1:] + bins[:-1])
-        for count, x in zip(counts, bin_centers):
-            plt.text(x, count, f'{int(count)}', ha='center', va='bottom', fontsize=10)
-        
-        plt.tight_layout()
-        plt.subplots_adjust(top=0.9)
-
-        directory = os.path.dirname(filename)
-        if not os.path.exists(directory):
-            os.makedirs(directory)
-
-        plt.savefig(filename, dpi=300)
-        
-        logging.info(f"Grafico '{title}' generato con successo e salvato in file://{filename}.")
-        plt.close()
-
-    def plot_line_chart(self, data, x, y, title, xlabel, ylabel, filename):
-        """Crea un grafico a linee ottimizzato per la visualizzazione dei dati."""
-        if self._is_empty(data, title):
-            return
-
-        plt.figure(figsize=(14, 7)) 
-
-        sns.lineplot(x=x, y=y, data=data, marker='o', linewidth=2, markersize=6, color='blue')
-
-        plt.title(title, fontsize=18, fontweight='bold', pad=20)  
-
-        plt.xlabel(xlabel, fontsize=16, labelpad=10)
-        plt.ylabel(ylabel, fontsize=16, labelpad=10)
-
-        plt.xticks(rotation=45, ha='right', fontsize=12)
-        plt.yticks(fontsize=12)
-
-        plt.grid(True, linestyle='--', alpha=0.7)
-
-        plt.tight_layout()
-
-        directory = os.path.dirname(filename)
-        if not os.path.exists(directory):
-            os.makedirs(directory)
-
-        plt.savefig(filename, dpi=300)
-        
-        logging.info(f"Grafico '{title}' generato con successo e salvato in file://{filename}.")
-        plt.close()
-
-    def plot_scatter_plot(self, data, x, y, title, xlabel, ylabel, filename):
-        """Crea un grafico a dispersione ottimizzato per la visualizzazione dei dati."""
-        if self._is_empty(data, title):
-            return
-
-        plt.figure(figsize=(14, 8))
-
-        sns.scatterplot(x=x, y=y, data=data, alpha=0.8, s=100, edgecolor='w')  
-
-        plt.title(title, fontsize=18, fontweight='bold', pad=20)
-        plt.xlabel(xlabel, fontsize=16)
-        plt.ylabel(ylabel, fontsize=16)
-        plt.xticks(fontsize=14)
-        plt.yticks(fontsize=14)
-
-        plt.grid(True, linestyle='--', alpha=0.6)
-
-        plt.tight_layout()
-        plt.subplots_adjust(top=0.9)
-
-        directory = os.path.dirname(filename)
-        if not os.path.exists(directory):
-            os.makedirs(directory)  
-
-        plt.savefig(filename, dpi=300)
-        
-        logging.info(f"Grafico '{title}' generato con successo e salvato in file://{filename}.")
-        plt.close()
-
-    def plot_box_plot(self, data, x, y, title, xlabel, ylabel, filename):
-        """Crea un box plot ottimizzato per la visualizzazione dei dati."""
-        if self._is_empty(data, title):
-            return
-
-        plt.figure(figsize=(12, 6))
-        sns.boxplot(x=x, y=y, data=data, palette='Set2')
-        plt.title(title, fontsize=16, fontweight='bold')
-        plt.xlabel(xlabel, fontsize=14)
-        plt.ylabel(ylabel, fontsize=14)
-        plt.xticks(rotation=45, fontsize=12)
-        plt.tight_layout()
-        
-        directory = os.path.dirname(filename)
-        if not os.path.exists(directory):
-            os.makedirs(directory)  
-        
-        plt.savefig(filename, dpi=300)
-        
-        logging.info(f"Grafico '{title}' generato con successo e salvato in file://{filename}.")
-        plt.close()
-
-    def plot_stacked_bar_chart(self, data, title, xlabel, ylabel, filename):
-        """Crea un grafico a barre impilate ottimizzato per la visualizzazione dei dati."""
-        if self._is_empty(data, title):
-            return
-
-        plt.figure(figsize=(12, 6))
-        colors = sns.color_palette('Set2', n_colors=len(data.columns))
-        data.plot(kind='bar', stacked=True, ax=plt.gca(), color=colors)
-
-        plt.title(title, fontsize=16, fontweight='bold')
-        plt.xlabel(xlabel, fontsize=14)
-        plt.ylabel(ylabel, fontsize=14)
-        plt.xticks(rotation=45, ha='right', fontsize=12)
-        plt.grid(axis='y', linestyle='--', alpha=0.7)  
-        plt.tight_layout()
-        
-        directory = os.path.dirname(filename)
-        if not os.path.exists(directory):
-            os.makedirs(directory)  
-        
-        plt.savefig(filename, dpi=300)
-        
-        logging.info(f"Grafico '{title}' generato con successo e salvato in file://{filename}.")
-        plt.close()
-
-    def plot_dot_plot(self, data, x, y, title, xlabel, ylabel, filename):
-        """Crea un dot plot ottimizzato per la visualizzazione dei dati con legenda."""
-        if self._is_empty(data, title):
-            return
-
-        plt.figure(figsize=(20, 14))  
-
-        unique_key_usages = data.index.unique()
-
-        palette = sns.color_palette('viridis', n_colors=len(unique_key_usages))
-        color_mapping = dict(zip(unique_key_usages, palette))
-
-        data['Color'] = data.index.map(color_mapping)
-        sns.stripplot(x=x, y=data.index, data=data, size=15, palette=color_mapping, alpha=0.7, jitter=True)
-
-        handles = [plt.Line2D([0], [0], marker='o', color='w', label=f'{i+1}: {key_usage}',
-                            markersize=10, markerfacecolor=color_mapping[key_usage])
-                for i, key_usage in enumerate(unique_key_usages)]
-
-        plt.legend(handles=handles, title='Legend', bbox_to_anchor=(-0.5, -0.1), loc='upper center', ncol=3, borderpad=1, labelspacing=1.2, handletextpad=1)
-
-        plt.title(title, fontsize=20, fontweight='bold', pad=20)
-        plt.xlabel(xlabel, fontsize=16)
-
-        plt.yticks(ticks=range(len(unique_key_usages)), labels=range(1, len(unique_key_usages) + 1), fontsize=14)
-
-        plt.ylabel(ylabel, fontsize=16)
-        plt.grid(axis='y', linestyle='--', alpha=0.7)
-
-        plt.tight_layout()
-        plt.subplots_adjust(bottom=0.25)
-
-        directory = os.path.dirname(filename)
-        if not os.path.exists(directory):
-            os.makedirs(directory)
-
-        plt.savefig(filename, dpi=300)
-        
-        logging.info(f"Grafico '{title}' generato con successo e salvato in file://{filename}.")
-        plt.close()
-
-    def plot_horizontal_bar(self, data, x, y, title, xlabel, ylabel, filename):
-        """Crea un grafico a barre orizzontali per la visualizzazione dei dati con legenda."""
-        if self._is_empty(data, title):
-            return
-
-        sns.set_style("whitegrid")
-        plt.rcParams.update({
-            'font.family': 'serif',
-            'font.size': 12,
-            'axes.titlesize': 20,
-            'axes.titleweight': 'bold'
-        })
-
-        fig, ax = plt.subplots(figsize=(20, 14), dpi=300)
-
-        unique_categories = data.index.unique()
-
-        palette = sns.color_palette('viridis', n_colors=len(unique_categories))
-        color_mapping = dict(zip(unique_categories, palette))
-
-        data['Color'] = data.index.map(color_mapping)
-
-        sns.barplot(x=x, y=y, data=data, hue=data.index, dodge=False,
-                    palette=color_mapping, errorbar=None, ax=ax)
-
-        ax.set_title(title, pad=20)
-        ax.set_xlabel(xlabel, fontsize=16)
-        ax.set_ylabel(ylabel, fontsize=16)
-
-        ax.tick_params(axis='x', labelsize=14)
-        ax.tick_params(axis='y', labelsize=14)
-
-        ax.grid(axis='x', linestyle='--', alpha=0.7)
-
-        for patch in ax.patches:
-            width = patch.get_width()
-            height = patch.get_height()
-            ax.text(width + 0.01 * width, patch.get_y() + height/2,
-                    f'{width:.0f}', ha='left', va='center', fontsize=12)
-
-        plt.tight_layout()
-        
-        directory = os.path.dirname(filename)
-        if directory and not os.path.exists(directory):
-            os.makedirs(directory)
-
-        plt.savefig(filename, dpi=300, bbox_inches='tight')
-        logging.info(f"Grafico '{title}' generato con successo e salvato in file://{filename}.")
-        plt.close()
-        
-    

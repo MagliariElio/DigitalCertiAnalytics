@@ -46,8 +46,10 @@ La tabella `Certificates` è la tabella centrale che memorizza i dettagli di ogn
 - **authority_info_access_is_critical**: Se l'accesso alle informazioni dell'autorità è critico.
 - **authority_info_access**: Dettagli su come ottenere informazioni aggiuntive sull'autorità (ad esempio URL OCSP).
 - **ocsp_check**: Stato della verifica del certificato tramite OCSP (Online Certificate Status Protocol).
+- **ocsp_stapling**: Se il server ha inviato una risposta OCSP durante l'handshake TLS (solo `Leaf`).
+- **ocsp_must_stapling**: Se il certificato richiede l'OCSP stapling tramite l'estensione TLS Feature (solo `Leaf`).
 - **validation_level**: Livello di validazione del certificato (base, avanzato, ecc.).
-- **signature_valid**: Stato della validità della firma.
+- **signature_valid**: Stato della validità della firma (per i `Leaf` aggiornato con sslyze da `--leaf_chain_validation`).
 - **self_signed**: Se il certificato è autofirmato (certificato root).
 - **redacted**: Se il certificato è stato redatto.
 - **certificates_emitted_up_to**: Numero di certificati emessi fino a questo certificato (solo per `Intermediate` e `Root`).
@@ -72,7 +74,7 @@ La tabella `Extensions` memorizza le estensioni dei certificati, che includono i
 - **max_path_length**: Lunghezza massima della catena di certificati.
 - **crl_distribution_points**: Punti di distribuzione delle liste CRL.
 - **crl_distr_point_is_critical**: Indica se i punti di distribuzione CRL sono critici.
-- **crl_revocation_status**: Indica lo stato di revoca del certificato associato consultando le liste CRL.
+- **crl_revocation_status**: Stato di revoca tramite liste CRL. Il controllo non viene eseguito: il valore è sempre `No Request Done` (colonna mantenuta per compatibilità dello schema).
 
 #### 5. **CertificatePolicies**
 La tabella `CertificatePolicies` memorizza le politiche del certificato, inclusi i qualificatori della politica, i riferimenti alla CPS (Certificate Policy Statement) e se la politica è critica.
