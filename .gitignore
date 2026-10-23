@@ -4,8 +4,8 @@ certs_polito.json
 
 # Analysis input files
 top-10m-websites-dom-cop.txt
-domini_europei_google.txt
-domini_italiani_google.txt
+european_domains_google.txt
+italian_domains_google.txt
 
 # SQLite databases and journals
 *.db
@@ -15,9 +15,10 @@ domini_italiani_google.txt
 
 # OCSP backup/resume files
 *ocsp_certificates_backup.csv
+*ocsp_certificates_backup.csv.tmp
 *ocsp_check_results_temp.csv
 
-CARTELLA/
+FOLDER/
 
 # Python bytecode and app log
 __pycache__/

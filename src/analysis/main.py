@@ -2,7 +2,7 @@ import asyncio
 import logging
 import sys
 
-from analysis.certificates_analysis import certificates_analysis_main
+from analysis.certificates_analysis import INTERRUPT_MESSAGE, certificates_analysis_main
 
 # Admin: Anuar Elio Magliari
 # Politecnico di Torino
@@ -44,7 +44,10 @@ def main() -> None:
         loop.run_until_complete(certificates_analysis_main())
     except KeyboardInterrupt:
         interrupted = True
-        logging.info("Ricevuto segnale di interruzione (SIGINT). Inizio della procedura di chiusura...")
+        logging.info(INTERRUPT_MESSAGE)
+    except asyncio.CancelledError:
+        # Ctrl+C during an asynchronous stage: already logged when the task was cancelled
+        interrupted = True
     finally:
         try:
             interrupted = _cancel_pending_tasks(loop) or interrupted

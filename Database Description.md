@@ -1,117 +1,128 @@
-### Descrizione del database per l'analisi dei certificati digitali (Leaf, Intermediate, Root)
+### Database for the analysis of digital certificates (Leaf, Intermediate, Root)
 
-Questo schema di database è progettato per supportare l'analisi dei certificati digitali nelle tre principali tipologie di certificati: **Leaf**, **Intermediate** e **Root**. In base al tipo di database utilizzato, alcune colonne e tabelle possono essere rimosse per adattarsi meglio al tipo di certificato in analisi.
+This database schema supports the analysis of the three main types of digital certificates: **Leaf**, **Intermediate** and **Root**. Depending on the database type, some columns and tables are removed to better fit the type of certificate being analysed. The schema is defined in `src/db/schema_db.sql`.
 
-### Tabelle principali
+### Main tables
 
 #### 1. **Issuers**
-La tabella `Issuers` conserva i dettagli sugli **emittenti** dei certificati (autorità di certificazione, CA). Ogni riga rappresenta un'entità che ha emesso un certificato, e i dati forniti sono utili per tracciare la catena di fiducia.
+The `Issuers` table stores the details of the certificate **issuers** (certificate authorities, CAs). Each row is an entity that issued a certificate, and its data help to trace the chain of trust.
 
-- **issuer_id**: Identificatore univoco per l'emittente.
-- **common_name**: Nome comune dell'emittente.
-- **organization**: Nome dell'organizzazione dell'emittente.
-- **issuer_dn**: Distinct Name (DN) dell'emittente.
-- **country, province, locality**: Dettagli geografi dell'emittente (paese, provincia, città).
-- **organizational_unit**: Unità organizzativa dell'emittente.
-- **authority_key_id**: ID della chiave pubblica dell'autorità di certificazione.
-- **raw**: Dati grezzi del certificato dell'emittente.
+- **issuer_id**: Unique identifier of the issuer.
+- **common_name**: Common name of the issuer.
+- **organization**: Name of the issuer's organization.
+- **issuer_dn**: Distinguished Name (DN) of the issuer.
+- **country, province, locality**: Geographic details of the issuer (country, province, city).
+- **organizational_unit**: Organizational unit of the issuer.
+- **authority_key_id**: ID of the certificate authority's public key.
+- **raw**: Raw data of the issuer's certificate.
 
 #### 2. **Subjects**
-La tabella `Subjects` memorizza i dettagli sui **soggetti** dei certificati, cioè le entità a cui è stato emesso un certificato. Un soggetto può essere una persona, un'organizzazione o un server.
+The `Subjects` table stores the details of the certificate **subjects**, that is the entities a certificate was issued to. A subject can be a person, an organization or a server.
 
-- **subject_id**: Identificatore univoco per il soggetto.
-- **common_name**: Nome comune del soggetto.
-- **subject_dn**: Distinct Name (DN) del soggetto.
-- **subject_key_id**: ID della chiave pubblica del soggetto.
-- **subject_alt_name**: Nome alternativo del soggetto, utile in contesti con certificati multi-dominio.
-- **subject_alt_name_is_critical**: Indica se il nome alternativo del soggetto è critico.
+- **subject_id**: Unique identifier of the subject.
+- **common_name**: Common name of the subject.
+- **subject_dn**: Distinguished Name (DN) of the subject.
+- **subject_key_id**: ID of the subject's public key.
+- **subject_alt_name**: Subject alternative name, useful for multi-domain certificates.
+- **subject_alt_name_is_critical**: Whether the subject alternative name extension is critical.
 
 #### 3. **Certificates**
-La tabella `Certificates` è la tabella centrale che memorizza i dettagli di ogni certificato digitale. Le informazioni includono dettagli sulla validità, sull'emittente e sul soggetto, nonché eventuali estensioni critiche.
+The `Certificates` table is the central table, with the details of every digital certificate. They include the validity, the issuer and the subject, as well as the criticality of some extensions.
 
-- **certificate_id**: Identificatore univoco del certificato.
-- **serial_number**: Numero seriale del certificato.
-- **leaf_domain**: Dominio associato al certificato (nei certificati intermediate e root si riferisce sempre al dominio leaf).
-- **issuer_id**: Riferimento all'emittente del certificato (tabella `Issuers`).
-- **subject_id**: Riferimento al soggetto del certificato (tabella `Subjects`).
-- **version**: Versione del certificato (ad esempio v3).
-- **signature_algorithm**: Algoritmo utilizzato per firmare il certificato.
-- **key_algorithm**: Algoritmo della chiave pubblica.
-- **key_length**: Lunghezza della chiave pubblica.
-- **validity_start**: Data di inizio validità del certificato.
-- **validity_end**: Data di scadenza del certificato.
-- **validity_length**: Durata in secondi del certificato (campo `validity.length` di zgrab2).
-- **SAN (Subject Alternative Name)**: Elenco di nomi alternativi (solo per certificati che li supportano).
-- **domain_matches_san**: Indica se il dominio del certificato corrisponde a uno dei SAN.
-- **authority_info_access_is_critical**: Se l'accesso alle informazioni dell'autorità è critico.
-- **authority_info_access**: Dettagli su come ottenere informazioni aggiuntive sull'autorità (ad esempio URL OCSP).
-- **ocsp_check**: Stato della verifica del certificato tramite OCSP (Online Certificate Status Protocol).
-- **ocsp_stapling**: Se il server ha inviato una risposta OCSP durante l'handshake TLS (solo `Leaf`).
-- **ocsp_must_stapling**: Se il certificato richiede l'OCSP stapling tramite l'estensione TLS Feature (solo `Leaf`).
-- **validation_level**: Livello di validazione del certificato (base, avanzato, ecc.).
-- **signature_valid**: Stato della validità della firma (per i `Leaf` aggiornato con sslyze da `--leaf_chain_validation`).
-- **self_signed**: Se il certificato è autofirmato (certificato root).
-- **redacted**: Se il certificato è stato redatto.
-- **certificates_emitted_up_to**: Numero di certificati emessi fino a questo certificato (solo per `Intermediate` e `Root`).
-- **certificates_up_to_root_count**: Numero di certificati intermedi e root fino a questo certificato (solo per `Leaf` e `Intermediate`).
-- **has_root_certificate**: Se nella catena dei certificati è presente un certificato root (solo per `Leaf` e `Intermediate`).
-- **download_date**: Data di download del certificato.
-- **raw**: Dati grezzi del certificato.
+- **certificate_id**: Unique identifier of the certificate.
+- **serial_number**: Serial number of the certificate.
+- **leaf_domain**: Domain associated with the certificate (for intermediate and root certificates it is always the domain of the leaf).
+- **issuer_id**: Reference to the issuer of the certificate (`Issuers` table).
+- **subject_id**: Reference to the subject of the certificate (`Subjects` table).
+- **version**: Version of the certificate (for example v3).
+- **signature_algorithm**: Algorithm used to sign the certificate.
+- **key_algorithm**: Algorithm of the public key.
+- **key_length**: Length of the public key.
+- **validity_start**: Start date of the certificate's validity.
+- **validity_end**: Expiry date of the certificate.
+- **validity_length**: Validity period of the certificate in seconds (the `validity.length` field of zgrab2).
+- **SAN (Subject Alternative Name)**: List of alternative names (only for certificates that support them).
+- **domain_matches_san**: Whether the domain of the certificate matches one of the SANs.
+- **authority_info_access_is_critical**: Whether the Authority Information Access extension is critical.
+- **authority_info_access**: Where to get additional information about the authority (for example the OCSP URL).
+- **ocsp_check**: Result of the certificate check through OCSP (Online Certificate Status Protocol).
+- **ocsp_stapling**: Whether the server sent an OCSP response during the TLS handshake (`Leaf` only).
+- **ocsp_must_stapling**: Whether the certificate requires OCSP stapling through the TLS Feature extension (`Leaf` only).
+- **validation_level**: Validation level of the certificate (DV, OV, EV, ...).
+- **signature_valid**: Validity of the signature (for `Leaf` certificates, updated with sslyze by `--leaf_chain_validation`).
+- **self_signed**: Whether the certificate is self-signed (root certificate).
+- **redacted**: Whether the certificate is redacted.
+- **certificates_emitted_up_to**: Number of certificates issued up to this certificate (`Intermediate` and `Root` only).
+- **certificates_up_to_root_count**: Number of intermediate and root certificates up to this certificate (`Leaf` and `Intermediate` only).
+- **has_root_certificate**: Whether the certificate chain contains a root certificate (`Leaf` and `Intermediate` only).
+- **download_date**: Download date of the certificate.
+- **raw**: Raw data of the certificate.
 
-**Rimozione delle colonne per tipo di certificato:**
-- **LEAF**: La colonna `certificates_emitted_up_to` è rimosso, poiché i certificati leaf non emettono altri certificati.
-- **INTERMEDIATE**: Le colonne `ocsp_stapling`, `ocsp_must_stapling`, `signature_valid`, `SAN`, e `domain_matches_san` vengono rimosse, poiché non sono necessarie per la gestione dei certificati intermedi.
-- **ROOT**: Le colonne `ocsp_stapling`, `ocsp_must_stapling`, `certificates_up_to_root_count`, `has_root_certificate`, `SAN`, e `domain_matches_san` sono rimosse, poiché non applicabili ai certificati root.
+**Columns removed for each certificate type:**
+- **LEAF**: The `certificates_emitted_up_to` column is removed, since leaf certificates do not issue other certificates.
+- **INTERMEDIATE**: The `ocsp_stapling`, `ocsp_must_stapling`, `signature_valid`, `SAN` and `domain_matches_san` columns are removed, since they are not needed for intermediate certificates.
+- **ROOT**: The `ocsp_stapling`, `ocsp_must_stapling`, `certificates_up_to_root_count`, `has_root_certificate`, `SAN` and `domain_matches_san` columns are removed, since they do not apply to root certificates.
 
 #### 4. **Extensions**
-La tabella `Extensions` memorizza le estensioni dei certificati, che includono informazioni aggiuntive come l'uso della chiave, i vincoli di base, la distribuzione delle liste CRL (revoca), e altre informazioni specifiche.
+The `Extensions` table stores the certificate extensions, which include additional information such as the key usage, the basic constraints, the CRL (revocation list) distribution points and other specific information.
 
-- **extension_id**: Identificatore univoco per ogni estensione.
-- **certificate_id**: Riferimento al certificato associato.
-- **key_usage**: Uso della chiave specificato nelle estensioni.
-- **extended_key_usage**: Uso esteso della chiave.
-- **basic_constraints**: Restrizioni sui certificati, come la validità come autorità di certificazione.
-- **max_path_length**: Lunghezza massima della catena di certificati.
-- **crl_distribution_points**: Punti di distribuzione delle liste CRL.
-- **crl_distr_point_is_critical**: Indica se i punti di distribuzione CRL sono critici.
-- **crl_revocation_status**: Stato di revoca tramite liste CRL. Il controllo non viene eseguito: il valore è sempre `No Request Done` (colonna mantenuta per compatibilità dello schema).
+- **extension_id**: Unique identifier of each extension.
+- **certificate_id**: Reference to the associated certificate.
+- **key_usage**: Key usage given in the extensions.
+- **key_usage_is_critical**: Whether the key usage extension is critical.
+- **extended_key_usage**: Extended key usage.
+- **extended_key_usage_is_critical**: Whether the extended key usage extension is critical.
+- **basic_constraints**: Constraints on the certificate, such as whether it is valid as a certificate authority.
+- **max_path_length**: Maximum length of the certificate chain.
+- **crl_distribution_points**: Distribution points of the CRLs.
+- **crl_distr_point_is_critical**: Whether the CRL distribution points are critical.
+- **crl_revocation_status**: Revocation status through the CRLs. The check is not run: the value is always `No Request Done` (the column is kept for schema compatibility).
 
 #### 5. **CertificatePolicies**
-La tabella `CertificatePolicies` memorizza le politiche del certificato, inclusi i qualificatori della politica, i riferimenti alla CPS (Certificate Policy Statement) e se la politica è critica.
+The `CertificatePolicies` table stores the certificate policies, including the policy qualifiers, the references to the CPS (Certification Practice Statement) and whether the policy is critical.
 
-- **policy_id**: Identificatore univoco della politica.
-- **extension_id**: Riferimento all'estensione del certificato.
-- **policy_identifier**: Identificatore della politica del certificato.
-- **cps**: URL del Certficate Policy Statement (CPS).
-- **policy_qualifiers**: Ulteriori qualificatori della politica.
-- **is_cp_critical**: Indica se la politica è critica.
+- **policy_id**: Unique identifier of the policy.
+- **extension_id**: Reference to the certificate extension.
+- **policy_identifier**: Identifier of the certificate policy.
+- **cps**: URL of the Certification Practice Statement (CPS).
+- **policy_qualifiers**: Additional qualifiers of the policy.
+- **is_cp_critical**: Whether the policy is critical.
 
 #### 6. **Errors**
-La tabella `Errors` tiene traccia degli errori relativi ai certificati, come ad esempio la mancata validazione o problemi di protocollo (es. OCSP).
+The `Errors` table records the domains whose scan failed, with the error returned by zgrab2 (for example a connection timeout).
 
-- **error_id**: Identificatore univoco dell'errore.
-- **domain**: Dominio associato all'errore.
-- **status**: Stato dell'errore.
-- **protocol**: Protocollo utilizzato (ad esempio OCSP, CRL).
-- **error_message**: Descrizione dell'errore.
-- **timestamp**: Data e ora dell'errore.
+- **error_id**: Unique identifier of the error.
+- **domain**: Domain associated with the error.
+- **status**: Status of the scan (for example `connection-timeout`, `io-timeout`, `unknown-error`).
+- **protocol**: Protocol used (`tls`).
+- **error_message**: Description of the error.
+- **timestamp**: Date and time of the error.
+- **download_date**: Date of the scan.
 
-#### 7. **LogsOperators** e **Logs**
-Le tabelle `LogsOperators` e `Logs` memorizzano informazioni sugli **operatori** che gestiscono i certificati e i log delle operazioni effettuate.
+#### 7. **SignedCertificateTimestamps**
+The `SignedCertificateTimestamps` table stores the Signed Certificate Timestamps (SCTs) of each certificate.
 
-- **operator_id** (in `Logs`): Riferimento all'operatore.
-- **log_id** (in `Logs`): Identificatore univoco del log.
-- **description**: Descrizione dell'operazione.
-- **temporal_start**, **temporal_end**: Periodo in cui l'operazione è stata registrata.
+- **certificate_id**: Reference to the certificate.
+- **log_id**: Reference to the Certificate Transparency log that issued the SCT (`id` in the `Logs` table); a log missing from the list is added under the `unknown` operator.
+- **timestamp**, **version**, **signature**: Timestamp, version and signature of the SCT.
 
-**Rimozione delle tabelle non utilizzate per tipo di certificato:**
-- **INTERMEDIATE** e **ROOT**: La tabella `Errors` viene rimossa, poiché gli errori di connessione sono registrati solo nel database relativo ai certificati leaf.
+#### 8. **LogsOperators** and **Logs**
+The `LogsOperators` and `Logs` tables store the **operators** of the Certificate Transparency logs and their logs, read from `res/log_list.json`.
+
+- **name**, **email** (in `LogsOperators`): Name and contacts of the operator.
+- **operator_id** (in `Logs`): Reference to the operator.
+- **log_id** (in `Logs`): Unique identifier of the log.
+- **description**: Description of the log.
+- **temporal_start**, **temporal_end**: Expiry interval of the certificates accepted by the log (`temporal_interval` in the log list).
+
+**Tables removed for each certificate type:**
+- **INTERMEDIATE** and **ROOT**: The `Errors` table is removed, since the connection errors are recorded only in the leaf certificate database.
 
 ---
 
-### Utilizzo del Database per le 3 Tipologie di Certificati
+### Using the Database for the 3 Certificate Types
 
-Il database è strutturato in modo tale da supportare le analisi delle tre tipologie di certificati:
-1. **Leaf**: Certificati finali che sono associati a un dominio specifico. Contengono informazioni complete sui soggetti, SAN, validità e firma.
-2. **Intermediate**: Certificati intermedi che collegano i certificati leaf ai certificati root. Questi certificati sono utilizzati principalmente per formare la catena di fiducia tra un certificato root e un certificato leaf.
-3. **Root**: Certificati di livello superiore che fungono da base per la fiducia in tutta la catena di certificati. I certificati root sono autosigned e non necessitano di ulteriori certificati per essere validi. Sono stati inclusi nell'analisi solo i certificati root che sono stati inviati durante la richiesta TLS, quindi `presenti nella catena`.
+The database is structured to support the analysis of the three certificate types:
+1. **Leaf**: End-entity certificates associated with a specific domain. They contain complete information about the subjects, SANs, validity and signature.
+2. **Intermediate**: Certificates that link the leaf certificates to the root certificates. They are mainly used to build the chain of trust between a root certificate and a leaf certificate.
+3. **Root**: Top-level certificates that are the basis of trust for the whole certificate chain. Root certificates are self-signed and need no other certificate to be valid. Only the root certificates sent during the TLS handshake, that is `present in the chain`, were included in the analysis.

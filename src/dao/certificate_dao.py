@@ -11,11 +11,26 @@ from cryptography.x509.oid import ExtensionOID
 
 from bean.certificate import Certificate
 from db.database import DatabaseType
-from utils.chain_utils import (count_intermediates_up_to_root, find_raw_cert_issuer, reorder_signature_algorithm,
-                               verify_signature)
+from utils.chain_utils import count_intermediates_up_to_root, find_raw_cert_issuer, reorder_signature_algorithm
 
 # Admin: Anuar Elio Magliari
 # Politecnico di Torino
+
+# Parameters of certificate_params(), in the order they are bound ('ocsp_check' is the 'No Request Done' literal)
+CERTIFICATE_PARAM_COLUMNS = (
+    "serial_number", "leaf_domain", "version", "signature_algorithm", "key_algorithm", "key_length",
+    "validity_start", "validity_end", "validity_length", "SAN", "domain_matches_san", "issuer_id",
+    "subject_id", "validation_level", "redacted", "signature_valid", "self_signed", "download_date",
+    "ocsp_stapling", "ocsp_must_stapling", "authority_info_access_is_critical", "authority_info_access",
+    "certificates_emitted_up_to", "certificates_up_to_root_count", "has_root_certificate", "raw",
+)
+ISSUER_COLUMNS = ("common_name", "organization", "country", "issuer_dn", "locality", "province", "organizational_unit",
+                  "authority_key_id", "raw")
+SUBJECT_COLUMNS = ("common_name", "subject_dn", "subject_key_id", "subject_alt_name", "subject_alt_name_is_critical")
+EXTENSION_COLUMNS = ("key_usage", "key_usage_is_critical", "extended_key_usage", "extended_key_usage_is_critical",
+                     "basic_constraints", "max_path_length", "crl_distribution_points", "crl_distr_point_is_critical")
+POLICY_COLUMNS = ("policy_identifier", "cps", "policy_qualifiers", "is_cp_critical")
+ERROR_COLUMNS = ("domain", "status", "protocol", "timestamp", "error_message", "download_date")
 
 
 def _without_user_notices(qualifiers: list | None) -> str:
@@ -28,6 +43,107 @@ def _joined(values: list[str]) -> str:
     return ', '.join(values).encode('utf-8', errors='replace').decode('utf-8')
 
 
+# Row builders shared by CertificateDAO and the parallel ingestion: each one evaluates its values in the order of the
+# original single-row inserts, so errors and log messages come out in the same order.
+
+def error_params(json_row: dict) -> tuple:
+    """Errors row of a failed scan, in ERROR_COLUMNS order."""
+    tls = json_row.get("data", {}).get("tls", {})
+    timestamp = tls.get("timestamp", "")
+    return (json_row.get("domain", ""), tls.get("status", ""), tls.get("protocol", ""), timestamp, tls.get("error", ""),
+            timestamp)
+
+
+def issuer_params(parsed: dict, chain: list[dict]) -> tuple:
+    """Issuers row, in ISSUER_COLUMNS order, with the issuer raw certificate when found in the chain."""
+    issuer = parsed.get("issuer", {})
+    issuer_dn = parsed.get("issuer_dn", "")
+    return (
+        _joined(issuer.get("common_name", [])), _joined(issuer.get("organization", [])),
+        _joined(issuer.get("country", [])), issuer_dn, ', '.join(issuer.get("locality", [])),
+        ', '.join(issuer.get("province", [])), ', '.join(issuer.get("organizational_unit", [])),
+        parsed.get("extensions", {}).get("authority_key_id", ""), find_raw_cert_issuer(chain, issuer_dn)
+    )
+
+
+def subject_params(parsed: dict, digital_certificate: Certificate) -> tuple:
+    """Subjects row, in SUBJECT_COLUMNS order."""
+    extensions = parsed.get("extensions", {})
+    return (
+        ', '.join(parsed.get("subject", {}).get("common_name", [])), parsed.get("subject_dn", ""),
+        extensions.get("subject_key_id", ""), json.dumps(extensions.get("subject_alt_name", {})),
+        digital_certificate.extension_criticality(ExtensionOID.SUBJECT_ALTERNATIVE_NAME)
+    )
+
+
+def signature_validity(certificate_type: DatabaseType, parsed: dict, digital_certificate: Certificate) -> str:
+    """Roots are verified against their own key; other types use the zgrab2 result."""
+    if certificate_type is DatabaseType.ROOT:
+        return digital_certificate.self_signature_validity()
+    return "Valid" if parsed.get("signature", {}).get("valid", False) == 1 else "Not Valid"
+
+
+def certificate_params(json_row: dict, certificate: dict, parsed: dict, chain: list[dict], digital_certificate: Certificate,
+                       certificate_type: DatabaseType, issuer_id: int | None, subject_id: int | None,
+                       certificates_emitted_up_to: int) -> tuple:
+    """Certificates row, in CERTIFICATE_PARAM_COLUMNS order."""
+    tls = json_row.get("data", {}).get("tls", {})
+    handshake_log = tls.get("result", {}).get("handshake_log", {})
+    download_date = tls["timestamp"] if "timestamp" in tls else datetime.now().isoformat()
+    subject_key_info = parsed.get("subject_key_info", {})
+    key_length = subject_key_info.get("rsa_public_key", {}).get("length", 0)
+    if key_length == 0:
+        key_length = subject_key_info.get("ecdsa_public_key", {}).get("length", 0)
+    validity = parsed.get("validity", {})
+    certificates_up_to_root_count, has_root_certificate = count_intermediates_up_to_root(chain, certificate)
+    return (
+        parsed.get("serial_number", ""), json_row.get("domain", ""), parsed.get("version", 0),
+        reorder_signature_algorithm(parsed.get("signature_algorithm", {}).get("name", "")),
+        subject_key_info.get("key_algorithm", {}).get("name", ""), key_length,
+        validity.get("start", ""), validity.get("end", ""), validity.get("length", ""),
+        ', '.join(parsed.get("names", [])),
+        handshake_log.get("server_certificates", {}).get("validation", {}).get("matches_domain", False),
+        issuer_id, subject_id, parsed.get("validation_level", ""), parsed.get("redacted", False),
+        signature_validity(certificate_type, parsed, digital_certificate),
+        parsed.get("signature", {}).get("self_signed", False),
+        download_date, handshake_log.get("server_hello", {}).get("ocsp_stapling", False),
+        digital_certificate.ocsp_must_staple(),
+        digital_certificate.extension_criticality(ExtensionOID.AUTHORITY_INFORMATION_ACCESS),
+        json.dumps(parsed.get("extensions", {}).get("authority_info_access", {})),
+        certificates_emitted_up_to, certificates_up_to_root_count, has_root_certificate, digital_certificate.raw
+    )
+
+
+def extension_params(extensions: dict, digital_certificate: Certificate) -> tuple:
+    """Extensions row without certificate_id, in EXTENSION_COLUMNS order."""
+    # max_path_len has its own column: pop it from a copy to leave the JSON untouched
+    basic_constraints = extensions.get("basic_constraints", {})
+    max_path_length = None
+    if "max_path_len" in basic_constraints:
+        basic_constraints = dict(basic_constraints)
+        max_path_length = basic_constraints.pop("max_path_len")
+    return (
+        json.dumps(extensions.get("key_usage", {})), digital_certificate.extension_criticality(ExtensionOID.KEY_USAGE),
+        json.dumps(extensions.get("extended_key_usage", {})),
+        digital_certificate.extension_criticality(ExtensionOID.EXTENDED_KEY_USAGE),
+        json.dumps(basic_constraints), max_path_length, json.dumps(extensions.get("crl_distribution_points", [])),
+        digital_certificate.extension_criticality(ExtensionOID.CRL_DISTRIBUTION_POINTS)
+    )
+
+
+def policy_params(digital_certificate: Certificate) -> list[tuple] | None:
+    """CertificatePolicies rows without extension_id, in POLICY_COLUMNS order; None without the extension."""
+    policies = digital_certificate.certificate_policies()
+    if policies is None:
+        return None
+    return [(policy['policy_identifier'], _without_user_notices(policy['cps']),
+             _without_user_notices(policy['policy_qualifiers']), policy['is_cp_critical']) for policy in policies]
+
+
+def _placeholders(count: int) -> str:
+    return ", ".join("?" * count)
+
+
 class CertificateDAO:
     """Certificate data access: zgrab2 JSON inserts, batch iteration and updates."""
 
@@ -35,6 +151,21 @@ class CertificateDAO:
         self._conn = connection
         self._cursor = connection.cursor()
         self.certificate_type = certificate_type
+        self._prepare_certificate_insert()
+
+    def _prepare_certificate_insert(self) -> None:
+        """Insert only the 'Certificates' columns of the table, which has the final per-type layout.
+
+        A dropped column is not stored, but its value is still bound (by a SELECT) so a value that cannot be bound
+        invalidates the row exactly as when every column existed.
+        """
+        existing = {row[1] for row in self._conn.execute("PRAGMA table_info(Certificates)")} or set(CERTIFICATE_PARAM_COLUMNS)
+        self.certificate_kept = tuple(i for i, name in enumerate(CERTIFICATE_PARAM_COLUMNS) if name in existing)
+        self.certificate_dropped = tuple(i for i in range(len(CERTIFICATE_PARAM_COLUMNS)) if i not in self.certificate_kept)
+        columns = ', '.join(CERTIFICATE_PARAM_COLUMNS[i] for i in self.certificate_kept)
+        self._certificate_insert = (f"INSERT INTO Certificates ({columns}, ocsp_check) "
+                                    f"VALUES ({_placeholders(len(self.certificate_kept))}, 'No Request Done')")
+        self._bind_check = f"SELECT {_placeholders(len(CERTIFICATE_PARAM_COLUMNS))}" if self.certificate_dropped else None
 
     # ------------------------------------------------------------------ insertion
 
@@ -49,14 +180,9 @@ class CertificateDAO:
 
     def insert_error_row(self, json_row: dict) -> None:
         """Insert a scan error row (Leaf only)."""
-        domain = json_row.get("domain", "")
-        tls = json_row.get("data", {}).get("tls", {})
-        timestamp = tls.get("timestamp", "")
-        self._cursor.execute("""
-            INSERT INTO Errors (domain, status, protocol, timestamp, error_message, download_date)
-            VALUES (?, ?, ?, ?, ?, ?)
-        """, (domain, tls.get("status", ""), tls.get("protocol", ""), timestamp, tls.get("error", ""), timestamp))
-        logging.debug("Errore inserito per dominio: %s", domain)
+        params = error_params(json_row)
+        self._cursor.execute(f"INSERT INTO Errors ({', '.join(ERROR_COLUMNS)}) VALUES ({_placeholders(6)})", params)
+        logging.debug("Error row inserted for domain: %s", params[0])
 
     def process_insert_certificate(self, json_row: dict, certificate: dict, chain: list[dict],
                                    certificates_emitted_up_to: int) -> None:
@@ -74,108 +200,39 @@ class CertificateDAO:
         extension_id = self._insert_extensions(certificate_id, extensions, digital_certificate)
         self._insert_signed_certificate_timestamps(certificate_id, extensions)
 
-        policies = digital_certificate.certificate_policies()
+        policies = policy_params(digital_certificate)
         if policies is not None:
-            self._cursor.executemany("""
-                INSERT INTO CertificatePolicies (extension_id, policy_identifier, cps, policy_qualifiers, is_cp_critical)
-                VALUES (?, ?, ?, ?, ?)
-            """, [(extension_id, policy['policy_identifier'], _without_user_notices(policy['cps']),
-                   _without_user_notices(policy['policy_qualifiers']), policy['is_cp_critical']) for policy in policies])
+            self._cursor.executemany(f"""
+                INSERT INTO CertificatePolicies (extension_id, {', '.join(POLICY_COLUMNS)}) VALUES ({_placeholders(5)})
+            """, [(extension_id, *policy) for policy in policies])
 
     def _insert_issuer(self, parsed: dict, chain: list[dict]) -> int:
         """Insert the issuer, with its raw certificate when found in the chain, and return its id."""
-        issuer = parsed.get("issuer", {})
-        issuer_dn = parsed.get("issuer_dn", "")
-        self._cursor.execute("""
-            INSERT INTO Issuers (common_name, organization, country, issuer_dn, locality, province,
-                organizational_unit, authority_key_id, raw)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            _joined(issuer.get("common_name", [])), _joined(issuer.get("organization", [])),
-            _joined(issuer.get("country", [])), issuer_dn, ', '.join(issuer.get("locality", [])),
-            ', '.join(issuer.get("province", [])), ', '.join(issuer.get("organizational_unit", [])),
-            parsed.get("extensions", {}).get("authority_key_id", ""), find_raw_cert_issuer(chain, issuer_dn)
-        ))
+        self._cursor.execute(f"INSERT INTO Issuers ({', '.join(ISSUER_COLUMNS)}) VALUES ({_placeholders(9)})",
+                             issuer_params(parsed, chain))
         return self._cursor.lastrowid
 
     def _insert_subject(self, parsed: dict, digital_certificate: Certificate) -> int:
-        extensions = parsed.get("extensions", {})
-        self._cursor.execute("""
-            INSERT INTO Subjects (common_name, subject_dn, subject_key_id, subject_alt_name, subject_alt_name_is_critical)
-            VALUES (?, ?, ?, ?, ?)
-        """, (
-            ', '.join(parsed.get("subject", {}).get("common_name", [])), parsed.get("subject_dn", ""),
-            extensions.get("subject_key_id", ""), json.dumps(extensions.get("subject_alt_name", {})),
-            digital_certificate.extension_criticality(ExtensionOID.SUBJECT_ALTERNATIVE_NAME)
-        ))
+        self._cursor.execute(f"INSERT INTO Subjects ({', '.join(SUBJECT_COLUMNS)}) VALUES ({_placeholders(5)})",
+                             subject_params(parsed, digital_certificate))
         return self._cursor.lastrowid
 
     def _insert_certificate(self, json_row: dict, certificate: dict, parsed: dict, chain: list[dict],
                             digital_certificate: Certificate, issuer_id: int, subject_id: int,
                             certificates_emitted_up_to: int) -> int:
-        tls = json_row.get("data", {}).get("tls", {})
-        handshake_log = tls.get("result", {}).get("handshake_log", {})
-        download_date = tls["timestamp"] if "timestamp" in tls else datetime.now().isoformat()
-        subject_key_info = parsed.get("subject_key_info", {})
-        key_length = subject_key_info.get("rsa_public_key", {}).get("length", 0)
-        if key_length == 0:
-            key_length = subject_key_info.get("ecdsa_public_key", {}).get("length", 0)
-        validity = parsed.get("validity", {})
-        certificates_up_to_root_count, has_root_certificate = count_intermediates_up_to_root(chain, certificate)
-
-        self._cursor.execute("""
-            INSERT INTO Certificates (
-                serial_number, leaf_domain, version, signature_algorithm, key_algorithm, key_length,
-                validity_start, validity_end, validity_length, SAN, domain_matches_san, issuer_id,
-                subject_id, validation_level, redacted, signature_valid, self_signed, download_date,
-                ocsp_stapling, ocsp_must_stapling, authority_info_access_is_critical, authority_info_access,
-                ocsp_check, certificates_emitted_up_to, certificates_up_to_root_count, has_root_certificate, raw
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'No Request Done', ?, ?, ?, ?)
-        """, (
-            parsed.get("serial_number", ""), json_row.get("domain", ""), parsed.get("version", 0),
-            reorder_signature_algorithm(parsed.get("signature_algorithm", {}).get("name", "")),
-            subject_key_info.get("key_algorithm", {}).get("name", ""), key_length,
-            validity.get("start", ""), validity.get("end", ""), validity.get("length", ""),
-            ', '.join(parsed.get("names", [])),
-            handshake_log.get("server_certificates", {}).get("validation", {}).get("matches_domain", False),
-            issuer_id, subject_id, parsed.get("validation_level", ""), parsed.get("redacted", False),
-            self._signature_validity(parsed, digital_certificate), parsed.get("signature", {}).get("self_signed", False),
-            download_date, handshake_log.get("server_hello", {}).get("ocsp_stapling", False),
-            digital_certificate.ocsp_must_staple(),
-            digital_certificate.extension_criticality(ExtensionOID.AUTHORITY_INFORMATION_ACCESS),
-            json.dumps(parsed.get("extensions", {}).get("authority_info_access", {})),
-            certificates_emitted_up_to, certificates_up_to_root_count, has_root_certificate, digital_certificate.raw
-        ))
-        logging.debug("Certificato inserito: %s", parsed.get("serial_number", ""))
+        params = certificate_params(json_row, certificate, parsed, chain, digital_certificate, self.certificate_type,
+                                    issuer_id, subject_id, certificates_emitted_up_to)
+        if self._bind_check is not None:
+            self._cursor.execute(self._bind_check, params)
+        self._cursor.execute(self._certificate_insert, [params[i] for i in self.certificate_kept])
+        logging.debug("Certificate inserted: %s", parsed.get("serial_number", ""))
         return self._cursor.lastrowid
 
-    def _signature_validity(self, parsed: dict, digital_certificate: Certificate) -> str:
-        """Roots are verified against their own key; other types use the zgrab2 result."""
-        if self.certificate_type is DatabaseType.ROOT:
-            return verify_signature(digital_certificate.cert, digital_certificate.cert)
-        return "Valid" if parsed.get("signature", {}).get("valid", False) == 1 else "Not Valid"
-
     def _insert_extensions(self, certificate_id: int, extensions: dict, digital_certificate: Certificate) -> int:
-        # max_path_len has its own column: pop it from a copy to leave the JSON untouched
-        basic_constraints = extensions.get("basic_constraints", {})
-        max_path_length = None
-        if "max_path_len" in basic_constraints:
-            basic_constraints = dict(basic_constraints)
-            max_path_length = basic_constraints.pop("max_path_len")
-
-        self._cursor.execute("""
-            INSERT INTO Extensions (
-                certificate_id, key_usage, key_usage_is_critical, extended_key_usage, extended_key_usage_is_critical,
-                basic_constraints, max_path_length, crl_distribution_points, crl_distr_point_is_critical, crl_revocation_status
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'No Request Done')
-        """, (
-            certificate_id, json.dumps(extensions.get("key_usage", {})),
-            digital_certificate.extension_criticality(ExtensionOID.KEY_USAGE),
-            json.dumps(extensions.get("extended_key_usage", {})),
-            digital_certificate.extension_criticality(ExtensionOID.EXTENDED_KEY_USAGE),
-            json.dumps(basic_constraints), max_path_length, json.dumps(extensions.get("crl_distribution_points", [])),
-            digital_certificate.extension_criticality(ExtensionOID.CRL_DISTRIBUTION_POINTS)
-        ))
+        self._cursor.execute(f"""
+            INSERT INTO Extensions (certificate_id, {', '.join(EXTENSION_COLUMNS)}, crl_revocation_status)
+            VALUES ({_placeholders(9)}, 'No Request Done')
+        """, (certificate_id, *extension_params(extensions, digital_certificate)))
         return self._cursor.lastrowid
 
     def _insert_signed_certificate_timestamps(self, certificate_id: int, extensions: dict) -> None:
@@ -195,12 +252,21 @@ class CertificateDAO:
         row = self._cursor.execute("SELECT id FROM Logs WHERE log_id = ?", (log_id,)).fetchone()
         if row is not None:
             return row[0]
-        return self._insert_log(self._unknown_operator_id(), {"log_id": log_id})
+        return self.insert_unknown_log(log_id)
 
-    def _unknown_operator_id(self) -> int:
+    def insert_unknown_log(self, log_id: str) -> int:
+        """Insert a log missing from the list under the 'unknown' operator and return its row id."""
+        return self._insert_log(self.unknown_operator_id(), {"log_id": log_id})
+
+    def unknown_operator_id(self) -> int:
         """Id of the 'unknown' operator, -1 if missing."""
         row = self._cursor.execute("SELECT id FROM LogsOperators WHERE name = 'unknown' AND email = ''").fetchone()
         return row[0] if row is not None else -1
+
+    def log_row_ids(self) -> dict[str, int]:
+        """Row id of every stored SCT log by log_id."""
+        return {log_id: row_id for log_id, row_id in self._conn.execute("SELECT log_id, id FROM Logs")
+                if isinstance(log_id, str)}
 
     def _insert_log_operator(self, name: str, email: str) -> int:
         self._cursor.execute("INSERT INTO LogsOperators (name, email) VALUES (?, ?)", (name, email))
@@ -229,7 +295,7 @@ class CertificateDAO:
         try:
             return self._conn.execute("SELECT COUNT(certificate_id) FROM Certificates").fetchone()[0]
         except sqlite3.Error as e:
-            logging.error(f"Errore generale durante il conteggio dei certificati: {e}")
+            logging.error(f"Error counting the certificates: {e}")
             return 0
 
     def iter_leaf_domains(self, batch_size: int = 5000) -> Iterator[list[tuple[int, str]]]:

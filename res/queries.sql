@@ -139,7 +139,7 @@ FROM Subjects AS s INNER JOIN Certificates AS c ON s.subject_id = c.subject_id
 LEFT JOIN Extensions AS e ON c.certificate_id = e.certificate_id
 WHERE extended_key_usage IS NOT NULL OR extended_key_usage <> '';
 
--- Conta quanti certificati hanno l'estensione e se è non critical o meno
+-- Count how many certificates have the extension and whether it is critical or not
 SELECT 
     COALESCE(crl_distr_point_is_critical, 'No Extension') AS crl_distr_point_is_critical, 
     COUNT(DISTINCT(subject_key_id)) AS count
@@ -154,42 +154,42 @@ GROUP BY crl_distr_point_is_critical
 
 
 
--- Conta il numero di certificati con serial number duplicato
+-- Count the certificates with a duplicate serial number
 SELECT serial_number, COUNT(DISTINCT(subject_key_id)) AS count
 FROM Certificates AS c INNER JOIN Subjects AS s ON c.subject_id = s.subject_id
 GROUP BY serial_number
 HAVING count > 1
 ORDER BY count DESC;
 
--- Conta il numero di certificati con serial number negativo
+-- Count the certificates with a negative serial number
 SELECT serial_number, COUNT(DISTINCT(subject_key_id)) AS count
 FROM Certificates AS c INNER JOIN Subjects AS s ON c.subject_id = s.subject_id
 GROUP BY serial_number
 ORDER BY serial_number;
 
--- Conta il numero di certificati che hanno un serial number positivo con più di 20 byte
+-- Count the certificates with a positive serial number longer than 20 bytes
 SELECT COUNT(DISTINCT(subject_key_id)) AS count
 FROM Certificates AS c INNER JOIN Subjects AS s ON c.subject_id = s.subject_id
 WHERE serial_number >= 0 AND (LENGTH(printf('%X', serial_number)) / 2) > 20
 GROUP BY serial_number
 ORDER BY count DESC;
 
--- Conta il numero di certificati con il serial number
+-- Count the distinct serial numbers
 SELECT COUNT(DISTINCT(serial_number))
 FROM Certificates
 
--- Distribuzione del numero di certificati intermedi nella catena
+-- Distribution of the number of intermediate certificates in the chain
 SELECT certificates_up_to_root_count, COUNT(DISTINCT(subject_dn)) AS count
 FROM Certificates AS c INNER JOIN Subjects AS s ON c.subject_id = s.subject_id
 GROUP BY certificates_up_to_root_count
 ORDER BY count DESC;
 
--- Distribuzione delle Signature Algorithm tra i certificati 
+-- Distribution of the signature algorithms among the certificates 
 SELECT signature_algorithm, COUNT(DISTINCT(subject_dn)) AS count
 FROM Certificates AS c INNER JOIN Subjects AS s ON c.subject_id = s.subject_id
 GROUP BY signature_algorithm;
 
--- Conta il numero di policy comuni tra tutti i certificati univoci
+-- Count the unique certificates for each policy identifier and validation level
 SELECT policy_identifier, validation_level, COUNT(DISTINCT(s.subject_key_id)) AS count
 FROM Certificates AS cc INNER JOIN Subjects AS s ON cc.subject_id = s.subject_id
 LEFT JOIN Extensions AS e ON cc.certificate_id = e.certificate_id 
@@ -197,14 +197,14 @@ LEFT JOIN CertificatePolicies AS c ON c.extension_id = e.extension_id
 GROUP BY policy_identifier, validation_level
 ORDER BY count DESC;
 
--- Conta il numero di certificati con almeno una policy
+-- Count the certificates with at least one policy
 SELECT COUNT(DISTINCT s.subject_key_id) AS certificates_with_policy
 FROM Certificates AS cc INNER JOIN Subjects AS s ON cc.subject_id = s.subject_id
 LEFT JOIN Extensions AS e ON cc.certificate_id = e.certificate_id
 LEFT JOIN CertificatePolicies AS c ON c.extension_id = e.extension_id
 WHERE c.policy_identifier IS NOT NULL;
 
--- Conta il numero di policy identifier per ogni tipologia di validation come richiesto dal CA/B Forum
+-- Count the policy identifiers for each validation level, as required by the CA/B Forum
 WITH CertificatePoliciesData AS (
     SELECT 
         cc.certificate_id, 
@@ -234,52 +234,52 @@ PolicyCounts AS (
 SELECT 
     validation_level,
     
-    -- Contare i certificati con solo la policy associata al livello di validazione (DV, OV, EV)
+    -- Count the certificates with only the policy of their validation level (DV, OV, EV)
     COUNT(DISTINCT CASE 
         WHEN validation_level = 'DV' AND has_policy_2_23_140_1_2_1 = 1 AND has_other_policy_dv = 0 THEN subject_key_id 
         WHEN validation_level = 'OV' AND has_policy_2_23_140_1_2_2 = 1 AND has_other_policy_ov = 0 THEN subject_key_id 
         WHEN validation_level = 'EV' AND has_policy_2_23_140_1_1 = 1 AND has_other_policy_ev = 0 THEN subject_key_id 
         END) AS count_with_only_own_policy,
     
-	-- Contare i certificati con own policy_identifier e altri policy_identifier
+	-- Count the certificates with their own policy_identifier and other policy_identifiers
     COUNT(DISTINCT CASE  
 		WHEN validation_level = 'DV' AND has_policy_2_23_140_1_2_1 = 1 THEN subject_key_id 
         WHEN validation_level = 'OV' AND has_policy_2_23_140_1_2_2 = 1 THEN subject_key_id 
         WHEN validation_level = 'EV' AND has_policy_2_23_140_1_1 = 1 THEN subject_key_id 
 		END) AS count_with_other_policy,
 
-    -- Contare i certificati senza own policy_identifier ma con altre policy
+    -- Count the certificates without their own policy_identifier but with other policies
     COUNT(DISTINCT CASE 
 		WHEN validation_level = 'DV' AND has_policy_2_23_140_1_2_1 = 0 AND has_other_policy_dv = 1 THEN subject_key_id 
         WHEN validation_level = 'OV' AND has_policy_2_23_140_1_2_2 = 0 AND has_other_policy_ov = 1 THEN subject_key_id 
         WHEN validation_level = 'EV' AND has_policy_2_23_140_1_1 = 0 AND has_other_policy_ev = 1 THEN subject_key_id 
 		END) AS count_without_own_policy,
     	
-	-- Contare i certificati senza alcuna policy
+	-- Count the certificates without any policy
     COUNT(DISTINCT CASE 
         WHEN count_without_any_policy > 0 THEN subject_key_id 
         END) AS count_without_any_policy
 FROM PolicyCounts
 GROUP BY validation_level;
 
--- Conta il numero di issuer con una determinata lunghezza AKI
+-- Count the issuers for each AKI length
 SELECT LENGTH(DISTINCT authority_key_id) AS key_length, COUNT(DISTINCT issuer_key_id) AS key_count
 FROM Issuers
 GROUP BY key_length
 ORDER BY key_length;
 
--- Conta il numero di subjects con una determinata lunghezza SKI
+-- Count the subjects for each SKI length
 SELECT LENGTH(DISTINCT subject_key_id) AS key_length, COUNT(DISTINCT subject_dn) AS key_count
 FROM Subjects
 GROUP BY key_length
 ORDER BY key_length;
 
--- Controsenso tra max_path_length pari a 0 e la presenza di certificati intermedi emessi dal certificato nella catena (CONTROLLARE, SI PUÒ FARE UN GRAFICO).
+-- Contradiction between max_path_length equal to 0 and intermediate certificates issued by the certificate in the chain (TO CHECK, COULD BECOME A CHART).
 SELECT c.certificate_id, e.max_path_length, c.certificates_emitted_up_to, c.has_root_certificate, e.basic_constraints
 FROM Certificates AS c INNER JOIN Extensions AS e ON c.certificate_id = e.certificate_id
 WHERE max_path_length = 0 AND c.certificates_emitted_up_to > 0;
 
--- Indici per la tabella Certificates
+-- Indexes for the Certificates table
 CREATE INDEX IF NOT EXISTS idx_certificates_issuer_id ON Certificates(issuer_id);
 CREATE INDEX IF NOT EXISTS idx_certificates_subject_id ON Certificates(subject_id);
 CREATE INDEX IF NOT EXISTS idx_certificates_version ON Certificates(version);
@@ -288,28 +288,28 @@ CREATE INDEX IF NOT EXISTS idx_certificates_ocsp_check ON Certificates(ocsp_chec
 CREATE INDEX IF NOT EXISTS idx_certificates_signature_valid ON Certificates(signature_valid);
 CREATE INDEX IF NOT EXISTS idx_certificates_self_signed ON Certificates(self_signed);
 
--- Indici per la tabella Issuers
+-- Indexes for the Issuers table
 CREATE INDEX IF NOT EXISTS idx_issuers_common_name ON Issuers(common_name);
 CREATE INDEX IF NOT EXISTS idx_issuers_organization ON Issuers(organization);
 
--- Indici per la tabella Subjects
+-- Indexes for the Subjects table
 CREATE INDEX IF NOT EXISTS idx_subjects_subject_dn ON Subjects(subject_dn);
 CREATE INDEX IF NOT EXISTS idx_subjects_common_name ON Subjects(common_name);
 
--- Indici per la tabella Extensions
+-- Indexes for the Extensions table
 CREATE INDEX IF NOT EXISTS idx_extensions_certificate_id ON Extensions(certificate_id);
 CREATE INDEX IF NOT EXISTS idx_extensions_key_usage ON Extensions(key_usage);
 CREATE INDEX IF NOT EXISTS idx_extensions_extended_key_usage ON Extensions(extended_key_usage);
 
--- Indici per la tabella SignedCertificateTimestamps
+-- Indexes for the SignedCertificateTimestamps table
 CREATE INDEX IF NOT EXISTS idx_signed_cert_timestamps_certificate_id ON SignedCertificateTimestamps(certificate_id);
 CREATE INDEX IF NOT EXISTS idx_signed_cert_timestamps_log_id ON SignedCertificateTimestamps(log_id);
 
--- Indici per la tabella Errors
+-- Indexes for the Errors table
 CREATE INDEX IF NOT EXISTS idx_errors_domain ON Errors(domain);
 CREATE INDEX IF NOT EXISTS idx_errors_status ON Errors(status);
 
--- Indici per la tabella Logs
+-- Indexes for the Logs table
 CREATE INDEX IF NOT EXISTS idx_logs_operator_id ON Logs(operator_id);
 CREATE INDEX IF NOT EXISTS idx_logs_log_id ON Logs(log_id);
 
@@ -329,9 +329,9 @@ WHERE c.ocsp_check = 'No Request Done'
 LIMIT 1000
 
 --------------
--- Query per il plot dei risultati
+-- Queries for the charts of the results
 
--- Conta quanti Issuer hanno emesso un certificato
+-- Count the certificates issued by each issuer
 WITH IssuersCounts AS (
 	SELECT Issuers.organization, COUNT(*) AS certificate_count
 	FROM Certificates 
@@ -354,12 +354,12 @@ SELECT * FROM TopIssuers
 UNION ALL
 SELECT * FROM Others;
 
--- Rinonima DigiCert
+-- Rename DigiCert
 UPDATE Issuers
 SET organization = 'DigiCert Inc'
 WHERE organization = 'DigiCert, Inc.';
 
--- Numero di certificati emessi in diversi paesi
+-- Number of certificates issued in each country
 WITH IssuersCounts AS (
 	SELECT Issuers.country, COUNT(*) AS country_count
 	FROM Issuers
@@ -381,7 +381,7 @@ SELECT * FROM TopCountry
 UNION ALL
 SELECT * FROM Others;
 
--- Mostra la distribuzione della durata di validità rispetto a 365 giorni
+-- Distribution of the validity period in units of 365 days
 SELECT validity_length/31536000, COUNT(DISTINCT(s.subject_key_id)) AS count
 FROM Certificates AS c JOIN Subjects AS s ON c.subject_id = s.subject_id
 WHERE validity_length < 0
@@ -392,19 +392,19 @@ WHERE c.validity_length IS NOT NULL AND validity_length >= 0
 GROUP BY validity_length/31536000
 HAVING count >= 0;
 
--- Conta il numero di certificati che hanno un periodo maggiore di 398 giorni dopo il 2 settembre 2020
+-- Count the certificates with a validity period longer than 398 days issued after September 2, 2020
 SELECT validity_length/34387200, COUNT(DISTINCT(s.subject_key_id)) AS count
 FROM Certificates AS c JOIN Subjects AS s ON c.subject_id = s.subject_id
 WHERE c.validity_length IS NOT NULL AND validity_length >= 0 AND validity_start > '2020-09-01T00:00:00Z'
 GROUP BY validity_length/34387200;
 
--- Conta il numero di certificati che hanno un periodo maggiore di 39 mesi dopo il 1 aprile 2015 e prima del 2 settembre 2020
+-- Count the certificates with a validity period longer than 39 months issued after April 1, 2015 and before September 2, 2020
 SELECT validity_length/101088000, COUNT(DISTINCT(s.subject_key_id)) AS count
 FROM Certificates AS c JOIN Subjects AS s ON c.subject_id = s.subject_id
 WHERE c.validity_length IS NOT NULL AND validity_length >= 0 AND validity_start >= '2015-04-01T00:00:00Z' AND validity_start <= '2020-09-01T00:00:00Z'
 GROUP BY validity_length/101088000;
 
--- Trend di Scadenza dei Certificati
+-- Certificate expiry trend
 SELECT strftime('%Y-%m', validity_end) AS month, COUNT(DISTINCT(subject_key_id)) AS count
 FROM Certificates AS c JOIN Subjects AS s ON c.subject_id = s.subject_id
 WHERE validity_end IS NOT NULL
@@ -412,14 +412,14 @@ GROUP BY month
 HAVING count > 0
 ORDER BY month ASC;
 
--- Algoritmi di Firma Utilizzati
+-- Signature algorithms used
 SELECT signature_algorithm, COUNT(DISTINCT(subject_key_id)) AS sign_algorithm_count
 FROM Certificates AS c INNER JOIN Subjects AS s ON c.subject_id = s.subject_id
 WHERE signature_algorithm IS NOT NULL
 GROUP BY signature_algorithm
 ORDER BY sign_algorithm_count DESC;
 
--- Distribuzione degli Algoritmi di Chiave e Lunghezza
+-- Distribution of the key algorithms and lengths
 SELECT 
     key_algorithm, 
     key_length, 
@@ -436,18 +436,18 @@ ORDER BY
     key_algorithm, 
     key_length;
 	
--- Stato OCSP dei Certificati
+-- OCSP status of the certificates
 SELECT ocsp_check, COUNT(*) AS count
 FROM Certificates
 GROUP BY ocsp_check;
 
--- Estensioni Critiche vs Non Critiche dell'AIA
+-- Critical vs non-critical AIA extensions
 SELECT authority_info_access_is_critical, COUNT(DISTINCT(subject_key_id)) AS count
 FROM Certificates AS c JOIN Subjects AS s ON c.subject_id = s.subject_id
 GROUP BY authority_info_access_is_critical
 ORDER BY count DESC;
 
--- Certificati Auto-Firmati vs CA-Firmati
+-- Self-signed vs CA-signed certificates
 SELECT 
 	CASE 
         WHEN self_signed = 1 THEN 'True' 
@@ -457,23 +457,23 @@ SELECT
 FROM Certificates AS c JOIN Subjects AS s ON c.subject_id = s.subject_id
 GROUP BY self_signed;
 
--- Livelli di Validazione dei Certificati
+-- Validation levels of the certificates
 SELECT validation_level, COUNT(DISTINCT(subject_key_id)) AS count
 FROM Certificates AS c JOIN Subjects AS s ON c.subject_id = s.subject_id
 GROUP BY validation_level;
 
--- Distribuzione delle Versioni dei Certificati
+-- Distribution of the certificate versions
 SELECT version, COUNT(*) AS count
 FROM Certificates
 GROUP BY version;
 
--- Validità delle Firme dei Certificati
+-- Validity of the certificate signatures
 SELECT signature_valid AS is_valid_signature, COUNT(DISTINCT(subject_key_id)) AS count
 FROM Certificates AS c INNER JOIN Subjects AS s ON c.subject_id = s.subject_id
 GROUP BY signature_valid
 ORDER BY count DESC;
 
--- Analisi Status Certificati
+-- Certificate status analysis
 SELECT 'success', COUNT(*) AS count
 FROM Certificates
 UNION ALL
@@ -481,14 +481,14 @@ SELECT status, COUNT(*) AS count
 FROM Errors
 GROUP BY status;
 
--- Utilizzo del Key Usage nelle Estensioni con key algorithm (leaf)
+-- Key usage in the extensions, by key algorithm (leaf)
 SELECT e.key_usage, c.key_algorithm, COUNT(DISTINCT(s.subject_key_id)) AS count
 FROM Extensions AS e JOIN Certificates AS c ON e.certificate_id = c.certificate_id 
 JOIN Subjects AS s ON c.subject_id = s.subject_id
 GROUP BY e.key_usage, c.key_algorithm
 ORDER BY count DESC;
 
--- Utilizzo del Key Usage nelle Estensioni
+-- Key usage in the extensions
 SELECT e.key_usage, COUNT(DISTINCT(s.subject_key_id)) AS count
 FROM Extensions AS e JOIN Certificates AS c ON e.certificate_id = c.certificate_id 
 JOIN Subjects AS s ON c.subject_id = s.subject_id
@@ -500,7 +500,7 @@ ORDER BY count DESC;
 -- GROUP BY e.key_usage
 -- ORDER BY count DESC;
 
--- Estensioni Critiche vs Non Critiche del Key Usage nelle Estensioni
+-- Critical vs non-critical key usage extensions
 SELECT key_usage_is_critical, COUNT(DISTINCT(subject_key_id)) AS count
 FROM Extensions AS e JOIN Certificates AS c ON e.certificate_id = c.certificate_id
 JOIN Subjects AS s ON c.subject_id = s.subject_id
@@ -512,14 +512,14 @@ ORDER BY count DESC;
 -- GROUP BY e.key_usage_is_critical
 -- ORDER BY count DESC;
 
--- Utilizzo dell'Extended Key Usage nelle Estensioni
+-- Extended key usage in the extensions
 SELECT e.extended_key_usage, COUNT(DISTINCT(s.subject_key_id)) AS count
 FROM Certificates AS c INNER JOIN Subjects AS s ON c.subject_id = s.subject_id 
 LEFT JOIN Extensions AS e ON e.certificate_id = c.certificate_id 
 GROUP BY e.extended_key_usage
 ORDER BY count DESC;
 
--- Numero di record che non hanno una EKU
+-- Number of records without an EKU
 SELECT COUNT(DISTINCT(s.subject_key_id)) AS count
 FROM Certificates AS c 
 INNER JOIN Subjects AS s ON c.subject_id = s.subject_id
@@ -531,7 +531,7 @@ WHERE e.certificate_id IS NULL;
 -- GROUP BY e.extended_key_usage
 -- ORDER BY count DESC;
 
--- Estensioni Critiche vs Non Critiche dell'Extended Key Usage nelle Estensioni
+-- Critical vs non-critical extended key usage extensions
 SELECT e.extended_key_usage_is_critical, COUNT(DISTINCT(s.subject_key_id)) AS count
 FROM Extensions AS e JOIN Certificates AS c ON e.certificate_id = c.certificate_id 
 JOIN Subjects AS s ON c.subject_id = s.subject_id
@@ -543,7 +543,7 @@ ORDER BY count DESC;
 -- GROUP BY e.extended_key_usage_is_critical
 -- ORDER BY count DESC;
 
--- Distribuzione del Basic Costraints nelle Estensioni
+-- Distribution of the basic constraints in the extensions
 SELECT e.basic_constraints, COUNT(DISTINCT(s.subject_key_id)) AS count
 FROM Extensions AS e JOIN Certificates AS c ON e.certificate_id = c.certificate_id
 JOIN Subjects AS s ON c.subject_id = s.subject_id
@@ -555,13 +555,13 @@ ORDER BY count DESC;
 -- GROUP BY e.basic_constraints
 -- ORDER BY count DESC;
 
--- Estensioni Critiche vs Non Critiche del CRL distribution nelle Estensioni
+-- Critical vs non-critical CRL distribution point extensions
 SELECT crl_distr_point_is_critical, COUNT(*) AS count
 FROM Extensions
 GROUP BY crl_distr_point_is_critical
 ORDER BY count DESC;
 
--- Trend dei Signed Certificate Timestamps (SCT) per Mese e Anno
+-- Signed Certificate Timestamps (SCT) trend by month and year
 SELECT 
     strftime('%Y-%m', datetime(timestamp, 'unixepoch')) AS month_year, 
     COUNT(*) AS count
@@ -570,7 +570,7 @@ GROUP BY month_year
 HAVING count > 10
 ORDER BY month_year ASC;
 
--- Numero dei Signed Certificate Timestamps (SCT) per Certificato
+-- Number of Signed Certificate Timestamps (SCT) per certificate
 SELECT count_sct, COUNT(*) AS certificate_count
 FROM (
 	SELECT COUNT(s.certificate_id) AS count_sct
@@ -609,7 +609,7 @@ INNER JOIN LogsOperators AS lo ON l.operator_id = lo.id
 GROUP BY lo.name
 ORDER BY count DESC;
 
--- Estensioni Critiche vs Non Critiche delle Subject Alternative Name nelle Subjects
+-- Critical vs non-critical Subject Alternative Name extensions in the Subjects
 SELECT 
     subject_alt_name_is_critical,
     COUNT(DISTINCT CASE WHEN subject_dn IS NULL OR subject_dn = '' THEN subject_key_id END) AS count_null_empty,
@@ -617,7 +617,7 @@ SELECT
 FROM Subjects
 GROUP BY subject_alt_name_is_critical;
 
--- Estensioni Critiche vs Non Critiche del Certificate Policies
+-- Critical vs non-critical Certificate Policies extensions
 SELECT 
     COALESCE(is_cp_critical, 'No CP') AS is_cp_critical, 
     COUNT(DISTINCT(s.subject_key_id)) AS count

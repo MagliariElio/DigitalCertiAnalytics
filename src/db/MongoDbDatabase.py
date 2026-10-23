@@ -34,12 +34,12 @@ class MongoDbDatabase:
             return
         try:
             self.client = MongoClient(self.uri)
-            logging.info(f"Eliminazione dei risultati precedenti presenti nel database MongoDB '{self.db_name}'.")
+            logging.info(f"Dropping the previous results in the MongoDB database '{self.db_name}'.")
             self.client.drop_database(self.db_name)
             self.db = self.client[self.db_name]
-            logging.info(f"Connessione al database '{self.db_name}' stabilita.")
+            logging.info(f"Connected to the database '{self.db_name}'.")
         except Exception as e:
-            logging.error(f"Errore durante la connessione a MongoDB: {e}")
+            logging.error(f"Error connecting to MongoDB: {e}")
             # Reset so a later call can retry instead of keeping an unusable client
             if self.client is not None:
                 self.client.close()
@@ -59,4 +59,4 @@ class MongoDbDatabase:
             return
         self.client.close()
         self.client = None
-        logging.info("Connessione a MongoDB chiusa.")
+        logging.info("MongoDB connection closed.")

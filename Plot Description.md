@@ -1,155 +1,223 @@
-# Query SQL per l'Analisi dei Certificati Digitali
+# Charts and tables of the digital certificate analysis
 
-Questo documento descrive le varie query SQL eseguite per analizzare i certificati digitali e fornisce il tipo di grafico suggerito per visualizzare i risultati.
-
----
-
-## Emissione dei Certificati da Parte degli Issuer
-- **Descrizione**: Conta il numero di certificati emessi da ciascun Issuer.
-- **Grafico Consigliato**: Bar Chart per visualizzare i primi Issuer e un gruppo "Others" per quelli meno rappresentati.
+This document describes the figures and tables generated with `--plot_all_results` (or `--plot_leaf_results`,
+`--plot_intermediate_results`, `--plot_root_results`) in the `src/analysis/<type>/plots/` folder, the SQL query each
+one comes from, the graphic style, and how the statistics are computed.
 
 ---
 
-## Numero di Certificati Emessi in Diversi Paesi
-- **Descrizione**: Conta quanti certificati sono stati emessi per ciascun paese.
-- **Grafico Consigliato**: Bar Chart o Mappa Geografica per visualizzare la distribuzione geografica.
+## Output files
+
+For every chart with data, four files with the same base name are written:
+
+| File | Content |
+|------|---------|
+| `<name>.png` | Raster figure at 300 dpi, 6.3 inches wide (16 cm, the text width of an A4 thesis). |
+| `<name>.pdf` | The same figure in vector format, with embedded fonts, to include in LaTeX. |
+| `<name>.csv` | The plotted data: columns `category`, `count` (in the unit of the chart: unique certificates, occurrences, SCTs or domains, as in the table heading), `share` (percentage of the chart total, decimal point). |
+| `<name>.tex` | LaTeX table (`booktabs` + `siunitx`) with the same data, numbers with comma thousands separators and decimal point, a total row, a caption and the label `\label{tab:<type>-<name>}`. |
+
+The folder also gets `captions.tex`, with a ready `figure` environment for every generated figure (`\includegraphics`
+of the PDF, caption, label `\label{fig:<type>-<name>}`). The labels contain the certificate type (`leaf`,
+`intermediate`, `root`) because the three analyses produce figures with the same names. For the same reason the figures
+are referenced with the path of their folder, through one macro per type:
+`\includegraphics{\plotsfolderleaf/issuer_certificates_count.pdf}`, with `\plotsfolderleaf` (and
+`\plotsfolderintermediate`, `\plotsfolderroot`) defined by default as `leaf/plots`, the last two folders of the output
+path. It is then enough to add the folder that contains them to `\graphicspath` (for example
+`\graphicspath{{../src/analysis/}}`); to move the figures elsewhere, define the macro before `\input`, for example
+`\newcommand{\plotsfolderleaf}{figures/leaf}`. With bare file names LaTeX would use the first figure found along
+`\graphicspath`, even one of another certificate type.
+
+The required packages are named at the top of the files: `graphicx` for the figures, `booktabs` and `siunitx` for the
+tables (set up with `group-separator = {,}` and `output-decimal-marker = {.}`). The captions are computed from the data
+(total N, thresholds, period, shares): they contain no hand-written values, and singular and plural follow the values
+("at least 1 certificate", "1 certificate exceeds it", "of the only issuer", "N = 1 occurrence"). The table captions do
+not describe the drawing: they mention no colours, columns of the UpSet diagram or curves. The signature algorithm
+table has a "Status" column (`recommended` or `deprecated`) instead of the red colour, and in the UpSet table the least
+frequent combinations are aggregated in the last row.
+
+If a query returns no data, the chart is not generated and the log shows the warning
+"No data available for chart ...". An error in one chart does not stop the generation of the others.
 
 ---
 
-## Distribuzione della Durata di Validità
-- **Descrizione**: Mostra la distribuzione delle durate di validità dei certificati.
-- **Grafico Consigliato**: Histogram per rappresentare la distribuzione della durata.
+## Figure style ("classic academic")
+
+- STIX serif font (shipped with matplotlib), 9.5 pt; no title inside the figure: the message goes in the LaTeX caption.
+  The exceptions are the narrative figures, which have a title computed from the data (on two lines when it is wider
+  than the figure).
+- One accent colour, dark blue `#1d3f6e`, for the main categories (those that together reach half of the total); grey
+  `#b8b8b8` for the others; light grey for the aggregated "Others" entry; dark red `#7a1f1f` for the negative
+  categories: deprecated signature algorithms (SHA-1, MD5), OCSP status "Revoked", signature "Not Valid" or "Error",
+  negative validity durations or durations beyond the limit.
+- Axes without top and right spines. Horizontal bars sorted by value (ordinal categories, such as versions and
+  durations, keep their order), each labelled "count (share)": `4,245,727 (45.0%)`, `< 0.01%` for the smallest shares.
+- Automatic log scale when the values span more than three orders of magnitude, so the rare categories stay visible;
+  axis in millions when the values exceed one million.
+- No pie charts: shares are compared on bars.
+- Line charts (expirations and SCTs) in the same style, with month labels (`Jan 2025`) or only the years for long
+  periods. The queries return only the months above the threshold of the certificate type: the line is broken at the
+  omitted months, instead of joining two distant months with a segment, and an isolated month is shown as a dot.
+- Labels in English; technical names stay unchanged (RSA-SHA256, digitalSignature, ...).
 
 ---
 
-## Trend di Scadenza dei Certificati
-- **Descrizione**: Rappresenta il numero di certificati che scadranno nel tempo.
-- **Grafico Consigliato**: Line Chart per visualizzare il trend delle scadenze dei certificati.
+## Figures for every certificate type (leaf, intermediate, root)
+
+| File | Query (`StatisticsDAO`) | Figure |
+|------|-------------------------|--------|
+| `issuer_certificates_count` | `get_issuer_certificate_count` | Certificate occurrences per issuer organization: the first 20 issuers and the others aggregated in "Other issuers". |
+| `issuer_concentration` | `get_issuer_distribution` | **Narrative.** Concentration curve: cumulative share of the occurrences of the first 20 issuers, with the Herfindahl-Hirschman index computed over all the issuers (low concentration below 1,000, moderate up to 1,800, high above). The title gives how many issuers cover half of the occurrences. |
+| `certificate_version_distribution` | `get_certificate_version_distribution` | X.509 version (v1, v2, v3). |
+| `count_critical_non_critical_extensions` | `get_count_critical_non_critical_extensions` | Criticality of the Authority Information Access extension (Critical, Not Critical, Not Found, Error). |
+| `certificates_per_country` | `get_certificates_per_country` | Certificate occurrences per issuer country (ISO 3166 code): the first 5 countries (4 for intermediate certificates) and the others aggregated. |
+| `certificate_expiration_trend` | `get_certificate_expiration_trend` | Certificates expiring per month (only the months above the threshold of the certificate type; the line is broken at the omitted months). |
+| `validity_duration_distribution` | `get_validity_duration_distribution` | Validity duration in whole years; negative durations are grouped apart. |
+| `validity_days_distribution` | `get_validity_days_distribution` | Validity duration in days, in classes aligned with the CA/Browser Forum limits: ≤ 90, 91–200, 201–398, 399–825, 826 days – 5 years, > 5 years, negative duration. |
+| `signature_algorithm_distribution` | `get_signature_algorithm_distribution` | Signature algorithms; in red those with a deprecated hash (SHA-1, MD5, MD2), marked `deprecated` in the "Status" column of the table. |
+| `signature_family_share` | `get_signature_algorithm_distribution` | **Narrative.** Signature algorithm families (RSA, ECDSA, EdDSA, DSA): the title gives the ECDSA share and the note below the figure the number of certificates still signed with SHA-1 or MD5. |
+| `key_algorithm_length_distribution` | `get_key_algorithm_length_distribution` | Algorithm and length in bits of the public key (e.g. "RSA 2048", "ECDSA 256"). |
+| `key_usage_distribution` | `get_key_usage_distribution` | **UpSet diagram** of the Key Usage combinations: the bars give the certificates of each combination, the dot matrix the flags it contains. The 10 most frequent combinations are shown; the others are aggregated in the last column. |
+| `critical_vs_non_critical_key_usage` | `get_critical_vs_non_critical_key_usage` | Criticality of the Key Usage extension. |
+| `extended_key_usage_distribution` | `get_extended_key_usage_distribution` | **UpSet diagram** of the Extended Key Usage combinations, as for Key Usage. |
+| `critical_vs_non_critical_extended_key_usage` | `get_critical_vs_non_critical_extended_key_usage` | Criticality of the Extended Key Usage extension. |
+| `critical_vs_non_critical_san_extensions` | `get_critical_vs_non_critical_san_extensions` | Criticality of the Subject Alternative Name extension. |
+| `critical_vs_non_critical_cp_policies` | `get_critical_vs_non_critical_cp_policies` | Criticality of the Certificate Policies extension. |
+| `validation_level_distribution` | `get_validation_level_distribution` | Validation level (DV, OV, EV). |
+| `basic_constraints_distribution` | `get_basic_constraints_distribution` | Values of the Basic Constraints extension (e.g. "cA = TRUE, max_path_len = 0"). |
+| `critical_vs_non_critical_crl_distribution` | `get_critical_vs_non_critical_crl_distribution` | Criticality of the CRL Distribution Points extension. |
+| `ocsp_status_distribution` | `get_ocsp_status_distribution` | Outcome of the OCSP check of the certificate occurrences; "Revoked" in red. |
+
+## Figures for leaf certificates only
+
+| File | Query (`StatisticsDAO`) | Figure |
+|------|-------------------------|--------|
+| `validity_beyond_398_days` | `get_validity_days_distribution` | **Narrative.** Share of certificates per duration class, in red the classes beyond the 398-day limit of the CA/Browser Forum Baseline Requirements; the title gives the share that exceeds it; the note with the number of certificates is placed above the side with the lower bars and covers no bar or label. |
+| `status_analysis` | `get_status_analysis` | Outcome of the TLS scan of the domains: successful handshakes and error types. |
+| `self_signed_vs_ca_signed` | `get_self_signed_vs_ca_signed` | Self-signed and CA-signed certificates. |
+| `top_sct_logs` | `get_top_sct_logs` | Certificate Transparency logs used by more than 12,000 certificates. |
+| `top_sct_log_operators` | `get_top_sct_log_operators` | Signed Certificate Timestamps (SCTs) per log operator. |
+| `sct_trend` | `get_signed_certificate_timestamp_trend` | SCTs per month (only the months with more than 20 SCTs; the line is broken at the omitted months). |
+| `sct_count_per_certificate` | `get_sct_count_per_certificate` | Number of SCTs per certificate occurrence. |
+
+## Figures for leaf and root certificates
+
+| File | Query (`StatisticsDAO`) | Figure |
+|------|-------------------------|--------|
+| `signature_validity_distribution` | `get_signature_validity_distribution` | Signature validity; "Not Valid" and "Error" in red. |
 
 ---
 
-## Algoritmi di Firma Utilizzati
-- **Descrizione**: Mostra la distribuzione degli algoritmi di firma utilizzati.
-- **Grafico Consigliato**: Bar Chart per confrontare i diversi algoritmi di firma.
+## Counting the certificates
+
+The figures count two different quantities, named in the captions:
+
+- **Unique certificates**, in most figures: two rows with the same Subject Key Identifier count once; certificates
+  without a Subject Key Identifier (e.g. v1) are told apart by the certificate itself.
+- **Occurrences**: the database rows, that is every certificate counted once for every scanned domain that presented
+  it. `issuer_certificates_count`, `issuer_concentration` (Herfindahl-Hirschman index included),
+  `certificates_per_country`, `ocsp_status_distribution` and `sct_count_per_certificate` count these. For intermediate
+  and root certificates, which repeat a few thousand certificates in millions of chains, the occurrences can be
+  thousands of times more than the unique certificates: the captions call them "occurrences", not "certificates".
+
+`status_analysis` (scanned domains), `top_sct_log_operators` and `sct_trend` (SCTs) count other quantities;
+`top_sct_logs` counts the unique certificates of each log. The display thresholds (issuers and countries shown,
+minimum months and durations) depend on the certificate type and are given in the captions.
 
 ---
 
-## Distribuzione degli Algoritmi di Chiave e Lunghezza
-- **Descrizione**: Visualizza la combinazione di key_algorithm e key_length utilizzati nei certificati.
-- **Grafico Consigliato**: Stacked Bar Chart o Multi-Bar Chart per confrontare la combinazione di algoritmi di chiave e lunghezza.
+## Execution
 
----
+The plot stage of each certificate type has three steps:
 
-## Stato OCSP dei Certificati
-- **Descrizione**: Mostra la distribuzione degli stati OCSP come "Good", "Revoked", ecc.
-- **Grafico Consigliato**: Pie Chart o Bar Chart per visualizzare la distribuzione degli stati OCSP.
+1. **Indexes** (`Database.prepare_for_plots`): two indexes, `idx_certificates_issuer_id` and
+   `idx_issuers_organization`, built in one transaction with a 16 MiB page cache and 4 sorter threads. The statistics
+   read the tables sequentially and need no index: these two only fix the plan, and so the order of issuers with equal
+   counts, of the `get_issuer_certificate_count` query, which the computed statistics reproduce
+   (`idx_issuers_organization` also serves the correction). Databases of earlier versions keep the indexes they have.
+2. **Correction**: issuers stored as `DigiCert, Inc.` become `DigiCert Inc`.
+3. **Statistics and charts.** The statistics of every chart are computed from one parallel read of each table
+   (`StatisticsDAO.materialize`):
+   - five scans (`Certificates` joined to `Subjects`, `Extensions`, `CertificatePolicies`, `SignedCertificateTimestamps`
+     joined to `Logs`, `Issuers`) are split into rowid ranges of about half a second each and run in the render
+     processes (one per CPU), on read-only connections with a 4 MiB page cache. The `Errors` count runs as one more
+     task;
+   - each row is reduced to integer codes of its values, computed in SQL with the same expressions as the queries;
+   - the main process counts the unique certificates exactly, with numpy: the certificate identity (Subject Key
+     Identifier, or the raw certificate when it has none) is compared through its SQLite type and a 128-bit BLAKE2b
+     digest (collision probability about 1e-25 for 6.5 million certificates);
+   - the final grouping, filtering and ordering of each statistic run in SQLite, on small temporary tables, with the
+     SQL of the per-query path: values, order and key types are identical to those of the queries.
 
----
+   The charts are then drawn in the render processes from these data. The log reports "Computing the statistics (one
+   read per table)...", "Statistics computed in ... s." and, for every figure, "Generating chart ..." and its outcome
+   in the order of the tables above, whatever the order in which the drawings finish.
 
-## Certificati Auto-Firmati vs CA-Firmati
-- **Descrizione**: Rappresenta la proporzione di certificati auto-firmati rispetto a quelli firmati da una CA.
-- **Grafico Consigliato**: Pie Chart per confrontare le proporzioni.
+If the statistics cannot be computed this way, the stage falls back to the per-query path, with the same results: each
+`get_*` query runs in a render process on its own read-only connection (64 MiB page cache, memory-mapped reads, at most
+four queries at the same time), followed by its charts. This happens with in-memory databases and connections with
+uncommitted changes (queried in the main process), databases of earlier versions whose `Certificates` table lost its
+PRIMARY KEY, or any error during the scans, for example a render process that dies (warning "Statistics not
+materialized ..."). A statistic that a database cannot give (the `signature_valid` column of intermediate databases,
+the `Errors` table missing in intermediate and root databases) always runs its own query, which logs the same error as
+before.
 
----
+The render processes are reused for leaf, intermediate and root and closed with `shutdown_render_pool()` after the plot
+stage, so they do not stay alive during the following stages. If they are not available, or one of them ends
+abnormally, the remaining charts are generated in sequence in the main process. With Ctrl+C the processes are stopped
+at once, also during the scans (exit code 130, no message from their start-up); if the main process is killed (for
+example with `kill -9`), the render processes exit on their own as soon as it is gone.
 
-## Livelli di Validazione dei Certificati
-- **Descrizione**: Mostra la distribuzione dei diversi validation_level dei certificati.
-- **Grafico Consigliato**: Bar Chart per rappresentare i diversi livelli di validazione.
+### Time and memory
 
----
+Measured on a machine with 12 CPUs, 24 GiB of memory and an SSD (Python 3.12, load 2-3, database file already in the
+file cache), for the whole `--plot_<type>_results` stage on a copy of a database made from the 100k-domain dataset
+repeated 30 times ("30x"). Time: total (indexes / correction / statistics / charts). Peak: physical memory summed over
+the main process and its 12 render processes.
 
-## Estensioni Critiche vs Non Critiche dell'AIA
-- **Descrizione**: Conta il numero di certificati che hanno implementato estensioni critiche rispetto a quelle non critiche dell'AIA.
-- **Grafico Consigliato**: Bar Chart per visualizzare il numero di certificati in ciascuna categoria (critici vs non critici).
+| Database (30x) | Rows | File before indexes | Time | Peak | Largest process |
+|---|---|---|---|---|---|
+| leaf | 1,960,290 certificates | 6.6 GB | 8.0 s (0.7 / 2.5 / 3.8 / 0.6) | 2.15 GiB | 0.66 GiB (main) |
+| intermediate | 1,960,290 rows of 18 certificates | 4.6 GB | 4.3 s (0.65 / 1.4 / 1.5 / 0.4) | 1.56 GiB | 0.30 GiB |
+| root | 886,740 rows of 6 certificates | 1.8 GB | 2.4 s (0.4 / 0.25 / 1.0 / 0.4) | 1.34 GiB | 0.22 GiB |
 
----
+Three runs of the leaf stage took 7.7-9.1 s, with peaks of 2.15-2.26 GiB (the slowest had a 1.6 s index phase).
 
-## Distribuzione delle Versioni dei Certificati
-- **Descrizione**: Mostra la distribuzione delle versioni dei certificati (es. v1, v2, v3).
-- **Grafico Consigliato**: Pie Chart o Bar Chart per visualizzare la distribuzione delle versioni.
+The same leaf stage took 123 s with the previous version (23 indexes in 21 s, statistics queries 93 s; peak 4.8 GiB,
+largest process 2.4 GiB) and 163-604 s with the original code. With the leaf database repeated 60 times (3.9 million
+certificates) the stage took 33.4 s with a 3.06 GiB peak (measured with a 256 MiB index cache). Every statistic is identical to the per-query path on all
+these databases, order and key types included.
 
----
+For the real leaf database, with 6.5 million certificates (a 27 GB file, larger than the file cache), these are
+estimates, not measurements: indexes 20-60 s (one scan of `Issuers` and one of `Certificates`, against 248 s for the
+23 indexes of the previous version), correction 20-60 s depending on the share of issuers to correct, statistics
+15-40 s (one parallel read of about 22 GB), charts about 1 s: in total about 1-4 minutes, against 73 minutes measured
+for the previous version.
 
-## Validità delle Firme dei Certificati
-- **Descrizione**: Rappresenta la proporzione di firme valide rispetto a quelle non valide.
-- **Grafico Consigliato**: Pie Chart per visualizzare la validità delle firme.
+Memory:
+- The main process holds the codes of every row while it aggregates them: about 0.4 GB plus 0.18 GB per million
+  certificates, about 1.6-1.8 GB at 6.5 million. It grows linearly with the rows and does not depend on the number of
+  render processes.
+- Each render process uses 0.1-0.25 GiB (Python, matplotlib, the rows of the scan in progress). There is one per CPU,
+  so the total grows with the CPU count: on the 12-CPU target machine the estimated peak at 6.5 million certificates is
+  3.5-4 GiB (measured: 2.26 GiB at 30x, 3.06 GiB at 60x).
+- The index build stays within its 16 MiB page cache (main process 0.67 GiB at 30x, against 1.09 GiB with 256 MiB).
 
----
+On the per-query path the temporary tables of DISTINCT and GROUP BY are kept in memory only if the database file is at
+most one eighth of the physical memory (3 GiB on a 24 GiB machine); above that they are written to temporary files and
+every process stays below about 330 MiB, whatever the size of the database. In memory each query uses up to 11% of the
+file and the process keeps that memory until it ends: the worst case of about 12 × (11% of 3 GiB + 150 MiB) ≈ 5.8 GiB
+assumes 12 render processes and grows with the CPU count. On this path the leaf stage at 30x took 100-208 s with
+temporary files and 71-75 s in memory (the longer times under heavy load).
 
-## Analisi Status Certificati
-- **Descrizione**: Mostra il numero di Success dei certificati e la frequenza dei diversi tipi di errori nei certificati.
-- **Grafico Consigliato**: Bar Chart per mostrare la distribuzione degli errori.
+### Temporary disk space
 
----
-
-## Utilizzo del Key Usage nelle Estensioni
-- **Descrizione**: Mostra quali key_usage sono più comunemente utilizzati nei certificati.
-- **Grafico Consigliato**: Bar Chart per visualizzare l'uso delle chiavi.
-
----
-
-## Estensioni Critiche vs Non Critiche del Key Usage nelle Estensioni
-- **Descrizione**: Mostra la proporzione di key_usage critici rispetto a quelli non critici.
-- **Grafico Consigliato**: Pie Chart o Bar Chart per confrontare estensioni critiche e non critiche.
-
----
-
-## Utilizzo dell'Extended Key Usage nelle Estensioni
-- **Descrizione**: Visualizza quali extended_key_usage sono più comuni nei certificati.
-- **Grafico Consigliato**: Bar Chart per mostrare l'uso delle chiavi estese.
-
----
-
-## Estensioni Critiche vs Non Critiche dell'Extended Key Usage nelle Estensioni
-- **Descrizione**: Mostra la proporzione di extended_key_usage critici rispetto a quelli non critici.
-- **Grafico Consigliato**: Pie Chart o Bar Chart per confrontare estensioni critiche e non critiche.
-
----
-
-## Distribuzione del Basic Constraints nelle Estensioni
-- **Descrizione**: Mostra la distribuzione dei Basic Constraints nei certificati.
-- **Grafico Consigliato**: Bar Chart per rappresentare i vari Basic Constraints.
-
----
-
-## Estensioni Critiche vs Non Critiche del CRL Distribution
-- **Descrizione**: Mostra la proporzione di estensioni CRL critical vs non critical.
-- **Grafico Consigliato**: Pie Chart o Bar Chart per visualizzare la differenza.
-
----
-
-## Trend dei Signed Certificate Timestamps (SCT) per Mese e Anno
-- **Descrizione**: Mostra la distribuzione temporale per mese e anno dei Signed Certificate Timestamps.
-- **Grafico Consigliato**: Line Chart per rappresentare il trend dei Signed Certificate Timestamps.
-
----
-
-## Numero dei Signed Certificate Timestamps (SCT) per Certificato
-- **Descrizione**: Conta quanti certificati hanno 1 SCT, 2 SCT, e così via.
-- **Grafico Consigliato**: Bar Chart per visualizzare la distribuzione del numero di SCT.
-
----
-
-## Top SCT Logs
-- **Descrizione**: Mostra quali log di SCT sono stati usati più spesso.
-- **Grafico Consigliato**: Bar Chart per rappresentare i principali Log di SCT.
-
----
-
-## Top SCT Log Operators
-- **Descrizione**: Conta i log di SCT per ogni operatore, mostrando quelli più utilizzati.
-- **Grafico Consigliato**: Bar Chart per rappresentare i principali operatori di log.
-
----
-
-## Estensioni Critiche vs Non Critiche delle Subject Alternative Name
-- **Descrizione**: Mostra la proporzione di estensioni critiche vs non critiche nelle Subject Alternative Name.
-- **Grafico Consigliato**: Pie Chart per visualizzare la proporzione di estensioni critiche.
-
----
-
-## Estensioni Critiche vs Non Critiche del Certificate Policies
-- **Descrizione**: Mostra la proporzione di certificate policies critici rispetto a quelli non critici.
-- **Grafico Consigliato**: Pie Chart o Bar Chart per confrontare estensioni critiche e non critiche.
-
----
+- The statistics write no temporary files: the scans keep their rows in memory and the final temporary tables hold a
+  few rows.
+- The two indexes take 66 MiB at 30x (about 220 MB at 6.5 million certificates); their sort uses temporary files of at
+  most about that size in the system temporary folder (`SQLITE_TMPDIR` or `TMPDIR`).
+- The correction writes a rollback journal next to the database with the original content of the pages it changes:
+  1.8 GB at 30x, with 3% of the issuer rows to correct, about 6 GB at 6.5 million certificates with the same share. It is
+  the largest transient use and is removed at the end of the correction.
+- Only on the per-query path, the temporary files of the queries need up to about 11% of the database file for each of
+  the four queries in progress, about 10 GB for the real database.

@@ -24,7 +24,7 @@ def test_walk_chain_follows_issuers_and_stops_at_root():
     steps = list(walk_chain(chain, LEAF))
     assert [found for found, _ in steps] == [I1, I2, ROOT]
     assert steps[0][1] == [ROOT, I2]
-    assert chain == [ROOT, I2, I1], "la catena originale non deve essere modificata"
+    assert chain == [ROOT, I2, I1], "the original chain must not be modified"
 
 
 def test_duplicate_serial_numbers_do_not_break_the_walk():

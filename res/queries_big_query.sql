@@ -21,12 +21,12 @@ WHERE origin LIKE '%it%'  -- Italy
    OR origin LIKE '%se%'  -- Sweden
    OR origin LIKE '%pl%'  -- Poland
    OR origin LIKE '%be%'  -- Belgium
-   OR origin LIKE '%gr%'  -- Grece
+   OR origin LIKE '%gr%'  -- Greece
    OR origin LIKE '%cz%'  -- Czech Republic
    OR origin LIKE '%pt%'  -- Portugal
    OR origin LIKE '%fi%'  -- Finland
    OR origin LIKE '%ro%'  -- Romania
-   OR origin LIKE '%dk%'  -- Denmak
+   OR origin LIKE '%dk%'  -- Denmark
    OR origin LIKE '%ie%'  -- Ireland
    OR origin LIKE '%at%'  -- Austria
    OR origin LIKE '%hu%'  -- Hungary
@@ -37,7 +37,7 @@ WHERE origin LIKE '%it%'  -- Italy
    OR origin LIKE '%lv%'  -- Latvia
    OR origin LIKE '%lt%'  -- Lithuania
    OR origin LIKE '%mt%'  -- Malta
-   OR origin LIKE '%cy%'  -- Cipro
+   OR origin LIKE '%cy%'  -- Cyprus
    OR origin LIKE '%is%'  -- Iceland
    OR origin LIKE '%no%'  -- Norway
    OR origin LIKE '%ch%'  -- Switzerland

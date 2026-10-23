@@ -6,9 +6,9 @@ import csv
 import json
 import logging
 import os
-from contextlib import asynccontextmanager
+from contextlib import aclosing, asynccontextmanager, contextmanager, suppress
 from itertools import islice
-from typing import Iterable, Iterator
+from typing import AsyncIterator, Iterable, Iterator, NamedTuple
 from urllib.parse import quote, urljoin
 
 import aiohttp
@@ -24,17 +24,31 @@ from bean.certificate import Certificate
 from db.database import CERTIFICATE_ID_INDEX_SQL, Database, DatabaseType
 from utils.utils import progress_bar
 
+try:
+    import resource
+except ImportError:     # Windows
+    resource = None
+
 # Admin: Anuar Elio Magliari
 # Politecnico di Torino
 
-# Without this cap, tens of thousands of connections would open at once, exhausting file descriptors
-# and producing false "Impossible Retrieve OCSP Information" results
+# Certificates checked at once (one connection each), lowered when the open files limit is too small:
+# without a cap, tens of thousands of connections would exhaust file descriptors and produce false
+# "Impossible Retrieve OCSP Information" results
 OCSP_MAX_CONCURRENT_REQUESTS = 200
+# Idle keep-alive connections kept for reuse: they hold file descriptors too
+OCSP_MAX_IDLE_CONNECTIONS = 1000
+# Soft RLIMIT_NOFILE requested for the analysis (capped by the hard limit)
+OCSP_OPEN_FILES_TARGET = 4096
+# File descriptors left to SQLite, the CSV and log files and the event loop
+RESERVED_FILE_DESCRIPTORS = 64
 
 HTTP_REQUEST_TIMEOUT = aiohttp.ClientTimeout(total=20)
+KEEPALIVE_TIMEOUT = 15
+DNS_CACHE_TTL = 300
 
-# Rows per DB page, per CSV executemany and per backup fetchmany
-OCSP_BATCH_SIZE = 50000
+# Rows per DB page (the next page is fetched while the current one is checked), per CSV executemany and per backup fetchmany
+OCSP_BATCH_SIZE = 10000
 CSV_IMPORT_BATCH_SIZE = 50000
 BACKUP_FETCH_SIZE = 10000
 
@@ -120,7 +134,94 @@ UPDATE_FROM_TEMP = """
 """
 
 
-# ---------------------------------------------------------------- OCSP requests
+# ---------------------------------------------------------------- connections
+
+def _raise_open_files_limit() -> tuple[int | None, tuple[int, int] | None]:
+    """Raise the soft RLIMIT_NOFILE towards OCSP_OPEN_FILES_TARGET.
+
+    Return the soft limit now in force (None if unknown or unlimited) and the limits to restore (None if unchanged).
+    """
+    if resource is None:
+        return None, None
+    soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+    if soft == resource.RLIM_INFINITY:
+        return None, None
+    target = OCSP_OPEN_FILES_TARGET if hard == resource.RLIM_INFINITY else min(hard, OCSP_OPEN_FILES_TARGET)
+    if soft >= target:
+        return soft, None
+    try:
+        resource.setrlimit(resource.RLIMIT_NOFILE, (target, hard))
+    except (ValueError, OSError) as e:
+        logging.debug(f"Could not raise the open files limit from {soft} to {target}: {e}")
+        return soft, None
+    return target, (soft, hard)
+
+
+@contextmanager
+def _open_files_limit() -> Iterator[int | None]:
+    """Raise the open files limit while the block runs; yield it (None if unknown or unlimited)."""
+    limit, previous = _raise_open_files_limit()
+    try:
+        yield limit
+    finally:
+        if previous is not None:
+            with suppress(ValueError, OSError):
+                resource.setrlimit(resource.RLIMIT_NOFILE, previous)
+
+
+def _connection_limits(open_files: int | None) -> tuple[int, int]:
+    """Concurrent checks (at most half of the descriptors available) and idle connections that fit in the open files limit."""
+    if open_files is None:
+        return OCSP_MAX_CONCURRENT_REQUESTS, OCSP_MAX_IDLE_CONNECTIONS
+    budget = max(open_files - RESERVED_FILE_DESCRIPTORS, 2)
+    concurrency = max(1, min(OCSP_MAX_CONCURRENT_REQUESTS, budget // 2))
+    return concurrency, max(1, min(OCSP_MAX_IDLE_CONNECTIONS, budget - concurrency))
+
+
+class _BoundedIdleConnector(aiohttp.TCPConnector):
+    """Keep-alive connector that closes released connections instead of pooling them once max_idle are idle.
+
+    aiohttp bounds only the connections in use; idle ones (one pool per host) are closed after the keep-alive timeout.
+    """
+
+    def __init__(self, max_idle: int, **kwargs):
+        super().__init__(**kwargs)
+        self._max_idle = max_idle
+        # Upper bound of the idle connections: only _release adds them, so the host pools are counted
+        # again only when the bound reaches max_idle, not on every release
+        self._idle_bound = 0
+
+    def idle_connections(self) -> int:
+        # aiohttp pools idle connections in _conns: {key: [(protocol, release time), ...]}
+        return sum(map(len, getattr(self, "_conns", {}).values()))
+
+    def _release(self, key, protocol, *args, should_close: bool = False, **kwargs) -> None:
+        if not should_close and self._idle_bound >= self._max_idle:
+            self._idle_bound = self.idle_connections()
+            should_close = self._idle_bound >= self._max_idle
+        if not should_close:
+            self._idle_bound += 1
+        super()._release(key, protocol, *args, should_close=should_close, **kwargs)
+
+
+def _create_session(concurrency: int, max_idle: int) -> aiohttp.ClientSession:
+    """HTTP session with keep-alive, DNS cache and at most `concurrency` connections in use."""
+    connector = _BoundedIdleConnector(max_idle, limit=concurrency, keepalive_timeout=KEEPALIVE_TIMEOUT,
+                                      ttl_dns_cache=DNS_CACHE_TTL)
+    return aiohttp.ClientSession(connector=connector, timeout=HTTP_REQUEST_TIMEOUT)
+
+
+# ---------------------------------------------------------------- issuer certificates
+
+class _Download(NamedTuple):
+    """Issuer download outcome: what to parse (DER_OR_PEM, PEM, PKCS7 or UNKNOWN with the content type) or what to log."""
+    kind: str | None
+    payload: bytes | str | None = None
+    error: str | None = None
+
+
+DER_OR_PEM, PEM, PKCS7, UNKNOWN = "der_or_pem", "pem", "pkcs7", "unknown"
+
 
 def _load_der_or_pem(content: bytes) -> x509.Certificate:
     if content.startswith(PEM_HEADER):
@@ -138,42 +239,87 @@ def _select_from_pkcs7(content: bytes, issuer_common_name: str, issuer_url: str)
             issuer_cert = cert
 
     if issuer_cert is None:
-        logging.error(f"Errore certificato non trovato durante il parsing del PKCS #7 ({issuer_url})")
+        logging.error(f"Issuer certificate not found in the PKCS #7 bundle ({issuer_url})")
     return issuer_cert
 
 
-async def _parse_issuer_response(response: aiohttp.ClientResponse, issuer_url: str,
-                                 issuer_common_name: str) -> x509.Certificate | None:
-    """Parse the issuer certificate according to its Content-Type (DER/PEM/PKCS #7)."""
+async def _read_issuer_response(response: aiohttp.ClientResponse) -> _Download:
+    """Read the body according to its Content-Type (DER/PEM/PKCS #7)."""
     content_type = response.headers.get("Content-Type", "")
     if content_type == "" or any(t in content_type for t in DER_CONTENT_TYPES):
-        return _load_der_or_pem(await response.read())
+        return _Download(DER_OR_PEM, await response.read())
     if any(t in content_type for t in PEM_CONTENT_TYPES):
-        return x509.load_pem_x509_certificate((await response.text()).encode("utf-8"))
+        return _Download(PEM, (await response.text()).encode("utf-8"))
     if any(t in content_type for t in PKCS7_CONTENT_TYPES):
-        return _select_from_pkcs7(await response.read(), issuer_common_name, issuer_url)
-
-    logging.error(f"Formato del certificato sconosciuto ({issuer_url}): {content_type}")
-    return None
+        return _Download(PKCS7, await response.read())
+    return _Download(UNKNOWN, content_type)
 
 
-async def _download_issuer_certificate(issuer_url: str, issuer_common_name: str,
-                                       session: aiohttp.ClientSession) -> x509.Certificate | None:
-    """Download the issuer certificate from the AIA URL, None on error."""
+async def _download_issuer(issuer_url: str, session: aiohttp.ClientSession) -> _Download:
+    """Download the issuer certificate from the AIA URL; on failure kind is None."""
     try:
         async with session.get(issuer_url, headers=ISSUER_REQUEST_HEADERS) as response:
             if response.status != 200:
-                logging.error(f"Errore nel recupero del certificato ({issuer_url}). Stato: {response.status}")
-                return None
-            return await _parse_issuer_response(response, issuer_url, issuer_common_name)
+                return _Download(None, error=f"Error retrieving the certificate ({issuer_url}): HTTP status {response.status}")
+            return await _read_issuer_response(response)
     except asyncio.TimeoutError:
-        return None
+        return _Download(None)
     except aiohttp.ClientError as e:
-        logging.error(f"Errore HTTP nel recupero del certificato ({issuer_url}): {e}")
+        return _Download(None, error=f"HTTP error retrieving the certificate ({issuer_url}): {e}")
     except Exception as e:
-        logging.error(f"Errore nel recupero o nel parsing del certificato ({issuer_url}): {e}")
+        return _Download(None, error=f"Error retrieving or parsing the certificate ({issuer_url}): {e}")
+
+
+def _parse_issuer(download: _Download, issuer_url: str, issuer_common_name: str) -> x509.Certificate | None:
+    """Parse a downloaded issuer certificate, logging errors as for each download."""
+    try:
+        if download.kind == DER_OR_PEM:
+            return _load_der_or_pem(download.payload)
+        if download.kind == PEM:
+            return x509.load_pem_x509_certificate(download.payload)
+        if download.kind == PKCS7:
+            return _select_from_pkcs7(download.payload, issuer_common_name, issuer_url)
+        logging.error(f"Unknown certificate format ({issuer_url}): {download.payload}")
+    except Exception as e:
+        logging.error(f"Error retrieving or parsing the certificate ({issuer_url}): {e}")
     return None
 
+
+class _IssuerDownloads:
+    """Issuer certificates downloaded from the AIA URLs, once per URL.
+
+    Only successful downloads are cached; concurrent requests for the same URL share one download.
+    Every row parses the payload and logs failures as if it had downloaded it.
+    """
+
+    def __init__(self, session: aiohttp.ClientSession):
+        self._session = session
+        self._downloads: dict[str, asyncio.Future[_Download]] = {}
+
+    async def get(self, issuer_url: str, issuer_common_name: str) -> x509.Certificate | None:
+        """The issuer certificate at issuer_url, None (already logged) on error."""
+        future = self._downloads.get(issuer_url)
+        if future is None:
+            future = self._downloads[issuer_url] = asyncio.ensure_future(_download_issuer(issuer_url, self._session))
+        # shield: a cancelled row must not cancel the download shared with other rows
+        download = await asyncio.shield(future)
+        if download.kind is None:
+            if self._downloads.get(issuer_url) is future:
+                del self._downloads[issuer_url]
+            if download.error:
+                logging.error(download.error)
+            return None
+        return _parse_issuer(download, issuer_url, issuer_common_name)
+
+    async def aclose(self) -> None:
+        """Cancel the downloads still running."""
+        pending = [future for future in self._downloads.values() if not future.done()]
+        for future in pending:
+            future.cancel()
+        await asyncio.gather(*pending, return_exceptions=True)
+
+
+# ---------------------------------------------------------------- OCSP requests
 
 def _ocsp_response_status(content: bytes) -> str:
     """Map a DER OCSP response to the certificate status."""
@@ -199,13 +345,13 @@ async def _ocsp_query(certificate: x509.Certificate, issuer: x509.Certificate, a
             content = await response.read()
         return _ocsp_response_status(content)
     except (asyncio.TimeoutError, aiohttp.ClientError) as e:
-        logging.debug(f"Errore di rete durante la richiesta OCSP per {url}: {e}")
+        logging.debug(f"Network error during the OCSP request to {url}: {e}")
         return None
     except ValueError as e:
         # Invalid OCSP response: retry with another hash algorithm or URL
-        logging.debug(f"Risposta OCSP non valida per {url}: {e}")
+        logging.debug(f"Invalid OCSP response from {url}: {e}")
     except Exception as e:
-        logging.error(f"Errore durante la richiesta OCSP per {url}: {e}")
+        logging.error(f"Error during the OCSP request to {url}: {e}")
     return IMPOSSIBLE_RETRIEVE
 
 
@@ -222,48 +368,72 @@ async def _query_ocsp_urls(certificate: x509.Certificate, issuer: x509.Certifica
     return IMPOSSIBLE_RETRIEVE
 
 
-async def _certificate_ocsp_status(row: tuple, certificate_type: DatabaseType, session: aiohttp.ClientSession) -> str:
-    """Return the OCSP status of a certificate from its database row."""
-    _, authority_info_access, issuer_common_name, issuer_raw, raw, _ = row
-    aia = json.loads(authority_info_access)
-    issuer_url = next(iter(aia.get("issuer_urls", [])), None)
-    ocsp_urls = aia.get("ocsp_urls", [])
+class _OcspChecker:
+    """OCSP status of database rows through one HTTP session and shared issuer downloads."""
 
-    # A root is its own issuer
-    is_root = certificate_type == DatabaseType.ROOT
-    issuer = Certificate.load(raw if is_root else issuer_raw)
+    def __init__(self, session: aiohttp.ClientSession, certificate_type: DatabaseType):
+        self._session = session
+        self._is_root = certificate_type == DatabaseType.ROOT
+        self.issuer_downloads = _IssuerDownloads(session)
 
-    if issuer_url is None and issuer is None:
-        return "No Issuer Url Found"
-    if len(ocsp_urls) == 0:
-        return "No OCSP Url Found"
+    async def status(self, row: tuple) -> str:
+        """Return the OCSP status of a certificate from its database row."""
+        _, authority_info_access, issuer_common_name, issuer_raw, raw, _ = row
+        aia = json.loads(authority_info_access)
+        issuer_url = next(iter(aia.get("issuer_urls", [])), None)
+        ocsp_urls = aia.get("ocsp_urls", [])
 
-    certificate = issuer if is_root else Certificate.load(raw)
-    if certificate is None:
-        logging.error("Impossibile eseguire la richiesta OCSP: il certificato non è presente")
-        return IMPOSSIBLE_RETRIEVE
+        # A root is its own issuer
+        issuer = Certificate.load(raw if self._is_root else issuer_raw)
 
-    # Download a missing issuer certificate once for all URLs and algorithms
-    if issuer is None:
-        issuer = await _download_issuer_certificate(issuer_url, issuer_common_name, session)
-        if issuer is None:
+        if issuer_url is None and issuer is None:
+            return "No Issuer Url Found"
+        if len(ocsp_urls) == 0:
+            return "No OCSP Url Found"
+
+        certificate = issuer if self._is_root else Certificate.load(raw)
+        if certificate is None:
+            logging.error("Cannot send the OCSP request: the certificate is missing")
             return IMPOSSIBLE_RETRIEVE
 
-    return await _query_ocsp_urls(certificate, issuer, ocsp_urls, session)
+        # Missing issuer certificate: downloaded once per URL for all rows, URLs and algorithms
+        if issuer is None:
+            issuer = await self.issuer_downloads.get(issuer_url, issuer_common_name)
+            if issuer is None:
+                return IMPOSSIBLE_RETRIEVE
 
+        return await _query_ocsp_urls(certificate, issuer, ocsp_urls, self._session)
 
-async def _check_certificate(row: tuple, certificate_type: DatabaseType,
-                             session: aiohttp.ClientSession) -> tuple[str, int, str]:
-    """Return the CSV row (status, certificate_id, leaf_domain) for a certificate."""
-    try:
-        status = await _certificate_ocsp_status(row, certificate_type, session)
-    except Exception as e:
-        logging.debug(f"Errore durante il controllo OCSP del certificato ID {row[0]}: {e}")
-        status = IMPOSSIBLE_RETRIEVE
-    return status, row[0], row[-1]
+    async def check(self, row: tuple) -> tuple[str, int, str]:
+        """Return the CSV row (status, certificate_id, leaf_domain) for a certificate."""
+        try:
+            status = await self.status(row)
+        except Exception as e:
+            logging.debug(f"Error during the OCSP check of certificate ID {row[0]}: {e}")
+            status = IMPOSSIBLE_RETRIEVE
+        return status, row[0], row[-1]
 
 
 # ---------------------------------------------------------------- database and CSV files
+
+@asynccontextmanager
+async def _connect(db_path: str | os.PathLike) -> AsyncIterator[aiosqlite.Connection]:
+    """aiosqlite connection whose worker thread also stops when the connect is cancelled (Ctrl+C)."""
+    db = aiosqlite.connect(db_path)
+    try:
+        await db
+    except BaseException as e:
+        # aiosqlite 0.20 (a Thread) stops its thread only on Exception, and the interpreter would wait for it at exit.
+        # Private API of that version; later versions stop the thread themselves
+        if not isinstance(e, Exception) and hasattr(db, "_stop_running"):
+            db._stop_running()
+            db.join()   # The connect takes milliseconds; it must end while the event loop is open
+        raise
+    try:
+        yield db
+    finally:
+        await db.close()
+
 
 @asynccontextmanager
 async def _bulk_update_mode(db: aiosqlite.Connection):
@@ -283,7 +453,7 @@ def _valid_rows(reader: Iterable[list[str]], path: str) -> Iterator[tuple[int, s
     for row in reader:
         # E.g. a truncated last row if the program was interrupted while writing
         if len(row) < 3 or not row[1].isdigit():
-            logging.warning(f"Riga non valida ignorata nel file '{path}': {row}")
+            logging.warning(f"Skipped invalid row in file '{path}': {row}")
             continue
         yield int(row[1]), row[0], row[2]
 
@@ -297,7 +467,7 @@ def _batched(iterable: Iterable, size: int) -> Iterator[list]:
 
 async def _import_csv(db: aiosqlite.Connection, path: str, is_backup: bool) -> None:
     """Apply the OCSP results of a CSV file to the database, then delete it unless it is the backup."""
-    logging.info(f"Inizio aggiornamento dei dati dal file {'di backup' if is_backup else 'temporaneo'} al database.")
+    logging.info(f"Updating the database from the {'backup' if is_backup else 'temporary'} file.")
 
     with open(path, mode="r", newline="") as csv_file:
         reader = csv.reader(csv_file)
@@ -328,18 +498,37 @@ async def _import_csv(db: aiosqlite.Connection, path: str, is_backup: bool) -> N
 async def _save_backup(db: aiosqlite.Connection, backup_file: str) -> None:
     """Atomically rewrite the backup CSV with the OCSP results stored in the database."""
     temp_file = f"{backup_file}.tmp"
-    with open(temp_file, mode="w", newline="") as csv_file:
-        writer = csv.writer(csv_file)
-        writer.writerow(OCSP_BACKUP_HEADER)
-        async with db.execute(SELECT_CHECKED) as cursor:
-            while rows := await cursor.fetchmany(BACKUP_FETCH_SIZE):
-                writer.writerows(rows)
-    os.replace(temp_file, backup_file)
+    try:
+        with open(temp_file, mode="w", newline="") as csv_file:
+            writer = csv.writer(csv_file)
+            writer.writerow(OCSP_BACKUP_HEADER)
+            async with db.execute(SELECT_CHECKED) as cursor:
+                while rows := await cursor.fetchmany(BACKUP_FETCH_SIZE):
+                    writer.writerows(rows)
+        os.replace(temp_file, backup_file)
+    except BaseException:
+        # Interrupted or failed: the previous backup stays as it was
+        with suppress(OSError):
+            os.remove(temp_file)
+        raise
 
 
 async def _fetch_pending(db: aiosqlite.Connection, last_certificate_id: int) -> list[tuple]:
     async with db.execute(SELECT_PENDING, (last_certificate_id, OCSP_BATCH_SIZE)) as cursor:
         return await cursor.fetchall()
+
+
+async def _pending_rows(db: aiosqlite.Connection) -> AsyncIterator[tuple]:
+    """Yield the pending rows page by page, fetching the next page while the current one is checked."""
+    next_page = asyncio.ensure_future(_fetch_pending(db, 0))
+    try:
+        while rows := await next_page:
+            next_page = asyncio.ensure_future(_fetch_pending(db, rows[-1][0]))
+            for row in rows:
+                yield row
+    finally:
+        next_page.cancel()
+        await asyncio.gather(next_page, return_exceptions=True)
 
 
 async def _count_pending(db: aiosqlite.Connection) -> int:
@@ -359,67 +548,99 @@ async def _mark_unverifiable(db: aiosqlite.Connection, certificate_type: Databas
 # ---------------------------------------------------------------- OCSP analysis
 
 async def _check_pending_certificates(db: aiosqlite.Connection, certificate_type: DatabaseType, writer, pbar) -> None:
-    """Check pending certificates (at most OCSP_MAX_CONCURRENT_REQUESTS at once), writing each result when ready."""
-    semaphore = asyncio.Semaphore(OCSP_MAX_CONCURRENT_REQUESTS)
-    tasks: set[asyncio.Task] = set()
-    failures: list[BaseException] = []
+    """Check pending certificates (a bounded number at once), writing each result when ready."""
+    with _open_files_limit() as open_files:
+        concurrency, max_idle = _connection_limits(open_files)
+        logging.debug(f"Concurrent OCSP checks: {concurrency}, idle connections kept: {max_idle}.")
+        async with _create_session(concurrency, max_idle) as session:
+            checker = _OcspChecker(session, certificate_type)
+            try:
+                await _run_checks(_pending_rows(db), checker, concurrency, writer, pbar)
+            finally:
+                await checker.issuer_downloads.aclose()
 
-    async def check_and_write(row: tuple, session: aiohttp.ClientSession) -> None:
+
+class _CheckTasks:
+    """Checks in flight, at most `concurrency`, each writing its result; the first failure is kept and re-raised."""
+
+    def __init__(self, checker: _OcspChecker, concurrency: int, writer, pbar):
+        self._checker, self._writer, self._pbar = checker, writer, pbar
+        self._slots = asyncio.Semaphore(concurrency)
+        self._tasks: set[asyncio.Task] = set()
+        self._failures: list[BaseException] = []
+
+    def _raise_failure(self) -> None:
+        if self._failures:
+            raise self._failures[0]
+
+    async def start(self, row: tuple) -> None:
+        """Start checking the row once a slot is free; raise the first failure instead."""
+        # Bounds in-flight checks without waiting for the whole page
+        await self._slots.acquire()
+        self._raise_failure()
+        task = asyncio.create_task(self._check_and_write(row))
+        self._tasks.add(task)
+        task.add_done_callback(self._on_done)
+
+    async def _check_and_write(self, row: tuple) -> None:
         try:
             # Written immediately so an interruption doesn't lose completed checks
-            writer.writerow(await _check_certificate(row, certificate_type, session))
-            pbar.update(1)
+            self._writer.writerow(await self._checker.check(row))
+            self._pbar.update(1)
+        except Exception as e:
+            # Recorded before the slot is released, so the dispatcher stops at once
+            self._failures.append(e)
+            raise
         finally:
-            semaphore.release()
+            self._slots.release()
 
-    def on_done(task: asyncio.Task) -> None:
-        tasks.discard(task)
-        if not task.cancelled() and task.exception() is not None:
-            failures.append(task.exception())
+    def _on_done(self, task: asyncio.Task) -> None:
+        self._tasks.discard(task)
+        if not task.cancelled():
+            task.exception()    # Marks the exception as retrieved: it is already in _failures
 
-    # force_close: idle keep-alive connections don't count towards the limit and could exhaust file descriptors
-    connector = aiohttp.TCPConnector(limit=OCSP_MAX_CONCURRENT_REQUESTS, force_close=True)
-    async with aiohttp.ClientSession(connector=connector, timeout=HTTP_REQUEST_TIMEOUT) as session:
-        try:
-            last_certificate_id = 0
-            while rows := await _fetch_pending(db, last_certificate_id):
-                for row in rows:
-                    # Bounds in-flight checks without waiting for the whole page
-                    await semaphore.acquire()
-                    if failures:
-                        raise failures[0]
-                    task = asyncio.create_task(check_and_write(row, session))
-                    tasks.add(task)
-                    task.add_done_callback(on_done)
-                last_certificate_id = rows[-1][0]
-            await asyncio.gather(*tasks)
-            if failures:
-                raise failures[0]
-        finally:
-            # On error or interruption, cancel the checks still running
-            for task in tasks:
-                task.cancel()
-            await asyncio.gather(*tasks, return_exceptions=True)
+    async def wait(self) -> None:
+        """Wait for the checks in flight; raise the first failure."""
+        await asyncio.gather(*self._tasks)
+        self._raise_failure()
+
+    async def cancel(self) -> None:
+        """Cancel the checks still running."""
+        for task in self._tasks:
+            task.cancel()
+        await asyncio.gather(*self._tasks, return_exceptions=True)
+
+
+async def _run_checks(rows: AsyncIterator[tuple], checker: _OcspChecker, concurrency: int, writer, pbar) -> None:
+    """Check the rows with at most `concurrency` checks in flight; the first failure stops everything."""
+    tasks = _CheckTasks(checker, concurrency, writer, pbar)
+    try:
+        async with aclosing(rows):
+            async for row in rows:
+                await tasks.start(row)
+        await tasks.wait()
+    finally:
+        # On error or interruption, cancel the checks still running
+        await tasks.cancel()
 
 
 async def _check_certificates(db: aiosqlite.Connection, certificate_type: DatabaseType, writer) -> None:
     """Check the OCSP status of 'No Request Done' certificates, writing results to the temp file."""
-    logging.info(f"Inizio del controllo OCSP per i certificati. Tipo di certificati: '{certificate_type.name}', "
-                 f"Batch Size: {OCSP_BATCH_SIZE}.")
+    logging.info(f"Starting the OCSP check of '{certificate_type.name}' certificates (batch size: {OCSP_BATCH_SIZE}).")
     try:
         await _mark_unverifiable(db, certificate_type)
 
-        logging.info("Conteggio del numero di certificati da elaborare...")
+        logging.info("Counting the certificates to check...")
         total = await _count_pending(db)
         if total == 0:
-            logging.info("Nessun certificato da analizzare è presente nel database.")
+            logging.info("No certificates to check in the database.")
             return
 
-        with progress_bar(total, " 🕵️‍♂️  [blue bold]Elaborazione Certificati[/blue bold]", "blue") as pbar:
+        with progress_bar(total, " 🕵️‍♂️  [blue bold]Processing Certificates[/blue bold]", "blue") as pbar:
             await _check_pending_certificates(db, certificate_type, writer, pbar)
     except Exception as e:
         # Results already in the temp file are still imported by the caller
-        logging.error(f"Errore generale durante il controllo dello stato OCSP: {e}")
+        logging.error(f"Error during the OCSP status check: {e}")
 
 
 async def run_ocsp_analysis(database: Database, output_dir: str | os.PathLike) -> None:
@@ -430,7 +651,7 @@ async def run_ocsp_analysis(database: Database, output_dir: str | os.PathLike) -
         # Secondary indexes only slow down the updates
         database.drop_secondary_indexes()
 
-        async with aiosqlite.connect(database.db_path) as db:
+        async with _connect(database.db_path) as db:
             # Backup of completed runs first, then the results of an interrupted run
             if os.path.exists(backup_file):
                 await _import_csv(db, backup_file, is_backup=True)
@@ -442,10 +663,10 @@ async def run_ocsp_analysis(database: Database, output_dir: str | os.PathLike) -
             await _import_csv(db, temp_file, is_backup=False)
 
             await _save_backup(db, backup_file)
-            logging.info(f"Salvataggio dei dati dello stato OCSP come backup eseguito con successo: 'file://{backup_file}'")
-        logging.info("Analisi OCSP per i certificati completata.")
+            logging.info(f"OCSP status backup saved: 'file://{backup_file}'")
+        logging.info("OCSP analysis of the certificates completed.")
     except asyncio.CancelledError:
-        logging.info("Elaborazione della richiesta di controllo OCSP cancellata.")
+        logging.info("OCSP check cancelled.")
         raise
     except Exception as e:
-        logging.error(f"Errore nell'elaborazione della richiesta di controllo OCSP: {e}")
+        logging.error(f"Error while processing the OCSP check: {e}")

@@ -12,7 +12,7 @@ from itertools import islice
 # Admin: Anuar Elio Magliari
 # Politecnico di Torino
 
-# Standalone script, run from the repository root: python src/scan/scan_collezione_certificati.py [command]
+# Standalone script, run from the repository root: python src/scan/scan_certificate_collection.py [command]
 SCAN_DIR = "src/scan"
 DEFAULT_INPUT_FILE = "res/certs_polito.json"
 SEPARATOR = "------------------------------------------------------------------\n"
@@ -25,11 +25,11 @@ ERROR_ROW_TLS_KEYS = ("status", "protocol", "timestamp", "error")
 
 # (root reached, has an intermediate) -> description, in output order; None = empty chain
 CHAIN_CATEGORIES = {
-    (True, True): "hanno almeno un intermediate e un root nella catena",
-    (True, False): "hanno un root ma nessun intermediate nella catena",
-    (False, True): "hanno un intermediate ma nessun root nella catena",
-    (False, False): "non hanno nè un intermediate e nè un root nella catena",
-    None: "non hanno una catena",
+    (True, True): "have at least one intermediate and one root in the chain",
+    (True, False): "have a root but no intermediate in the chain",
+    (False, True): "have an intermediate but no root in the chain",
+    (False, False): "have neither an intermediate nor a root in the chain",
+    None: "have no chain",
 }
 
 
@@ -48,7 +48,7 @@ class JsonRows:
                 try:
                     yield line_num, json.loads(row)
                 except json.JSONDecodeError:
-                    print(f"Errore nel parsing della riga: {row}")
+                    print(f"Error parsing line: {row}")
 
 
 def _tls(json_row: dict) -> dict:
@@ -108,22 +108,22 @@ def count_status(input_file: str) -> None:
 
     print("Status: ", status_dict)
     print("Sum of all values: ", status_count)
-    print("Total Number of values: ", rows.line_count)
-    print("Number of rows excluded from the computation: ", rows.line_count - status_count)
+    print("Total number of lines: ", rows.line_count)
+    print("Number of lines excluded from the count: ", rows.line_count - status_count)
 
 
 def create_dir(out_dir: str, rm_dir: bool = True) -> bool:
     """Create out_dir (removing it first if rm_dir); return True on success."""
     if rm_dir and os.path.exists(out_dir):
         shutil.rmtree(out_dir)
-        print(f"Directory esistente rimossa: {out_dir}")
+        print(f"Removed existing directory: {out_dir}")
 
     try:
         os.makedirs(out_dir)
     except OSError as e:
-        print(f"Errore durante la creazione della directory: {e}")
+        print(f"Error creating the directory: {e}")
         return False
-    print(f"Directory creata: {out_dir}")
+    print(f"Created directory: {out_dir}")
     return True
 
 
@@ -147,19 +147,21 @@ def save_an_example_status(file: str) -> None:
                 break
 
 
-def controlla_struttura(json_data: dict) -> bool:
+def check_structure(json_data: dict) -> bool:
     """Check that the row has 'domain' and all ERROR_ROW_TLS_KEYS."""
     data = json_data.get("data", {})
     return 'domain' in json_data and 'tls' in data and all(key in data['tls'] for key in ERROR_ROW_TLS_KEYS)
 
 
 def check_error_rows(input_file: str) -> None:
-    """Check that every non-success row has the same structure."""
+    """Check that every non-success line has the same structure, printing those that do not."""
+    different = False
     for _, json_data in JsonRows(input_file):
-        if _status(json_data) != "success" and not controlla_struttura(json_data):
+        if _status(json_data) != "success" and not check_structure(json_data):
             print(json_data)
+            different = True
 
-    print("Ogni riga di errore ha la stessa struttura")
+    print("Some error lines have a different structure" if different else "Every error line has the same structure")
 
 
 def download_json_domain(input_file: str, domain: str | None, line_num: int | None) -> None:
@@ -170,19 +172,19 @@ def download_json_domain(input_file: str, domain: str | None, line_num: int | No
     for line_number, json_data in JsonRows(input_file, last_line=line_num):
         domain_data = json_data.get("domain", "")
         if domain_data == domain:
-            print(f"Dominio trovato alla riga {line_number} del file.")
+            print(f"Domain found at line {line_number} of the file.")
             break
         if line_number == line_num:
-            print(f"Dominio {domain_data} trovato alla riga {line_number} del file.")
+            print(f"Domain {domain_data} found at line {line_number} of the file.")
             break
     else:
-        print("Dominio non trovato")
+        print("Domain not found")
         return
 
     # When searching by line number, the domain comes from the matched row
     file_domain = os.path.join(SCAN_DIR, f"{json_data.get('domain', domain)}.json")
     _dump_json(file_domain, json_data)
-    print(f"File creato con successo: {file_domain}")
+    print(f"File created successfully: {file_domain}")
 
 
 def check_chain_certificates(input_file: str) -> None:
@@ -191,9 +193,9 @@ def check_chain_certificates(input_file: str) -> None:
                if not server_certificates.get("chain", [])]
 
     if not domains:
-        print("Ogni dominio ha almeno un certificato nella catena")
+        print("Every domain has at least one certificate in its chain")
     else:
-        print("Ci sono dei domini che non hanno una catena")
+        print("Some domains have no chain")
         print(domains)
 
 
@@ -205,13 +207,14 @@ def count_root_cert_chain(input_file: str) -> None:
         count_leaf_self_signed += _is_self_signed(server_certificates.get("certificate", {}))
         count_self_signed = sum(map(_is_self_signed, server_certificates.get("chain", [])))
         if count_self_signed > 1:
-            domains_report.append(f"{SEPARATOR}Il dominio {json_row.get('domain', '')} ha esattamente "
-                                  f"{count_self_signed} self signed.\n"
-                                  f"Certificato presente alla riga numero {line_num} dell'input file.\n")
+            domains_report.append(f"{SEPARATOR}The domain {json_row.get('domain', '')} has exactly "
+                                  f"{count_self_signed} self-signed certificates.\n"
+                                  f"Domain found at line {line_num} of the input file.\n")
 
     with open(os.path.join(SCAN_DIR, "count_root_certs_chain.log"), 'w') as writer:
-        writer.write(f"Numero totale di certificati che hanno certificati self signed nella catena: {len(domains_report)}\n")
-        writer.write(f"Numero totale di certificati leaf che sono self signed: {count_leaf_self_signed}\n\n")
+        writer.write("Total number of domains with more than one self-signed certificate in the chain: "
+                     f"{len(domains_report)}\n")
+        writer.write(f"Total number of self-signed leaf certificates: {count_leaf_self_signed}\n\n")
         writer.writelines(domains_report)
         writer.write(SEPARATOR)
 
@@ -231,8 +234,8 @@ def count_certs_chain(input_file: str) -> None:
 
     with open(os.path.join(SCAN_DIR, "count_certs_chain.log"), 'w') as writer:
         for category, description in CHAIN_CATEGORIES.items():
-            writer.write(f"Numero totale di certificati che {description}: {counts[category]}\n")
-        writer.write(f"Totale (deve corrispondere al numero di success): {sum(counts.values())}\n")
+            writer.write(f"Total number of domains whose certificates {description}: {counts[category]}\n")
+        writer.write(f"Total (must match the number of successes): {sum(counts.values())}\n")
 
 
 def check_sct_intermediate_certs_chain(input_file: str) -> None:
@@ -240,7 +243,7 @@ def check_sct_intermediate_certs_chain(input_file: str) -> None:
     for line_num, _, server_certificates in _successful_rows(input_file):
         if any(cert.get("parsed", {}).get("extensions", {}).get("signed_certificate_timestamps", [])
                for cert in _walk_chain(server_certificates)):
-            print(f"Esiste un certificato intermedio con un SCT alla riga {line_num}")
+            print(f"Found an intermediate certificate with an SCT at line {line_num}")
             return
 
 
@@ -252,22 +255,22 @@ DEFAULT_COMMANDS = ("count_root_cert_chain", "count_certs_chain")
 
 
 def main(argv: list[str] | None = None) -> None:
-    """Run the requested analysis on the Zgrab2 JSON file (DEFAULT_COMMANDS if none given)."""
-    parser = argparse.ArgumentParser(description="Analisi esplorative del file JSON prodotto da Zgrab2 "
-                                                 "(da eseguire dalla root del repository).")
-    parser.add_argument("command", nargs="?", choices=COMMANDS, metavar="comando",
-                        help=f"Analisi da eseguire, una tra: {', '.join(COMMANDS)} "
-                             f"(default: {' e '.join(DEFAULT_COMMANDS)}).")
+    """Run the requested analysis on the ZGrab2 JSON file (DEFAULT_COMMANDS if none given)."""
+    parser = argparse.ArgumentParser(description="Exploratory analyses of the JSON file produced by ZGrab2 "
+                                                 "(run from the repository root).")
+    parser.add_argument("command", nargs="?", choices=COMMANDS, metavar="command",
+                        help=f"Analysis to run, one of: {', '.join(COMMANDS)} "
+                             f"(default: {' and '.join(DEFAULT_COMMANDS)}).")
     parser.add_argument("--input", default=DEFAULT_INPUT_FILE,
-                        help="File JSON di Zgrab2 da analizzare (default: %(default)s).")
-    parser.add_argument("--domain", help="Dominio da salvare con download_json_domain (es. canada.ca).")
-    parser.add_argument("--line", type=int, help="Numero di riga da salvare con download_json_domain (es. 9718401).")
+                        help="ZGrab2 JSON file to analyse (default: %(default)s).")
+    parser.add_argument("--domain", help="Domain to save with download_json_domain (e.g. canada.ca).")
+    parser.add_argument("--line", type=int, help="Line number to save with download_json_domain (e.g. 9718401).")
     args = parser.parse_args(argv)
     input_file = os.path.abspath(args.input)
 
     if args.command == "download_json_domain":
         if args.domain is None and args.line is None:
-            parser.error("download_json_domain richiede --domain oppure --line.")
+            parser.error("download_json_domain requires --domain or --line.")
         download_json_domain(input_file, args.domain, args.line)
         return
 

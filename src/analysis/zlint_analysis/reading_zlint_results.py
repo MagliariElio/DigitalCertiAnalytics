@@ -82,25 +82,25 @@ def write_certificates_summary(certificates: Counter, path: str = "certificates_
 
 def main(argv: list[str] | None = None) -> int:
     """Read ZLint results from MongoDB and write the three summary CSVs to the current directory."""
-    parser = argparse.ArgumentParser(description="Genera i CSV di riepilogo dei risultati ZLint salvati in MongoDB.")
+    parser = argparse.ArgumentParser(description="Write the summary CSVs of the ZLint results stored in MongoDB.")
     parser.add_argument("db_name", nargs="?", default=DEFAULT_DB_NAME,
-                        help=f"Nome del database MongoDB da leggere (default: {DEFAULT_DB_NAME}).")
+                        help=f"Name of the MongoDB database to read (default: {DEFAULT_DB_NAME}).")
     db_name = parser.parse_args(argv).db_name
 
     with MongoClient(MONGO_URI) as client:
         collection = client[db_name]['zlint_results']
         if collection.estimated_document_count() == 0:
-            print(f"Nessun risultato ZLint trovato nel database '{db_name}' "
-                  f"(database disponibili: {client.list_database_names()}).")
+            print(f"No ZLint results found in the database '{db_name}' "
+                  f"(available databases: {client.list_database_names()}).")
             return 1
         occurrences, certificates = collect_statistics(collection)
 
     write_field_ranking(occurrences)
-    print("The results by field have been written in 'zlint_results.csv'.")
+    print("The results by field have been written to 'zlint_results.csv'.")
     write_issuer_ranking(occurrences)
-    print("The issuer ranking by type has been written in 'issuer_ranking_by_result.csv'")
+    print("The issuer ranking by result has been written to 'issuer_ranking_by_result.csv'.")
     write_certificates_summary(certificates)
-    print("The certificate summary has been written in 'certificates_result_summary.csv'.")
+    print("The certificate summary has been written to 'certificates_result_summary.csv'.")
     return 0
 
 
