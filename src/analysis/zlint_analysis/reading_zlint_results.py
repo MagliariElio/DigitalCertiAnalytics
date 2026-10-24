@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import logging
 import sys
 from collections import Counter, defaultdict
 from collections.abc import Iterable
@@ -15,11 +16,13 @@ from pymongo.collection import Collection
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))    # src/, to share the database names
 from db.MongoDbDatabase import ZLINT_DB_NAMES  # noqa: E402
 from db.database import DatabaseType  # noqa: E402
+from db.mongo_server import (DEFAULT_URI, MongoServerError, app_name, ensure_mongodb,  # noqa: E402
+                             stop_signals_as_ctrl_c)
 
 # Admin: Anuar Elio Magliari
 # Politecnico di Torino
 
-MONGO_URI = 'mongodb://localhost:27017/'
+MONGO_URI = DEFAULT_URI
 DEFAULT_DB_NAME = ZLINT_DB_NAMES[DatabaseType.LEAF]
 PROJECTION = {'_id': 0, 'issuer_dn': 1, 'zlint_results': 1}
 
@@ -80,20 +83,42 @@ def write_certificates_summary(certificates: Counter, path: str = "certificates_
         writer.writerows(_by_descending_count(certificates.items()))
 
 
+def _read_statistics(db_name: str) -> tuple[Counter, Counter] | None:
+    """The statistics of the database's ZLint results; None, after saying why, if there are none."""
+    try:
+        # Starts the MongoDB server included with the project when no server is running
+        server = ensure_mongodb(MONGO_URI)
+    except MongoServerError as e:
+        print(e, file=sys.stderr)
+        return None
+    try:
+        with MongoClient(MONGO_URI, appname=app_name()) as client:
+            collection = client[db_name]['zlint_results']
+            if collection.estimated_document_count() == 0:
+                print(f"No ZLint results found in the database '{db_name}' "
+                      f"(available databases: {client.list_database_names()}).")
+                return None
+            return collect_statistics(collection)
+    finally:
+        if server is not None:
+            server.release()
+
+
 def main(argv: list[str] | None = None) -> int:
     """Read ZLint results from MongoDB and write the three summary CSVs to the current directory."""
     parser = argparse.ArgumentParser(description="Write the summary CSVs of the ZLint results stored in MongoDB.")
     parser.add_argument("db_name", nargs="?", default=DEFAULT_DB_NAME,
                         help=f"Name of the MongoDB database to read (default: {DEFAULT_DB_NAME}).")
     db_name = parser.parse_args(argv).db_name
+    # Shows when the MongoDB server included with the project is started and stopped
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
 
-    with MongoClient(MONGO_URI) as client:
-        collection = client[db_name]['zlint_results']
-        if collection.estimated_document_count() == 0:
-            print(f"No ZLint results found in the database '{db_name}' "
-                  f"(available databases: {client.list_database_names()}).")
-            return 1
-        occurrences, certificates = collect_statistics(collection)
+    # Closing the terminal window meanwhile works like Ctrl+C: the bundled server is still stopped cleanly
+    with stop_signals_as_ctrl_c():
+        statistics = _read_statistics(db_name)
+    if statistics is None:
+        return 1
+    occurrences, certificates = statistics
 
     write_field_ranking(occurrences)
     print("The results by field have been written to 'zlint_results.csv'.")

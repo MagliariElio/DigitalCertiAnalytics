@@ -1,0 +1,41 @@
+#!/bin/sh
+# Starts DigitalCertiAnalytics with the project's own Python, from any folder.
+#
+#   ./dca --help                show all the options (also when started without options)
+#   ./dca --leaf_analysis       analyse the leaf certificates of res/certs_polito.json
+#   ./dca --plot_all_results    create the charts
+#
+# Install the project first with install.sh.
+
+# The project folder, following symbolic links to this file (e.g. a link in ~/bin)
+self=$0
+while [ -L "$self" ]; do
+    link=$(readlink "$self")
+    case "$link" in
+        /*) self=$link ;;
+        *) self=$(dirname "$self")/$link ;;
+    esac
+done
+ROOT=$(cd "$(dirname "$self")" && pwd -P) || exit 1
+PYTHON="$ROOT/.venv/bin/python"
+
+if [ ! -x "$PYTHON" ] || ! "$PYTHON" -c "" >/dev/null 2>&1; then
+    echo "DigitalCertiAnalytics is not installed yet, or the project folder was moved." >&2
+    echo "Run the installer first:  sh \"$ROOT/install.sh\"" >&2
+    exit 1
+fi
+
+# The .venv programs (sslyze) come first; the caches stay inside the project
+PATH="$ROOT/.venv/bin:$PATH"
+VIRTUAL_ENV="$ROOT/.venv"
+PYTHONUTF8=1
+MPLCONFIGDIR="$ROOT/.tools/cache/matplotlib"
+PYTHONPYCACHEPREFIX="$ROOT/.tools/cache/pycache"
+export PATH VIRTUAL_ENV PYTHONUTF8 MPLCONFIGDIR PYTHONPYCACHEPREFIX
+unset PYTHONHOME PYTHONPATH
+
+cd "$ROOT/src" || exit 1
+if [ "$#" -eq 0 ]; then
+    set -- --help
+fi
+exec "$PYTHON" -m analysis.main "$@"

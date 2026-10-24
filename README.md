@@ -105,110 +105,56 @@ The repository contains a program that analyses the data further, checks specifi
 
 ---
 
-## Installation Requirements
+## Quick Start
 
-The following software is needed to run the program:
+The installer sets up everything the program needs (Python 3.12 and its packages, ZLint and a MongoDB server) inside
+the project folder, on Windows, macOS and Linux. It needs no administrator rights and changes nothing else on the
+computer: to uninstall, delete the folder. **[INSTALL.md](INSTALL.md)** explains every step for people with no
+computer experience, with the warnings you may see and how to fix problems.
 
-### 1. Python 3.10 - 3.12
-Download and install Python from the [official website](https://www.python.org/). The versions pinned in `requirements.txt` can be installed on Python 3.10 - 3.12 (the GitHub Action uses 3.10); the code also works on Python 3.13 and 3.14, with newer versions of the libraries.
+1. **Install.**
+   - **Windows:** download the ZIP file from GitHub (green **Code** button, **Download ZIP**), extract it to a short
+     folder such as `C:\DCA`, and double-click **`install.bat`**. Or paste this line into PowerShell:
+     ```powershell
+     powershell -ExecutionPolicy Bypass -c "irm https://raw.githubusercontent.com/MagliariElio/DigitalCertiAnalytics/main/install.ps1 | iex"
+     ```
+   - **macOS and Linux:** paste this line into a terminal (it puts the project in `~/DigitalCertiAnalytics`):
+     ```bash
+     curl -fsSL https://raw.githubusercontent.com/MagliariElio/DigitalCertiAnalytics/main/install.sh | bash
+     ```
+     In a copy of the project you already have, run `sh install.sh` in its folder, or double-click
+     `install.command` on macOS.
+2. **Check** the installation: `./install.sh --check` (macOS, Linux) or `install.bat --check` (Windows).
+3. **Add the scan file**: copy the ZGrab2 output to `res/certs_polito.json` (see [Dataset](#dataset)).
+4. **Run** the program with the `dca` launcher: `./dca --leaf_analysis --plot_leaf_results` (macOS, Linux) or
+   `dca.bat --leaf_analysis --plot_leaf_results` (Windows). You can also double-click `dca.command` (macOS) or `dca.bat`
+   (Windows), which asks for the options.
 
-### 2. **ZLint**
-**ZLint** is an analysis tool for TLS/SSL certificates that checks their compliance and security. Before running the program, ZLint must be installed and its executable must be in the **DigitalCertiAnalytics** project folder. It is therefore best to do this step after cloning the project's GitHub repository (see the "Usage Guide" section).
-
-#### **Installing ZLint:**
-
-1. **Clone the ZLint repository**:
-   ZLint can be downloaded from its official GitHub repository:
-   ```bash
-   git clone https://github.com/zmap/zlint
-   ```
-
-2. **Build ZLint**:
-   After cloning the repository, enter the ZLint project folder and build it:
-   ```bash
-   cd zlint
-   make
-   ```
-   *Note: this step requires a working **Go** installation. For more information, see the **README** file in the official ZLint GitHub repository.*
-
-3. **Location of the executable**:
-   Once the build is complete, the ZLint executable is in the `zlint/v3/zlint` folder. Make sure that its path matches the value expected by the program, which looks for the executable in:
-   ```python
-   # src/utils/zlint_utils.py
-   ZLINT_PATH = Path(__file__).resolve().parents[2] / "zlint" / "v3" / "zlint"
-   ```
-
-4. **Check that ZLint is installed correctly**:
-   You can check that ZLint works by running the following command in the terminal:
-   ```bash
-   ./zlint/v3/zlint --help
-   ```
-
-   If everything is set up correctly, you will see the list of ZLint options.
-
-5. **Set the ZLint path**:
-   Make sure that the ZLint executable is in the `zlint/v3/` folder, as set in the code. If the path is wrong, the program cannot run the ZLint analysis. If needed, change the `ZLINT_PATH` constant in `src/utils/zlint_utils.py` to the actual location.
-
-### 3. **MongoDB**
-MongoDB must be installed on your computer to save the ZLint results. Before running options such as `--leaf_zlint_check` or `--intermediate_zlint_check`, which use MongoDB, make sure that the MongoDB service is running.
-
-#### **Checking and starting MongoDB on Linux:**
-
-1. **Check the status of MongoDB**:
-   You can check whether the MongoDB service is running with the command:
-   ```bash
-   sudo systemctl status mongod
-   ```
-
-   If the service is running, the output says that MongoDB is active.
-
-2. **Start MongoDB if it is not running**:
-   If MongoDB is not running, start the service with the command:
-   ```bash
-   sudo systemctl start mongod
-   ```
-
-3. **Check that MongoDB is running**:
-   After starting the service, check its status again with:
-   ```bash
-   sudo systemctl status mongod
-   ```
-
-4. **Start MongoDB automatically**:
-   You can also make MongoDB start automatically when the system boots with:
-   ```bash
-   sudo systemctl enable mongod
-   ```
-
-### 4. Python Libraries
-Install the required Python libraries with `pip`, using the `requirements.txt` file. Follow these steps:
-
-1. Create a virtual environment (optional but recommended):
-   ```bash
-   python -m venv env
-   source env/bin/activate   # On Windows use: env\Scripts\activate
-   ```
-
-2. Install the dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
+Running the installer again is safe: it skips what is installed and repairs what is broken (for example after the
+project folder was moved). Running the one-line command again, also inside a copy of the project, updates the code to
+the newest version and keeps your data. Developers who prefer their own Python environment, MongoDB service or ZLint build will
+find the manual steps in [INSTALL.md](INSTALL.md#10-manual-installation-for-developers).
 
 ## Usage Guide
 
-### 1. Clone the repository
-Clone the project repository with Git:
+### 1. Install the program
+Follow the [Quick Start](#quick-start) above, or [INSTALL.md](INSTALL.md) for the detailed guide. The installer puts:
 
-```bash
-git clone git@github.com:MagliariElio/DigitalCertiAnalytics.git
-cd DigitalCertiAnalytics
-```
+- ZLint, built from the exact version used by the analysis (commit `989baef`, Go pseudo-version
+  `v3.6.5-0.20241104164204-989baefda32f`), in `.tools/zlint`;
+- a portable MongoDB server in `.tools/mongodb`, which the program starts by itself when the ZLint results must be
+  saved (see [the MongoDB section](#viewing-and-managing-the-mongodb-database));
+- Python 3.12 in `.tools/python` and the packages of `requirements.txt` in the virtual environment `.venv`, with sslyze;
+- the Certificate Transparency log list `res/log_list.json`, downloaded from Google only if it is missing or damaged
+  (`--force` keeps a valid list; `--force --only log_list` replaces it and keeps the old one as `res/log_list.json.old`).
 
 ### 2. Run the program
-The program runs from the terminal or the command line, with several options that control what it does. The commands must be run from the `src/` folder:
+The program runs from the terminal or the command line, with several options that control what it does. Start it with
+the launcher in the project folder: `./dca` on macOS and Linux, `dca.bat` on Windows (`.\dca.bat` in PowerShell). The
+launcher works from any folder and runs the program with the project's own Python; with no options it shows the help.
 
 ```bash
-cd src
+./dca --help
 ```
 
 The input files are `res/certs_polito.json` (the ZGrab2 output, see [Dataset](#dataset)) and `res/log_list.json` (the list of the Certificate Transparency logs used to analyse the SCTs, available at https://www.gstatic.com/ct/log_list/v3/all_logs_list.json).
@@ -241,35 +187,50 @@ The input files are `res/certs_polito.json` (the ZGrab2 output, see [Dataset](#d
 
 The OCSP, ZLint, chain validation and chart options work on a database created by an earlier analysis of the same certificate type (or in the same command). If a database is deleted with a `--delete_*` option and not analysed again, the other options for that certificate type are skipped.
 
+The OCSP analysis and the chain validation contact servers on the internet. The ZLint options store their results in MongoDB: the program uses the MongoDB server that answers on `localhost:27017`, and starts the one included with the project when none is running.
+
 #### Usage examples:
+The examples use `./dca` (macOS, Linux); on Windows write `dca.bat` instead, with the same options.
 
 1. **Run only the leaf certificate analysis**:
    ```bash
-    python -m analysis.main --leaf_analysis
+   ./dca --leaf_analysis
    ```
 
 2. **Delete the intermediate certificate database and start the analysis**:
    ```bash
-    python -m analysis.main --delete_intermediate_db --intermediate_analysis
+   ./dca --delete_intermediate_db --intermediate_analysis
    ```
 
 3. **Run the OCSP analysis on the root certificates and generate the charts for the root certificates only**:
    ```bash
-    python -m analysis.main --root_ocsp_analysis --plot_root_results
+   ./dca --root_ocsp_analysis --plot_root_results
    ```
 
 4. **Delete all the databases, analyse the leaf and intermediate certificates and generate all the charts**:
    ```bash
-    python -m analysis.main --delete_all_db --leaf_analysis --intermediate_analysis --plot_all_results
+   ./dca --delete_all_db --leaf_analysis --intermediate_analysis --plot_all_results
    ```
 5. **Enable verbose mode for detailed logging**:
    ```bash
-    python -m analysis.main --delete_leaf_db --leaf_analysis -v
+   ./dca --delete_leaf_db --leaf_analysis -v
    ```
 6. **Run the ZLint analysis on the leaf certificates and validate the chains**:
    ```bash
-    python -m analysis.main --leaf_zlint_check --leaf_chain_validation
+   ./dca --leaf_zlint_check --leaf_chain_validation
    ```
+
+#### Running the program without the launcher (for developers)
+The launcher runs `python -m analysis.main` from the `src/` folder with the Python of `.venv`, with `.venv`'s programs
+first on the `PATH`. With an activated virtual environment (yours or the project's `.venv`), the same commands can be
+run directly from `src/`:
+
+```bash
+cd src
+python -m analysis.main --leaf_analysis
+```
+
+This is why the help text starts with `usage: python -m analysis.main`.
 
 #### Parallel reading of the JSON file
 
@@ -284,10 +245,24 @@ The ZGrab2 JSON file is read only once, even when several analyses are requested
 
 ### 3. File Structure
 
+- `INSTALL.md`: step-by-step installation guide for Windows, macOS and Linux, with troubleshooting.
+- `install.sh`: installer for macOS and Linux (`sh install.sh`, or `curl -fsSL https://raw.githubusercontent.com/MagliariElio/DigitalCertiAnalytics/main/install.sh | bash` without a copy of the project). It installs uv, Python 3.12 and `.venv`, then runs `scripts/install_tools.py`. `--check` shows the status of every component; `--skip`, `--only` and `--force` select what to install.
+- `install.command`: double-clickable installer for macOS (runs `install.sh` and keeps the window open).
+- `install.ps1`: installer for Windows (PowerShell 5.1 or newer), also usable without a copy of the project as `powershell -ExecutionPolicy Bypass -c "irm https://raw.githubusercontent.com/MagliariElio/DigitalCertiAnalytics/main/install.ps1 | iex"`, which downloads the project into `%USERPROFILE%\DigitalCertiAnalytics` first.
+- `install.bat`: double-clickable installer for Windows (runs `install.ps1` for this run only with `-ExecutionPolicy Bypass`; it accepts the same options, such as `install.bat --check`).
+- `dca`, `dca.bat`: launchers of the program for macOS/Linux and Windows (`./dca --help`, `dca.bat --help`).
+- `dca.command`: double-clickable launcher for macOS, which asks for the options.
+- `scripts/install_tools.py`: the cross-platform part of the installer, run with the `.venv` Python: it installs ZLint, the MongoDB server and the CT log list (pinned versions, every download verified with SHA-256, the log list with Google's signature) and prints the status table of `--check`.
+- `.tools/` (created by the installer, not in git): `uv/` (the uv program), `python/` (Python 3.12), `zlint/` (ZLint), `mongodb/` (the MongoDB server, `bin/mongod`), `cache/` (download and package caches, temporary files), `manifest.json` (what is installed, with versions and checksums) and `install.log` (the output of the last installation).
+- `.venv/` (created by the installer, not in git): the virtual environment with the packages of `requirements.txt`.
+- `data/` (created by the installer, not in git): `data/mongodb/` holds the database files of the bundled MongoDB server, and `data/mongodb.log` its log (moved to `data/mongodb.log.old` above 50 MB).
+- `requirements.txt`: the pinned Python packages. `environment.yml`: the same packages for conda (Python 3.10), used by the conda GitHub Action.
+- `zlint/`: legacy location of a ZLint built by hand (`zlint/v3/zlint`), still searched by the program; the installer puts ZLint in `.tools/zlint`.
+- `.github/workflows/install.yml`: GitHub Action that runs the installer on Linux, macOS (Apple Silicon and Intel) and Windows, then `--check`, the tests, flake8 and a short analysis of a generated scan file. `.github/workflows/python-package-conda.yml` runs flake8 and the tests in the conda environment.
 - `res/queries.sql`: SQL file with analysis queries on the relational databases.
 - `res/queries_big_query.sql`: SQL file with the query used to get a list of European domains from Google's BigQuery service.
 - `res/log_list.json`: JSON file with the list of Certificate Transparency logs used by the program to analyse the SCTs.
-- `res/certs_polito.json`: JSON file with the certificates to analyse: the output of the ZGrab2 scan run on the list of input domains.
+- `res/certs_polito.json`: JSON file with the certificates to analyse: the output of the ZGrab2 scan run on the list of input domains (not in git; put it there before running the `--*_analysis` options).
 - `res/README.md`: notes on the names of the input files.
 - `src/analysis/`: folder with the databases and the other analysis files.
 - `src/analysis/leaf/leaf_certificates.db`: SQLite database with the results of the leaf certificate analysis.
@@ -305,58 +280,76 @@ The ZGrab2 JSON file is read only once, even when several analyses are requested
   described in `Plot Description.md`.
 - `src/analysis/<type>/ingestion_staging_*`: temporary files of the parallel reading of the JSON file, deleted at the end
   of the analysis (if the program is killed, the next analysis of the same certificate type deletes them).
-- `src/analysis/zlint_analysis/reading_zlint_results.py`: Python script that extracts the data from the MongoDB (non-relational) database, used for detailed analyses of the stored certificate data. The name of the database to read can be passed as an argument (default `Leaf_Zlint_Checks_Google_3`, the database written by the ZLint analysis of the leaf certificates).
+- `src/analysis/zlint_analysis/reading_zlint_results.py`: Python script that extracts the data from the MongoDB (non-relational) database, used for detailed analyses of the stored certificate data. It writes three CSV files (`zlint_results.csv`, `issuer_ranking_by_result.csv` and `certificates_result_summary.csv`) to the folder where it is run, and starts and stops the bundled MongoDB server when no server is running. The name of the database to read can be passed as an argument (default `Leaf_Zlint_Checks_Google_3`, the database written by the ZLint analysis of the leaf certificates). Run it with the `.venv` Python from the project folder: `.venv/bin/python src/analysis/zlint_analysis/reading_zlint_results.py` (Windows: `.venv\Scripts\python.exe src\analysis\zlint_analysis\reading_zlint_results.py`).
 - `src/db/schema_db.sql`: SQL script that creates the schema of the leaf, intermediate and root databases (described in `Database Description.md`).
-- `src/scan/`: folder with an exploratory scan script for the JSON file (`python src/scan/scan_certificate_collection.py --help`, from the repository root, for the available commands).
-- `src/analysis/main.py`: entry point (`python -m analysis.main`), runs the analysis and handles `Ctrl+C`.
+- `src/db/mongo_server.py`: starts the MongoDB server included with the project when no server answers on `localhost:27017`, reuses one left running by an interrupted run, and stops it cleanly when the program ends.
+- `src/scan/`: folder with an exploratory scan script for the JSON file (`.venv/bin/python src/scan/scan_certificate_collection.py --help`, from the repository root, for the available commands; on Windows `.venv\Scripts\python.exe src\scan\scan_certificate_collection.py --help`).
+- `src/analysis/main.py`: entry point (`python -m analysis.main`, run by the `dca` launcher), runs the analysis and handles `Ctrl+C`.
 - `src/analysis/certificates_analysis.py`: command line and orchestration of the analyses. The ZGrab2 JSON file is read only once even when several analyses are requested (leaf, intermediate and root).
 - `src/analysis/ingestion.py`: parallel reading of the JSON file on all CPU cores; the main process stays the only writer of the databases, in the order of the file.
 - `src/bean/certificate.py`: X.509 certificate loaded from the raw ZGrab2 format (base64 DER).
 - `src/dao/certificate_dao.py` and `src/db/`: access to the SQLite and MongoDB databases.
 - `src/dao/statistics_dao.py`: statistical queries used for the charts.
 - `src/dao/statistics_facts.py`: computes the chart statistics from one parallel read of each table, with the same results as the statistical queries (used for large databases; see `Plot Description.md`).
-- `src/utils/chain_utils.py`: traversal of the certificate chains, signature checks and chain validation with sslyze (several domains per sslyze run, in parallel).
+- `src/utils/chain_utils.py`: traversal of the certificate chains, signature checks and chain validation with sslyze (several domains per sslyze run, in parallel). sslyze is looked for on the `PATH`, then next to the running Python (the `.venv`), then run as `python -m sslyze`.
 - `src/utils/ocsp_utils.py`: OCSP analysis (concurrent requests over reused connections, resumed from the temporary and backup CSV files).
-- `src/utils/zlint_utils.py`: ZLint analysis run in parallel (many certificates per ZLint run), with the results saved in MongoDB.
+- `src/utils/zlint_utils.py`: ZLint analysis run in parallel (many certificates per ZLint run), with the results saved in MongoDB. ZLint is looked for in the file named by the `DCA_ZLINT_PATH` environment variable, then in `.tools/zlint/zlint`, then in `zlint/v3/zlint`, then on the `PATH` (`zlint.exe` on Windows).
 - `src/utils/graph_plotter.py` and `src/utils/plotter_utils.py`: generation of the charts, tables and captions, in parallel.
 - `src/utils/process_utils.py`: management of the worker processes (stopped with `Ctrl+C`, and closed if the main process ends).
 - `src/utils/utils.py`: logging setup, progress bars and the command-line help format.
-- `tests/`: automated tests (pytest), also run by the GitHub Action together with the flake8 check.
+- `tests/`: automated tests (pytest), also run by the GitHub Actions together with the flake8 check.
 
 ### 4. Log
-The program writes the `app.log` log file, which records the progress of the application and any errors. The log is written in the folder where the program is run.
+The program writes the `app.log` log file, which records the progress of the application and any errors. The log is written in the folder where the program is run: the `dca` launcher runs it from `src/`, so the file is `src/app.log`. The installer writes its output to `.tools/install.log`, and the bundled MongoDB server writes its log to `data/mongodb.log`.
 
-Stopping the program with `Ctrl+C` closes the connections and the worker processes in an orderly way, and the process exits with exit code `130`: the data already saved stay in the databases, and the OCSP analysis can be resumed from where it stopped. If the main process is killed, its worker processes exit on their own.
+Stopping the program with `Ctrl+C` closes the connections and the worker processes in an orderly way, and the process exits with exit code `130`: the data already saved stay in the databases, and the OCSP analysis can be resumed from where it stopped. If the main process is killed, its worker processes exit on their own. The bundled MongoDB server is not interrupted by `Ctrl+C`: it finishes saving the ZLint results and is then stopped cleanly. On macOS and Linux, closing the terminal window (SIGHUP) or a `kill` (SIGTERM) during the ZLint stage or `reading_zlint_results.py` is handled in the same way, so the bundled server is never left running. On Windows, `cmd` then asks *"Terminate batch job (Y/N)?"*; either answer is fine.
 
 ### 5. Tests
-The automated tests need no network, MongoDB, ZLint or sslyze (they are simulated). From the project's root folder:
+The automated tests need no network, MongoDB, ZLint or sslyze (they are simulated with small shell scripts), and run on macOS and Linux (on Windows, in WSL). From the project's root folder, with the `.venv` created by the installer:
 
 ```bash
-pip install pytest flake8
-pytest
-flake8
+UV_CACHE_DIR=.tools/cache/uv .tools/uv/uv pip install --python .venv/bin/python pytest flake8
+.venv/bin/python -m pytest
+.venv/bin/python -m flake8 --extend-exclude .tools,data
 ```
 
-The tests cover the ingestion pipeline and the databases, the command line and `Ctrl+C` handling, the OCSP and ZLint analyses, chain and signature validation, the worker processes, the statistical queries and the charts.
+With an environment of your own, activate it and run `pip install pytest flake8`, `pytest` and `flake8 --extend-exclude .tools,data`. The `--extend-exclude` option keeps flake8 out of the tools installed in `.tools`. If the installer used a `uv` already installed on the computer, `.tools/uv` does not exist: use `uv` instead.
+
+The tests cover the ingestion pipeline and the databases, the command line and `Ctrl+C` handling, the OCSP and ZLint analyses, chain and signature validation, the worker processes, the statistical queries and the charts, the installer (`tests/test_install_tools.py`, also `install.sh` and `dca.command`) and the bundled MongoDB server (`tests/test_mongo_server.py`, also the closing of the terminal window).
 
 ## Viewing and Managing the MongoDB Database
 
+The ZLint results are stored in MongoDB, in the databases named in `ZLINT_DB_NAMES` (`src/db/MongoDbDatabase.py`): `Leaf_Zlint_Checks_Google_3` and `Intermediate_Zlint_Checks_Google_3`.
+
+### The MongoDB server included with the project
+The installer puts a portable MongoDB Community server in `.tools/mongodb` (version 8.0.34; 7.0.45 on systems where 8.0 has no build). You do not need to install or start MongoDB yourself:
+
+- When a ZLint option (or `reading_zlint_results.py`) needs MongoDB and no server answers on `localhost:27017`, the program starts the bundled server on `127.0.0.1:27017`, so it accepts connections only from this computer. Its data are in `data/mongodb` and its log in `data/mongodb.log`.
+- At the end of the ZLint stage, and at the latest when the program exits (also after `Ctrl+C`), the program stops the server cleanly. A server left running by a program that was killed is reused by the next run and then stopped.
+- If another program is connected to the bundled server (another analysis, or MongoDB Compass), the server is left running with a warning, and the last analysis that uses it stops it.
+- A MongoDB server that you run yourself on `localhost:27017` (a service, Docker, ...) is used instead and is never stopped. Install with `sh install.sh --skip mongodb` (or `install.bat --skip mongodb`) to leave the bundled server out.
+- If port 27017 is used by a program that is not MongoDB, the program says so: close that program and run the analysis again.
+
+To use other tools with the bundled server (MongoDB Compass, `mongodump`), start it by hand in a terminal, from the project folder, and leave that window open:
+
+```bash
+.tools/mongodb/bin/mongod --dbpath data/mongodb --bind_ip 127.0.0.1 --port 27017 --nounixsocket
+```
+
+On Windows: `.tools\mongodb\bin\mongod.exe --dbpath data\mongodb --bind_ip 127.0.0.1 --port 27017`. Press `Ctrl+C` in that window to stop it when you have finished. Do not start it while an analysis is running. An analysis started while it runs uses it and may stop it at the end, when no other program is connected.
+
+### MongoDB Compass
 To view and manage the MongoDB database easily, a MongoDB management tool with a graphical interface is recommended, such as **MongoDB Compass**. Compass lets you explore the data, run queries, analyse the structure of the database, and much more.
 
-### How to install MongoDB Compass:
 1. Go to the official MongoDB Compass website: [MongoDB Compass](https://www.mongodb.com/products/compass).
 2. Download and install the version for your operating system (Windows, macOS, Linux).
-3. Once installed, start Compass and connect to your MongoDB server with the appropriate credentials.
+3. Start the MongoDB server (see above), open Compass and connect to `mongodb://localhost:27017` (the bundled server has no user name or password).
 
-Compass offers an easy-to-use interface to view the data, analyse the collections and edit the documents. You can easily explore your database and interact with it through the graphical interface.
+Compass offers an easy-to-use interface to view the data, analyse the collections and edit the documents.
 
-### How to dump a MongoDB database
+### How to dump a MongoDB database (optional)
 
-To create a backup (dump) of the MongoDB database, use the **`mongodump`** command. It copies the data of the database into a given folder. Make sure that **`mongodump`** is installed on your system; if it is not, you can download it with MongoDB or as part of the MongoDB Database Tools.
-
-#### The commands to dump the databases are the following:
-
-The database names are defined in `ZLINT_DB_NAMES` (`src/db/MongoDbDatabase.py`).
+To create a backup (dump) of a MongoDB database, use the **`mongodump`** command, while the server is running (see above). It copies the data of the database into a given folder. `mongodump` is not included with the project: it is part of the [MongoDB Database Tools](https://www.mongodb.com/try/download/database-tools), a separate download. Once installed, `mongodump --version` prints its version.
 
 1. **For the "Leaf_Zlint_Checks_Google_3" database**:
    ```bash
@@ -368,12 +361,4 @@ The database names are defined in `ZLINT_DB_NAMES` (`src/db/MongoDbDatabase.py`)
    mongodump --db Intermediate_Zlint_Checks_Google_3 --out Intermediate_Zlint_Checks_Google_3
    ```
 
-These commands copy the data of each database into the folder given with `--out`. You can then use these dump files to restore the data or to analyse it.
-
-### Making sure that `mongodump` is installed:
-
-To run the `mongodump` commands, MongoDB and its command-line tools must be installed on your system. Here is how:
-
-1. If you do not have MongoDB yet, download it from the official website: [Download MongoDB](https://www.mongodb.com/try/download/community).
-2. If you already have MongoDB but not the command-line tools, you can download the tools package separately. You can find it in the "MongoDB Database Tools" section of the same MongoDB download page.
-3. Once installed, make sure that the `mongodump` command is in your system **PATH**. You can check it by running `mongodump --version` in the terminal and seeing whether it prints a version.
+These commands copy the data of each database into the folder given with `--out`. You can then use these dump files to restore the data (with `mongorestore`, also part of the Database Tools) or to analyse it. To keep the whole database of the bundled server instead, you can also copy the `data/mongodb` folder while the server is stopped.

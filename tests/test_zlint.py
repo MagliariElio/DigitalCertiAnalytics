@@ -74,6 +74,8 @@ class FakeZlint:
     """Writes the fake executable and reads back how many files each start received."""
 
     def __init__(self, directory, extra=""):
+        if os.name == "nt":
+            pytest.skip("the fake zlint is a script with a shebang, which Windows cannot run")
         self.log = directory / "zlint.log"
         self.path = directory / "zlint"
         self.path.write_text(FAKE_ZLINT.format(python=sys.executable, log=str(self.log), extra=extra))
@@ -496,9 +498,9 @@ def test_directories_of_killed_runs_are_removed_by_the_next_run(fake_zlint, open
     run_directories = []
     lint_certificates = zlint_utils._lint_certificates
 
-    def record_directory(dao, mongo, directory):
+    def record_directory(dao, mongo, directory, zlint_path):
         run_directories.append(Path(directory))
-        lint_certificates(dao, mongo, directory)
+        lint_certificates(dao, mongo, directory, zlint_path)
 
     monkeypatch.setattr(zlint_utils, "_lint_certificates", record_directory)
     _, dao = _insert_rows(open_database, 2)
@@ -513,10 +515,246 @@ def test_directories_of_killed_runs_are_removed_by_the_next_run(fake_zlint, open
     assert not directory.exists()
 
 
-def test_missing_executable(tmp_path, monkeypatch, open_database):
+def test_missing_executable(tmp_path, monkeypatch, open_database, caplog):
     monkeypatch.setattr(zlint_utils, "ZLINT_PATH", tmp_path / "missing")
     monkeypatch.setattr(zlint_utils, "MongoDbDatabase", FakeMongo)
     FakeMongo.instances.clear()
     _, dao = open_database(DatabaseType.LEAF)
     zlint_utils.run_zlint_check(dao)
     assert FakeMongo.instances == []
+    assert f"The ZLint executable '{tmp_path / 'missing'}' is missing or cannot run" in caplog.text
+    assert "Run the installer again" in caplog.text
+
+
+def _executable(path):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("#!/bin/sh\n")
+    path.chmod(0o755)
+    return path
+
+
+@pytest.fixture
+def zlint_locations(tmp_path, monkeypatch):
+    """The installer's and the legacy locations in tmp_path, an empty PATH and no DCA_ZLINT_PATH."""
+    locations = (tmp_path / ".tools" / "zlint" / "zlint", tmp_path / "zlint" / "v3" / "zlint")
+    monkeypatch.setattr(zlint_utils, "ZLINT_LOCATIONS", locations)
+    monkeypatch.delenv("DCA_ZLINT_PATH", raising=False)
+    (tmp_path / "path").mkdir()
+    monkeypatch.setenv("PATH", str(tmp_path / "path"))
+    return locations
+
+
+@pytest.mark.skipif(os.name != "posix", reason="executable bit")
+def test_zlint_lookup_order(zlint_locations, tmp_path, monkeypatch, caplog):
+    tools, legacy = zlint_locations
+    assert zlint_utils.find_zlint() is None
+
+    on_path = _executable(tmp_path / "path" / "zlint")
+    assert zlint_utils.find_zlint() == on_path
+    _executable(legacy)
+    assert zlint_utils.find_zlint() == legacy
+    _executable(tools)
+    assert zlint_utils.find_zlint() == tools
+
+    configured = _executable(tmp_path / "custom" / "my-zlint")
+    monkeypatch.setenv("DCA_ZLINT_PATH", str(configured))
+    assert zlint_utils.find_zlint() == configured
+
+    # A wrong variable is reported, and the other locations are still searched
+    monkeypatch.setenv("DCA_ZLINT_PATH", str(tmp_path / "nowhere"))
+    assert zlint_utils.find_zlint() == tools
+    assert f"DCA_ZLINT_PATH is '{tmp_path / 'nowhere'}', which is not an executable file" in caplog.text
+
+    # Set by code (e.g. the tests), ZLINT_PATH is used as it is
+    monkeypatch.setattr(zlint_utils, "ZLINT_PATH", tmp_path / "explicit")
+    assert zlint_utils.find_zlint() == tmp_path / "explicit"
+
+
+@pytest.mark.skipif(os.name != "posix", reason="executable bit")
+def test_files_that_cannot_run_are_skipped(zlint_locations, tmp_path):
+    tools, legacy = zlint_locations
+    tools.parent.mkdir(parents=True)
+    tools.write_text("not executable")
+    _executable(legacy)
+    (tools.parent / "folder").mkdir()
+    assert zlint_utils.find_zlint() == legacy
+
+
+def test_zlint_locations_of_the_project():
+    project = Path(zlint_utils.__file__).resolve().parents[2]
+    suffix = ".exe" if os.name == "nt" else ""
+    assert zlint_utils.ZLINT_LOCATIONS == (project / ".tools" / "zlint" / f"zlint{suffix}",
+                                           project / "zlint" / "v3" / f"zlint{suffix}")
+    assert zlint_utils.ZLINT_WORKERS <= (61 if os.name == "nt" else zlint_utils.ZLINT_WORKERS)
+
+
+def test_no_zlint_installed_says_to_run_the_installer(zlint_locations, open_database, monkeypatch, caplog):
+    monkeypatch.setattr(zlint_utils, "MongoDbDatabase", FakeMongo)
+    FakeMongo.instances.clear()
+    _, dao = open_database(DatabaseType.LEAF)
+
+    zlint_utils.run_zlint_check(dao)
+
+    assert FakeMongo.instances == []
+    assert "ZLint is not installed, so the certificates cannot be checked with ZLint. Run the installer again" in caplog.text
+
+
+def test_interrupt_saves_the_collected_results(fake_zlint, open_database, monkeypatch):
+    monkeypatch.setattr(zlint_utils, "ZLINT_CHUNK_SIZE", 2)
+    monkeypatch.setattr(zlint_utils, "BATCH_SIZE", 6)
+    monkeypatch.setattr(zlint_utils, "ZLINT_WORKERS", 1)
+    _, dao = _insert_rows(open_database, 9)
+    collect = zlint_utils._collect
+    collected = []
+
+    def ctrl_c_on_the_third_chunk(documents, chunk_documents):
+        if len(collected) == 2:
+            raise KeyboardInterrupt
+        collected.append(chunk_documents)
+        collect(documents, chunk_documents)
+
+    monkeypatch.setattr(zlint_utils, "_collect", ctrl_c_on_the_third_chunk)
+    with pytest.raises(KeyboardInterrupt):
+        zlint_utils.run_zlint_check(dao)
+
+    mongo = FakeMongo.instances[-1]
+    # The first two chunks of the batch were collected: saved, although the batch was not complete
+    assert mongo.collections["zlint_results"].inserts == [[1, 2, 3, 4]]
+    assert mongo.closed
+
+
+def test_interrupted_batch_save_is_not_repeated(fake_zlint, open_database, monkeypatch):
+    monkeypatch.setattr(zlint_utils, "ZLINT_CHUNK_SIZE", 2)
+    monkeypatch.setattr(zlint_utils, "BATCH_SIZE", 2)
+    _, dao = _insert_rows(open_database, 4)
+    save = zlint_utils._save_documents
+    saved = []
+
+    def ctrl_c_while_saving(mongo, documents):
+        saved.append([document["certificate_id"] for document in documents["zlint_results"]])
+        save(mongo, documents)
+        if len(saved) == 1:
+            raise KeyboardInterrupt
+
+    monkeypatch.setattr(zlint_utils, "_save_documents", ctrl_c_while_saving)
+    with pytest.raises(KeyboardInterrupt):
+        zlint_utils.run_zlint_check(dao)
+
+    # The interrupted save is not repeated at the end; nothing else was collected
+    assert saved == [[1, 2], []]
+    assert FakeMongo.instances[-1].collections["zlint_results"].inserts == [[1, 2]]
+
+
+@pytest.mark.skipif(not hasattr(signal, "pthread_sigmask"), reason="POSIX signals")
+def test_ctrl_c_during_a_batch_save_waits_for_its_end(fake_zlint, open_database, monkeypatch):
+    monkeypatch.setattr(zlint_utils, "ZLINT_CHUNK_SIZE", 2)
+    monkeypatch.setattr(zlint_utils, "BATCH_SIZE", 2)
+    _, dao = _insert_rows(open_database, 4)
+    save = zlint_utils._save_documents
+    saved = []
+
+    def ctrl_c_while_saving(mongo, documents):
+        if not saved:
+            signal.raise_signal(signal.SIGINT)
+        saved.append([document["certificate_id"] for document in documents["zlint_results"]])
+        save(mongo, documents)
+
+    monkeypatch.setattr(zlint_utils, "_save_documents", ctrl_c_while_saving)
+    previous = signal.signal(signal.SIGINT, signal.default_int_handler)
+    try:
+        with pytest.raises(KeyboardInterrupt):
+            zlint_utils.run_zlint_check(dao)
+    finally:
+        signal.signal(signal.SIGINT, previous)
+
+    # The Ctrl+C stops the stage only once the batch is saved, and the batch is saved once
+    assert saved == [[1, 2], []]
+    assert FakeMongo.instances[-1].collections["zlint_results"].inserts == [[1, 2]]
+
+
+@pytest.mark.skipif(not hasattr(signal, "SIGHUP"), reason="POSIX signals")
+@pytest.mark.parametrize("stop_signal", ["SIGHUP", "SIGTERM"])
+def test_closing_the_terminal_during_a_batch_save_stops_like_ctrl_c(fake_zlint, open_database, monkeypatch, stop_signal):
+    from db import mongo_server
+
+    monkeypatch.setattr(zlint_utils, "ZLINT_CHUNK_SIZE", 2)
+    monkeypatch.setattr(zlint_utils, "BATCH_SIZE", 2)
+    _, dao = _insert_rows(open_database, 4)
+    save = zlint_utils._save_documents
+    saved, silenced, directories = [], [], []
+
+    def window_closed_while_saving(mongo, documents):
+        if not saved:
+            signal.raise_signal(getattr(signal, stop_signal))
+        saved.append([document["certificate_id"] for document in documents["zlint_results"]])
+        directories.extend(Path(tempfile.gettempdir()).glob(f"zlint_{os.getpid()}-*"))
+        save(mongo, documents)
+
+    monkeypatch.setattr(zlint_utils, "_save_documents", window_closed_while_saving)
+    # The output of the tests is not a closed terminal, and the other tests must not see a stop
+    monkeypatch.setattr(mongo_server, "_silence_closed_terminal", lambda: silenced.append(True))
+    monkeypatch.setattr(mongo_server, "_stop_received", False)
+    signals = (signal.SIGINT, signal.SIGHUP, signal.SIGTERM)
+    previous = {number: signal.getsignal(number) for number in signals}
+    signal.signal(signal.SIGINT, signal.default_int_handler)
+    signal.signal(signal.SIGHUP, signal.SIG_DFL)
+    signal.signal(signal.SIGTERM, signal.SIG_DFL)
+    try:
+        with pytest.raises(KeyboardInterrupt):
+            zlint_utils.run_zlint_check(dao)
+        # The program is stopping: further stop signals are ignored until it ends
+        assert signal.getsignal(signal.SIGHUP) == signal.getsignal(signal.SIGTERM) == signal.SIG_IGN
+    finally:
+        for number, handler in previous.items():
+            signal.signal(number, handler)
+
+    # Like Ctrl+C: the stage stops once the batch is saved, the batch is saved once, the temporary files are removed
+    assert saved == [[1, 2], []]
+    assert FakeMongo.instances[-1].collections["zlint_results"].inserts == [[1, 2]]
+    assert FakeMongo.instances[-1].closed
+    assert directories and not any(directory.exists() for directory in directories)
+    assert silenced == ([True] if stop_signal == "SIGHUP" else [])
+    assert mongo_server.stop_requested()
+
+
+def test_error_while_stopping_after_the_window_was_closed_still_stops(fake_zlint, open_database, monkeypatch):
+    # e.g. the progress bar writing to the closed terminal while the stage stops: the program must not go on
+    def write_to_the_closed_terminal(*args):
+        raise OSError(5, "Input/output error")
+
+    monkeypatch.setattr(zlint_utils, "_lint_certificates", write_to_the_closed_terminal)
+    monkeypatch.setattr(zlint_utils, "stop_requested", lambda: True)
+    _, dao = _insert_rows(open_database, 2)
+    with pytest.raises(KeyboardInterrupt):
+        zlint_utils.run_zlint_check(dao)
+    assert FakeMongo.instances[-1].closed
+
+
+def test_bundled_mongodb_that_cannot_start_is_reported(fake_zlint, open_database, monkeypatch, caplog):
+    class UnavailableMongo(FakeMongo):
+        def connect(self):
+            raise zlint_utils.MongoServerError("Port 27017 is used by another program. Close it.")
+
+    monkeypatch.setattr(zlint_utils, "MongoDbDatabase", UnavailableMongo)
+    _, dao = _insert_rows(open_database, 2)
+
+    zlint_utils.run_zlint_check(dao)
+
+    assert "Port 27017 is used by another program. Close it." in caplog.text
+    assert "check that the service is running" not in caplog.text
+    assert fake_zlint.starts() == []
+    assert FakeMongo.instances[-1].closed
+
+
+def test_unreachable_mongodb_keeps_the_message(fake_zlint, open_database, monkeypatch, caplog):
+    class UnreachableMongo(FakeMongo):
+        def connect(self):
+            raise OSError("connection refused")
+
+    monkeypatch.setattr(zlint_utils, "MongoDbDatabase", UnreachableMongo)
+    _, dao = _insert_rows(open_database, 2)
+
+    zlint_utils.run_zlint_check(dao)
+
+    assert "Could not connect to MongoDB: check that the service is running (see the README)." in caplog.text
+    assert fake_zlint.starts() == []

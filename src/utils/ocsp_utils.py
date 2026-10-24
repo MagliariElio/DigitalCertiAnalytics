@@ -469,7 +469,9 @@ async def _import_csv(db: aiosqlite.Connection, path: str, is_backup: bool) -> N
     """Apply the OCSP results of a CSV file to the database, then delete it unless it is the backup."""
     logging.info(f"Updating the database from the {'backup' if is_backup else 'temporary'} file.")
 
-    with open(path, mode="r", newline="") as csv_file:
+    # UTF-8 on every system (Windows would use its ANSI code page); a file of an earlier version written on Windows
+    # cannot be decoded only where it holds non-ASCII domains, whose rows are then checked again
+    with open(path, mode="r", newline="", encoding="utf-8", errors="replace") as csv_file:
         reader = csv.reader(csv_file)
         if is_backup:
             next(reader, None)   # Header (the backup file may be empty)
@@ -499,7 +501,7 @@ async def _save_backup(db: aiosqlite.Connection, backup_file: str) -> None:
     """Atomically rewrite the backup CSV with the OCSP results stored in the database."""
     temp_file = f"{backup_file}.tmp"
     try:
-        with open(temp_file, mode="w", newline="") as csv_file:
+        with open(temp_file, mode="w", newline="", encoding="utf-8") as csv_file:
             writer = csv.writer(csv_file)
             writer.writerow(OCSP_BACKUP_HEADER)
             async with db.execute(SELECT_CHECKED) as cursor:
@@ -658,7 +660,7 @@ async def run_ocsp_analysis(database: Database, output_dir: str | os.PathLike) -
             if os.path.exists(temp_file) and os.path.getsize(temp_file) > 0:
                 await _import_csv(db, temp_file, is_backup=False)
 
-            with open(temp_file, mode="a", newline="") as temp_csv:
+            with open(temp_file, mode="a", newline="", encoding="utf-8") as temp_csv:
                 await _check_certificates(db, database.db_type, csv.writer(temp_csv))
             await _import_csv(db, temp_file, is_backup=False)
 

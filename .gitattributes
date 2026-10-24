@@ -1,0 +1,6 @@
+# Line endings of the installers and launchers: LF for macOS/Linux scripts, CRLF for Windows ones
+*.sh text eol=lf
+*.command text eol=lf
+dca text eol=lf
+*.bat text eol=crlf
+*.ps1 text eol=crlf

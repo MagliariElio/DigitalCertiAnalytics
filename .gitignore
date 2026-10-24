@@ -32,3 +32,10 @@ app.log
 env/
 venv/
 .venv/
+
+# Created by the installer (install.sh / install.ps1): private tools, caches and the bundled MongoDB's data
+.tools/
+data/
+# Kept by the installer when it replaces or repairs the CT log list
+res/log_list.json.old
+res/log_list.json.broken

@@ -1,12 +1,17 @@
 from __future__ import annotations
 
+import contextlib
+import importlib.util
 import json
 import logging
 import math
+import os
 import re
 import shutil
 import signal
 import subprocess
+import sys
+import sysconfig
 import threading
 from collections import deque
 from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
@@ -51,6 +56,12 @@ CHAIN_VALIDATION_SAVE_EVERY = 100
 # is checked by its own invocation as before
 _PLAIN_HOSTNAME = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_-]{0,62}(?:\.[A-Za-z0-9_-]{1,63})*")
 _PORT_SUFFIX = re.compile(r":\d+$")
+
+# Exit codes reported for an sslyze killed on interruption and for one stopped by Ctrl+C, as on POSIX (minus the
+# signal). On Windows a killed process exits with 1, and one stopped by Ctrl+C with STATUS_CONTROL_C_EXIT, which is
+# never a POSIX exit code (0-255)
+_KILLED = -getattr(signal, "SIGKILL", 9)
+_WINDOWS_CTRL_C_EXIT = 0xC000013A
 
 
 def is_root_certificate(certificate: dict) -> bool:
@@ -177,10 +188,37 @@ def _sslyze_validation_result(scan_results: dict) -> str:
     return "Not Valid"
 
 
+def _script_directories() -> list[str]:
+    """Folders of this Python's commands: the virtual environment's bin (Scripts on Windows), also when it is not
+    activated."""
+    directories = [os.path.dirname(sys.executable)] if sys.executable else []
+    with contextlib.suppress(KeyError):
+        directories.append(sysconfig.get_path("scripts"))
+    return list(dict.fromkeys(directory for directory in directories if directory))
+
+
+def sslyze_command() -> list[str] | None:
+    """Command that runs sslyze: on the PATH, else next to this Python, else this Python's sslyze module; None if sslyze
+    is not installed."""
+    for directories in (None, *_script_directories()):
+        found = shutil.which("sslyze", path=directories)
+        if found is not None:
+            return [found]
+    if sys.executable and _sslyze_module_installed():
+        return [sys.executable, "-m", "sslyze"]
+    return None
+
+
+def _sslyze_module_installed() -> bool:
+    return importlib.util.find_spec("sslyze") is not None
+
+
 class _SslyzeProcesses:
     """Runs sslyze and kills the running invocations on interruption, so a long batch can't delay the shutdown."""
 
-    def __init__(self) -> None:
+    def __init__(self, sslyze: list[str] | None = None) -> None:
+        # Command prefix that starts sslyze
+        self.sslyze = sslyze or sslyze_command() or ["sslyze"]
         self._lock = threading.Lock()
         self._running: set[subprocess.Popen] = set()
         self._stopped = False
@@ -190,8 +228,11 @@ class _SslyzeProcesses:
         with self._lock:
             if self._stopped:
                 # As if killed straight away: no result to store
-                raise subprocess.CalledProcessError(-signal.SIGKILL, command)
-            process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                raise subprocess.CalledProcessError(_KILLED, command)
+            # UTF-8 output also on Windows, where a pipe would get the ANSI code page and sslyze would fail on
+            # certificates with other characters
+            process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding="utf-8",
+                                       errors="replace", env={**os.environ, "PYTHONIOENCODING": "utf-8"})
             self._running.add(process)
         try:
             with process:
@@ -204,8 +245,13 @@ class _SslyzeProcesses:
         finally:
             with self._lock:
                 self._running.discard(process)
-        if process.returncode:
-            raise subprocess.CalledProcessError(process.returncode, command, stdout, stderr)
+        returncode = process.returncode
+        if returncode and self._stopped:
+            returncode = _KILLED
+        elif returncode == _WINDOWS_CTRL_C_EXIT:
+            returncode = -signal.SIGINT
+        if returncode:
+            raise subprocess.CalledProcessError(returncode, command, stdout, stderr)
         return stdout
 
     @property
@@ -221,9 +267,10 @@ class _SslyzeProcesses:
 
 def check_certificate_chain(hostname: str, processes: _SslyzeProcesses | None = None) -> str | None:
     """Validate the host's chain with sslyze: 'Valid', 'Not Valid', 'Error', or None if sslyze was killed."""
-    command = ["sslyze", "--certinfo", "--json_out", "-", hostname]
+    processes = processes or _SslyzeProcesses()
+    command = [*processes.sslyze, "--certinfo", "--json_out", "-", hostname]
     try:
-        stdout = (processes or _SslyzeProcesses()).run(command, SSLYZE_TIMEOUT)
+        stdout = processes.run(command, SSLYZE_TIMEOUT)
         return _sslyze_validation_result(json.loads(stdout))
     except subprocess.CalledProcessError as e:
         if e.returncode < 0:
@@ -297,7 +344,7 @@ def _scan_batch(items: list[tuple[int, str]],
     hosts: dict[str, str] = {}
     for _, hostname in items:
         hosts.setdefault(hostname.lower(), hostname)
-    command = ["sslyze", "--certinfo", "--json_out", "-", *hosts.values()]
+    command = [*processes.sslyze, "--certinfo", "--json_out", "-", *hosts.values()]
     try:
         scanned, invalid = _index_sslyze_output(json.loads(processes.run(command, _batch_timeout(len(hosts)))))
     except subprocess.CalledProcessError as e:
@@ -389,12 +436,14 @@ def validate_leaf_certificate_chains(dao: CertificateDAO, database: Database) ->
     logging.info("Starting the certificate chain validation...")
 
     # Without sslyze every certificate would be overwritten with 'Error'
-    if shutil.which("sslyze") is None:
-        logging.error("'sslyze' executable not found in PATH: cannot validate the certificate chains.")
+    sslyze = sslyze_command()
+    if sslyze is None:
+        logging.error("sslyze is not installed, so the certificate chains cannot be validated. Run the installer again "
+                      "(install.sh on macOS and Linux, install.bat on Windows) to repair the installation.")
         return
 
     executor = ThreadPoolExecutor(max_workers=CHAIN_VALIDATION_WORKERS)
-    processes = _SslyzeProcesses()
+    processes = _SslyzeProcesses(sslyze)
     try:
         with progress_bar(dao.get_certificates_count(), " 🔍  [magenta bold]Processing Certificates[/magenta bold]",
                           "magenta") as pbar:

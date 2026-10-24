@@ -7,6 +7,7 @@ from pymongo.collection import Collection
 from pymongo.database import Database as PyMongoDatabase
 
 from db.database import DatabaseType
+from db.mongo_server import DEFAULT_URI, BundledServer, app_name, ensure_mongodb
 
 # Admin: Anuar Elio Magliari
 # Politecnico di Torino
@@ -22,18 +23,24 @@ ZLINT_DB_NAMES = {
 class MongoDbDatabase:
     """MongoDB database of the ZLint results for one certificate type."""
 
-    def __init__(self, db_type: DatabaseType, uri: str = 'mongodb://localhost:27017/'):
+    def __init__(self, db_type: DatabaseType, uri: str = DEFAULT_URI):
         self.uri = uri
         self.db_name = ZLINT_DB_NAMES[db_type]
         self.client: MongoClient | None = None
         self.db: PyMongoDatabase | None = None
+        self._server: BundledServer | None = None
 
     def connect(self) -> None:
-        """Connect, dropping the results of a previous run."""
+        """Connect, dropping the results of a previous run.
+
+        When nothing answers at a local URI, the MongoDB server included with the project is started (see
+        db.mongo_server); MongoServerError, whose message says what to do, if it cannot be.
+        """
         if self.client is not None:
             return
+        self._server = ensure_mongodb(self.uri)
         try:
-            self.client = MongoClient(self.uri)
+            self.client = MongoClient(self.uri, appname=app_name())
             logging.info(f"Dropping the previous results in the MongoDB database '{self.db_name}'.")
             self.client.drop_database(self.db_name)
             self.db = self.client[self.db_name]
@@ -45,6 +52,7 @@ class MongoDbDatabase:
                 self.client.close()
             self.client = None
             self.db = None
+            self._release_server()
             raise
 
     def get_collection(self, name: str) -> Collection:
@@ -54,9 +62,14 @@ class MongoDbDatabase:
         return self.db[name]
 
     def close(self) -> None:
-        """Close the connection."""
-        if self.client is None:
-            return
-        self.client.close()
-        self.client = None
-        logging.info("MongoDB connection closed.")
+        """Close the connection; the bundled MongoDB server stops when no other user is left."""
+        if self.client is not None:
+            self.client.close()
+            self.client = None
+            logging.info("MongoDB connection closed.")
+        self._release_server()
+
+    def _release_server(self) -> None:
+        server, self._server = self._server, None
+        if server is not None:
+            server.release()

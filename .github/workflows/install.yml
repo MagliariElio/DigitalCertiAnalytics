@@ -1,0 +1,231 @@
+# Runs the installer from the checkout on Linux, macOS (Apple Silicon and Intel) and Windows, exactly as a user
+# would, then checks the installation, runs the tests (Linux and macOS) and flake8 with the installed .venv Python,
+# and makes a short analysis of a generated scan file with the dca launcher (leaf analysis, charts, and ZLint with the
+# bundled MongoDB).
+name: Installer
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: installer-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  install:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux x86_64
+            os: ubuntu-latest
+            venv_python: .venv/bin/python
+          - name: macOS arm64
+            os: macos-latest
+            venv_python: .venv/bin/python
+          # macos-13 has been retired; macos-15-intel is GitHub's x86_64 macOS runner
+          - name: macOS x86_64
+            os: macos-15-intel
+            venv_python: .venv/bin/python
+          - name: Windows x86_64
+            os: windows-latest
+            venv_python: .venv/Scripts/python.exe
+    env:
+      DCA_NO_PAUSE: "1"          # install.bat must not wait for a key press
+      PYTHONUTF8: "1"
+      VENV_PYTHON: ${{ matrix.venv_python }}
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Check out the project
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      # --- Installation, as a user runs it ---------------------------------------------------------------------------
+
+      - name: Install (install.sh)
+        if: runner.os != 'Windows'
+        run: sh install.sh
+
+      - name: Install (install.bat)
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: install.bat
+
+      - name: Check the installation (install.sh --check)
+        if: runner.os != 'Windows'
+        run: ./install.sh --check
+
+      - name: Check the installation (install.bat --check)
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: install.bat --check
+
+      - name: Run the installer again (everything is skipped)
+        if: runner.os != 'Windows'
+        run: |
+          sh install.sh | tee rerun.log
+          grep -q "already installed" rerun.log
+
+      # --- Tests and lint with the installed .venv Python -------------------------------------------------------------
+
+      - name: Install pytest and flake8 into .venv
+        env:
+          UV_CACHE_DIR: .tools/cache/uv
+          UV_NO_CONFIG: "1"
+          UV_PYTHON_DOWNLOADS: never
+        run: |
+          uv=.tools/uv/uv
+          [ -x "$uv" ] || uv=.tools/uv/uv.exe
+          [ -x "$uv" ] || uv=$(command -v uv)
+          "$uv" pip install --python "$VENV_PYTHON" --exclude-newer 2026-10-01T00:00:00Z pytest flake8
+
+      # The tests use small shell scripts with a shebang as stand-ins for sslyze, ZLint and mongod, and POSIX signals
+      # and process groups, so they run on Linux and macOS only
+      - name: Tests (pytest)
+        if: runner.os != 'Windows'
+        run: '"$VENV_PYTHON" -m pytest'
+
+      - name: Lint (flake8)
+        run: '"$VENV_PYTHON" -m flake8 --extend-exclude .tools,data'
+
+      # --- Smoke run with the dca launcher ----------------------------------------------------------------------------
+
+      - name: Show the help (dca)
+        if: runner.os != 'Windows'
+        run: ./dca --help
+
+      - name: Show the help (dca.bat)
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: dca.bat --help
+
+      - name: Generate a small scan file
+        run: |
+          "$VENV_PYTHON" - <<'EOF'
+          # 20 certificates and 2 errors in ZGrab2 format, made with the test helpers
+          import json
+          import sys
+
+          sys.path.insert(0, "tests")
+          from helpers import Pki
+
+          rows = Pki().rows(20)
+          with open("res/certs_polito.json", "w", encoding="utf-8", newline="\n") as scan:
+              scan.writelines(json.dumps(row) + "\n" for row in rows)
+          print(f"res/certs_polito.json: {len(rows)} rows")
+          EOF
+
+      - name: Analyse the leaf certificates and draw the charts (dca)
+        if: runner.os != 'Windows'
+        run: ./dca --leaf_analysis --plot_leaf_results
+
+      - name: Analyse the leaf certificates and draw the charts (dca.bat)
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: dca.bat --leaf_analysis --plot_leaf_results
+
+      - name: Check the database and the charts
+        run: |
+          "$VENV_PYTHON" - <<'EOF'
+          import sqlite3
+          from pathlib import Path
+
+          leaf = Path("src/analysis/leaf")
+          with sqlite3.connect(leaf / "leaf_certificates.db") as db:
+              count = db.execute("SELECT COUNT(*) FROM Certificates").fetchone()[0]
+          charts = sorted((leaf / "plots").glob("*.png"))
+          print(f"{count} certificates in the database, {len(charts)} charts")
+          assert count == 20, count
+          assert charts, "no charts were drawn"
+          EOF
+
+      - name: ZLint with the bundled MongoDB (dca)
+        if: runner.os != 'Windows'
+        run: ./dca --leaf_zlint_check
+
+      - name: ZLint with the bundled MongoDB (dca.bat)
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: dca.bat --leaf_zlint_check
+
+      - name: Read the ZLint results back from MongoDB
+        run: |
+          mkdir -p zlint-results
+          cd zlint-results
+          python=../$VENV_PYTHON
+          "$python" ../src/analysis/zlint_analysis/reading_zlint_results.py
+          head -n 5 certificates_result_summary.csv
+          test "$(wc -l < certificates_result_summary.csv)" -gt 1
+
+      - name: Check that the bundled MongoDB server was stopped
+        if: runner.os != 'Windows'
+        run: |
+          if pgrep -fl ".tools/mongodb/bin/mongod"; then
+            echo "The bundled MongoDB server is still running"
+            exit 1
+          fi
+
+      - name: Check that the bundled MongoDB server was stopped (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $running = Get-Process mongod -ErrorAction SilentlyContinue |
+              Where-Object { $_.Path -like '*\.tools\mongodb\bin\mongod.exe' }
+          if ($running) { Write-Error 'The bundled MongoDB server is still running'; exit 1 }
+
+      # --- The one-line installation (curl | bash, irm | iex) into a new folder -------------------------------------
+      # The project archive is made from this checkout, so the code under test is installed, not the main branch.
+
+      - name: One-line installation into a new folder (curl | bash)
+        if: runner.os != 'Windows'
+        run: |
+          git archive --format=tar.gz --prefix=DigitalCertiAnalytics-main/ -o "$RUNNER_TEMP/project.tar.gz" HEAD
+          cd "$RUNNER_TEMP"
+          cat "$GITHUB_WORKSPACE/install.sh" |
+            DCA_INSTALL_DIR="$RUNNER_TEMP/one-line/DigitalCertiAnalytics" \
+            DCA_ARCHIVE_URL="file://$RUNNER_TEMP/project.tar.gz" bash -s -- --skip zlint,mongodb
+          "$RUNNER_TEMP/one-line/DigitalCertiAnalytics/dca" --help > /dev/null
+          "$RUNNER_TEMP/one-line/DigitalCertiAnalytics/install.sh" --check --skip zlint,mongodb
+
+      - name: One-line installation into a new folder (irm | iex)
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          git archive --format=zip --prefix=DigitalCertiAnalytics-main/ -o "$env:RUNNER_TEMP\project.zip" HEAD
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          $target = Join-Path $env:RUNNER_TEMP 'one-line\DigitalCertiAnalytics'
+          $env:DCA_INSTALL_DIR = $target
+          $env:DCA_ARCHIVE_URL = ([Uri](Join-Path $env:RUNNER_TEMP 'project.zip')).AbsoluteUri
+          $installer = Join-Path $env:GITHUB_WORKSPACE 'install.ps1'
+          Set-Location $env:RUNNER_TEMP   # Not inside a copy of the project, so the installer downloads it
+          # The command of INSTALL.md, with Get-Content in place of irm
+          powershell -NoProfile -ExecutionPolicy Bypass -Command "Get-Content -Raw '$installer' | Invoke-Expression"
+          & (Join-Path $target 'install.bat') --check
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          & (Join-Path $target 'dca.bat') --help | Out-Null
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - name: Keep the logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: logs-${{ matrix.os }}
+          path: |
+            .tools/install.log
+            .tools/manifest.json
+            src/app.log
+            data/mongodb.log
+          if-no-files-found: ignore
+          retention-days: 14

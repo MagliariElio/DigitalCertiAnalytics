@@ -8,6 +8,7 @@ import multiprocessing
 import os
 import re
 import shutil
+import signal
 import subprocess
 import tempfile
 import threading
@@ -20,14 +21,26 @@ from typing import Iterator, NamedTuple
 from bean.certificate import Certificate
 from dao.certificate_dao import CertificateDAO
 from db.MongoDbDatabase import MongoDbDatabase
+from db.mongo_server import MongoServerError, stop_requested, stop_signals_as_ctrl_c
 from utils.process_utils import init_worker_process, sigint_blocked
 from utils.utils import progress_bar
 
 # Admin: Anuar Elio Magliari
 # Politecnico di Torino
 
-ZLINT_PATH = Path(__file__).resolve().parents[2] / "zlint" / "v3" / "zlint"
-ZLINT_WORKERS = os.cpu_count() or 4
+PROJECT_DIR = Path(__file__).resolve().parents[2]
+_EXE_SUFFIX = ".exe" if os.name == "nt" else ""
+# Path of the ZLint executable to use, checked before the others
+ZLINT_ENV_VARIABLE = "DCA_ZLINT_PATH"
+# Where the installer puts ZLint, then where earlier versions of the README had it built
+ZLINT_LOCATIONS = (PROJECT_DIR / ".tools" / "zlint" / f"zlint{_EXE_SUFFIX}",
+                   PROJECT_DIR / "zlint" / "v3" / f"zlint{_EXE_SUFFIX}")
+# When set, this executable is used and nothing else is looked for (see find_zlint)
+ZLINT_PATH: Path | None = None
+
+# On Windows a process pool has at most 61 workers
+_WINDOWS_MAX_WORKERS = 61
+ZLINT_WORKERS = min(os.cpu_count() or 4, _WINDOWS_MAX_WORKERS) if os.name == "nt" else os.cpu_count() or 4
 ZLINT_TIMEOUT = 60      # Seconds per zlint process (a single certificate or a chunk)
 BATCH_SIZE = 1000       # Certificates read from the DB and saved to MongoDB per batch
 ZLINT_CHUNK_SIZE = 100  # Certificates linted by one zlint process, so its start-up is paid once per chunk
@@ -232,6 +245,10 @@ def _init_worker(parent_pid: int, directory: str) -> None:
     global _pem_files_lock
     _pem_files_lock = threading.Lock()
     init_worker_process(parent_pid, functools.partial(_remove_worker_files, directory))
+    if hasattr(signal, "SIGHUP"):
+        # Closing the terminal window reaches the workers too: like Ctrl+C, it is left to the main process (see
+        # run_zlint_check), which lets them finish their current chunk
+        signal.signal(signal.SIGHUP, signal.SIG_IGN)
 
 
 def _start_executor(total: int, directory: str) -> Executor:
@@ -288,10 +305,13 @@ def _collect(documents: dict[str, list[dict]], chunk_documents: list[tuple[str, 
         documents[collection_name].append(document)
 
 
-def _lint_certificates(dao: CertificateDAO, mongo: MongoDbDatabase, directory: str) -> None:
-    """Lint all certificates in parallel chunks, saving results to MongoDB one DB batch at a time."""
+def _lint_certificates(dao: CertificateDAO, mongo: MongoDbDatabase, directory: str, zlint_path: str) -> None:
+    """Lint all certificates in parallel chunks, saving results to MongoDB one DB batch at a time.
+
+    On interruption (Ctrl+C) or error, the results already collected are saved too.
+    """
     total = dao.get_certificates_count()
-    settings = _Settings(os.fspath(ZLINT_PATH), ZLINT_TIMEOUT, directory)
+    settings = _Settings(zlint_path, ZLINT_TIMEOUT, directory)
     executor = _start_executor(total, directory)
     chunks = _chunks(dao)
     in_flight: deque[tuple[Future, bool]] = deque()
@@ -311,13 +331,19 @@ def _lint_certificates(dao: CertificateDAO, mongo: MongoDbDatabase, directory: s
                 _collect(documents, chunk_documents)
                 pbar.update(len(chunk_documents))
                 if batch_end:
-                    _save_documents(mongo, documents)
-                    documents = {RESULTS_COLLECTION: [], ERRORS_COLLECTION: []}
+                    # Most of the main thread's time goes into these saves: a Ctrl+C waits for the end of the save, so
+                    # that the batch is neither lost nor, taken out first, saved twice
+                    batch, documents = documents, {RESULTS_COLLECTION: [], ERRORS_COLLECTION: []}
+                    with sigint_blocked():
+                        _save_documents(mongo, batch)
     finally:
         # On interruption, drop the queued chunks and wait for the running ones (a chunk takes a fraction of a second).
         # A second Ctrl+C is deferred to the end of the wait: interrupting it hangs the interpreter at exit on Python < 3.13
         with sigint_blocked():
             executor.shutdown(wait=True, cancel_futures=True)
+            # The chunks consumed since the last save; the running ones may hold errors of zlint processes stopped by
+            # the Ctrl+C. The MongoDB server is still running: the bundled one is stopped only after this stage
+            _save_documents(mongo, documents)
 
 
 def _process_exists(pid: int) -> bool:
@@ -354,26 +380,79 @@ def _remove_killed_runs_directories() -> None:
             shutil.rmtree(entry.path, ignore_errors=True)
 
 
-def run_zlint_check(dao: CertificateDAO) -> None:
-    """Run ZLint on the database certificates and save the results to MongoDB."""
-    if not (ZLINT_PATH.is_file() and os.access(ZLINT_PATH, os.X_OK)):
-        logging.error(f"ZLint executable not found or not executable: '{ZLINT_PATH}' "
-                      "(see the README to install it).")
-        return
+def _is_executable(path: Path) -> bool:
+    # On Windows every existing file passes os.X_OK
+    return path.is_file() and os.access(path, os.X_OK)
 
+
+def find_zlint() -> Path | None:
+    """The ZLint executable, None if there is none.
+
+    ZLINT_PATH when set; otherwise the first executable among DCA_ZLINT_PATH, .tools/zlint/zlint (where the installer
+    puts it), zlint/v3/zlint (where earlier versions of the README had it built) and the PATH. On Windows the files are
+    zlint.exe.
+    """
+    if ZLINT_PATH is not None:
+        return Path(ZLINT_PATH)
+    configured = os.environ.get(ZLINT_ENV_VARIABLE)
+    if configured:
+        if _is_executable(Path(configured)):
+            return Path(configured)
+        logging.warning(f"{ZLINT_ENV_VARIABLE} is '{configured}', which is not an executable file: looking for ZLint in "
+                        "the project folder and on the PATH instead.")
+    for location in ZLINT_LOCATIONS:
+        if _is_executable(location):
+            return location
+    found = shutil.which("zlint")
+    return None if found is None else Path(found)
+
+
+def _zlint_executable() -> str | None:
+    """Path of the ZLint executable to run; None, after logging what to do, if it is missing."""
+    zlint = find_zlint()
+    if zlint is not None and _is_executable(zlint):
+        return os.fspath(zlint)
+    problem = "ZLint is not installed" if zlint is None else f"The ZLint executable '{zlint}' is missing or cannot run"
+    logging.error(f"{problem}, so the certificates cannot be checked with ZLint. Run the installer again (install.sh "
+                  "on macOS and Linux, install.bat on Windows): it installs ZLint in the project folder.")
+    return None
+
+
+def run_zlint_check(dao: CertificateDAO) -> None:
+    """Run ZLint on the database certificates and save the results to MongoDB.
+
+    Closing the terminal window (or SIGTERM) meanwhile works like Ctrl+C: the results collected are saved, the
+    temporary files removed and the bundled MongoDB server stopped, instead of being left running.
+    """
+    zlint_path = _zlint_executable()
+    if zlint_path is None:
+        return
+    with stop_signals_as_ctrl_c():
+        _check_and_save(dao, zlint_path)
+
+
+def _check_and_save(dao: CertificateDAO, zlint_path: str) -> None:
     mongo = MongoDbDatabase(dao.certificate_type)
     try:
         # Check MongoDB up front, otherwise every result would be discarded with an error
         try:
             mongo.connect()
+        except MongoServerError as e:
+            # The MongoDB server included with the project cannot start: the message says why and what to do
+            logging.error(str(e))
+            return
         except Exception:
             logging.error("Could not connect to MongoDB: check that the service is running (see the README).")
             return
         _remove_killed_runs_directories()
         with tempfile.TemporaryDirectory(prefix=_RUN_DIRECTORY_PREFIX.format(pid=os.getpid()),
                                          ignore_cleanup_errors=True) as directory:
-            _lint_certificates(dao, mongo, directory)
+            _lint_certificates(dao, mongo, directory, zlint_path)
     except Exception as e:
+        if stop_requested():
+            # Raised while stopping after the terminal window was closed (e.g. a write to it): still a stop
+            logging.info(f"Error while stopping the ZLint check: {e}")
+            raise KeyboardInterrupt from e
         logging.error(f"Error running run_zlint_check: {e}")
     except KeyboardInterrupt:
         logging.info("Interrupt signal (SIGINT) received: shutting down...")
