@@ -437,12 +437,12 @@ def shutdown_render_pool() -> None:
 class _Plotter:
     """Computes the statistics and draws the charts of one database.
 
-    With a process pool the statistics are first materialized: the render processes read each table of the database
-    file once (StatisticsDAO.materialize), the main process aggregates the rows, and the charts are then drawn in the
-    pool. If that is not possible, each query runs in a render process on its own read-only connection to the
-    database file (at most STATISTICS_WORKERS at the same time), followed by its charts. In-memory databases and
-    connections with uncommitted changes are queried here and only the drawing goes to the pool. Without a pool
-    everything runs here, one query at a time when its first chart is reached.
+    The statistics are first materialized: each table of the database file is read once (StatisticsDAO.materialize,
+    by the render processes when there is a pool), the main process aggregates the rows, and the charts are then
+    drawn in the pool. If that is not possible, each query runs in a render process on its own read-only connection
+    to the database file (at most STATISTICS_WORKERS at the same time), followed by its charts. In-memory databases
+    and connections with uncommitted changes are queried here and only the drawing goes to the pool. Without a pool
+    everything runs here, one query at a time when its first chart is reached if the statistics are not materialized.
     """
 
     def __init__(self, dao: StatisticsDAO, directory: str, workers: int) -> None:
@@ -450,7 +450,7 @@ class _Plotter:
         self._directory = directory
         self._workers = workers
         self._executor = _executor(workers)
-        self._path = dao.shared_database_file() if self._executor is not None else None
+        self._path = dao.shared_database_file()
         self._data: dict[str, dict] = {}
 
     def run(self, charts: list[Chart], jobs: dict[str, _Job]) -> dict[str, _Result]:
@@ -475,14 +475,16 @@ class _Plotter:
             raise
 
     def _materialize(self, queries: list[str]) -> None:
-        """Statistics of every query from one read of each table, scanned by the render processes."""
+        """Statistics of every query from one read of each table, scanned by the render processes (here without a
+        pool)."""
         if not self._path:
             return
         logging.info("Computing the statistics (one read per table)...")
         start = time.monotonic()
         try:
             with StatisticsDAO.reading(self._path, self._dao.certificate_type) as reader:
-                if reader.materialize(queries, _SpawnSafeExecutor(self._executor), self._workers):
+                executor = None if self._executor is None else _SpawnSafeExecutor(self._executor)
+                if reader.materialize(queries, executor, self._workers if executor is not None else 1):
                     self._data = {query: getattr(reader, query)() for query in queries}
                     logging.info(f"Statistics computed in {time.monotonic() - start:.1f} s.")
         except sqlite3.Error as e:      # the queries run one by one instead

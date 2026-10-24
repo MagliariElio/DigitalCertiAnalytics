@@ -1,6 +1,11 @@
 
-# zgrab2 output
+# zgrab2 output, also compressed (--compress_input writes certs_polito.json.zst through a .part file)
 certs_polito.json
+certs_polito.json.zst
+certs_polito.json.gz
+certs_polito.json.bz2
+certs_polito.json.xz
+*.part
 
 # Analysis input files
 top-10m-websites-dom-cop.txt
@@ -33,8 +38,9 @@ env/
 venv/
 .venv/
 
-# Created by the installer (install.sh / install.ps1): private tools, caches and the bundled MongoDB's data
+# Created by the installer (install.sh / install.ps1): private tools and caches
 .tools/
+# The MongoDB data of older versions (the ZLint results are now in the SQLite databases)
 data/
 # Kept by the installer when it replaces or repairs the CT log list
 res/log_list.json.old

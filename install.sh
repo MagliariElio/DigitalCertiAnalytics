@@ -6,19 +6,20 @@
 #                                     (it downloads the project into ~/DigitalCertiAnalytics first; run inside a copy
 #                                     of the project, it updates that copy)
 #
-# Everything is installed inside the project folder (.tools, .venv, data): no administrator rights are needed and
+# Everything is installed inside the project folder (.tools, .venv): no administrator rights are needed and
 # nothing is changed elsewhere on the computer. To uninstall, delete the folder. Running it again is safe: it repairs
 # what is broken and skips what is already installed.
 #
 # Options:
 #   --check            only show the status of every component
-#   --skip mongodb     do not install the bundled MongoDB server (e.g. when you already run one on localhost:27017)
-#   --only zlint       install only these components (zlint, mongodb, log_list)
-#   --force            reinstall ZLint and MongoDB even if they are already installed (the CT log list is kept)
+#   --only zlint       install only these components (zlint, log_list)
+#   --skip zlint       leave out these components (e.g. when DCA_ZLINT_PATH names your own ZLint)
+#   --force            reinstall ZLint even if it is already installed (the CT log list is kept)
 #
 # Advanced environment variables:
 #   DCA_INSTALL_DIR    where "curl | bash" puts the project (default: ~/DigitalCertiAnalytics)
 #   DCA_ARCHIVE_URL    the project archive "curl | bash" downloads (default: the main branch on GitHub)
+#   DCA_KEEP_UV=1      keep uv in .tools/uv after the installation (for developers who install more packages)
 #
 # The script is POSIX sh. All of it is in functions and runs from the last line, so a download through "curl | bash"
 # that stops half-way runs nothing.
@@ -66,19 +67,20 @@ Without a copy of the project:      curl -fsSL https://raw.githubusercontent.com
                                     (it downloads the project into ~/DigitalCertiAnalytics first; run inside a copy
                                     of the project, it updates that copy)
 
-Everything is installed inside the project folder (.tools, .venv, data): no administrator rights are needed and
+Everything is installed inside the project folder (.tools, .venv): no administrator rights are needed and
 nothing is changed elsewhere on the computer. To uninstall, delete the folder. Running it again is safe: it repairs
 what is broken and skips what is already installed.
 
 Options:
   --check            only show the status of every component
-  --skip mongodb     do not install the bundled MongoDB server (e.g. when you already run one on localhost:27017)
-  --only zlint       install only these components (zlint, mongodb, log_list)
-  --force            reinstall ZLint and MongoDB even if they are already installed (the CT log list is kept)
+  --only zlint       install only these components (zlint, log_list)
+  --skip zlint       leave out these components (e.g. when DCA_ZLINT_PATH names your own ZLint)
+  --force            reinstall ZLint even if it is already installed (the CT log list is kept)
 
 Advanced environment variables:
   DCA_INSTALL_DIR    where "curl | bash" puts the project (default: ~/DigitalCertiAnalytics)
   DCA_ARCHIVE_URL    the project archive "curl | bash" downloads (default: the main branch on GitHub)
+  DCA_KEEP_UV=1      keep uv in .tools/uv after the installation (for developers who install more packages)
 EOF
 }
 
@@ -165,7 +167,7 @@ detect_platform() {
             fail "This is a 32-bit Linux system, which is not supported." "Use a 64-bit Linux system."
         fi
         if is_musl; then
-            # Several of the Python packages (pymongo, matplotlib, ...) have no ready-made versions for musl
+            # Several of the Python packages (sslyze's nassl, matplotlib, ...) have no ready-made versions for musl
             fail "Alpine Linux and the other Linux systems based on musl are not supported." \
                  "Use a Linux system based on glibc, such as Ubuntu, Debian or Fedora (also fine in a container or a virtual machine)."
         fi
@@ -266,7 +268,7 @@ check_location() {
     fi
     free_kb=$(df -Pk "$PROJECT" 2>/dev/null | awk 'NR==2 {print $4}')
     if [ -n "$free_kb" ] && [ "$free_kb" -lt 2000000 ] 2>/dev/null; then
-        warn "Only $((free_kb / 1024)) MB of disk space are free: the installation needs about 1.5 GB." \
+        warn "Only $((free_kb / 1024)) MB of disk space are free: the installation needs about 0.5 GB (1.5 GB while ZLint is built from its source code)." \
              "Free some disk space if the installation fails."
     fi
 }
@@ -319,9 +321,11 @@ install_uv() {
 }
 
 configure_environment() {
-    # uv and Python stay inside the project folder (the temporary files too: see use_private_tmp)
+    # uv and Python stay inside the project folder (the temporary files too: see use_private_tmp), and the Python
+    # bytecode goes to the same cache as with the dca launcher
     export UV_PYTHON_INSTALL_DIR="$PROJECT/.tools/python"
     export UV_CACHE_DIR="$PROJECT/.tools/cache/uv"
+    export PYTHONPYCACHEPREFIX="$PROJECT/.tools/cache/pycache"
     export UV_PYTHON_INSTALL_BIN=0 UV_PYTHON_INSTALL_REGISTRY=0 UV_NO_CONFIG=1 UV_MANAGED_PYTHON=1
     export UV_PYTHON_DOWNLOADS=automatic UV_HTTP_TIMEOUT="${UV_HTTP_TIMEOUT:-300}"
     unset PYTHONHOME PYTHONPATH VIRTUAL_ENV CONDA_PREFIX UV_PYTHON UV_SYSTEM_PYTHON
@@ -360,17 +364,29 @@ install_python() {
         fail "Could not install the Python packages." \
              "If the messages above are about the network, check your internet connection (behind a proxy, set HTTPS_PROXY) and run the installer again. If they say that a package has no usable wheels for this system, the system is too old or not supported: use a recent 64-bit Ubuntu, Debian or Fedora, or macOS 11 or newer."
     ok "Python packages installed"
+    # The downloaded packages are no longer needed: the .venv has its own copy of every file (about 150 MB)
+    "$UV" cache clean --quiet >/dev/null 2>&1 || rm -rf "$UV_CACHE_DIR"
+}
+
+# uv is needed only while installing: the bundled one is removed (it is downloaded again, checked, when the
+# installer runs again), unless DCA_KEEP_UV=1. A uv found on the computer is left alone.
+remove_bundled_uv() {
+    [ "$UV" = "$PROJECT/.tools/uv/uv" ] && [ "${DCA_KEEP_UV:-0}" != 1 ] || return 0
+    rm -rf "$PROJECT/.tools/uv" "$PROJECT/.tools/cache/uv-download"
 }
 
 run_tools_installer() {
     DCA_UV_VERSION=$("$UV" --version 2>/dev/null)
     export DCA_UV_VERSION
+    # Tells install_tools.py that .tools/uv is removed afterwards, so that the size it shows leaves it out
+    if [ "$UV" = "$PROJECT/.tools/uv/uv" ] && [ "${DCA_KEEP_UV:-0}" != 1 ]; then export DCA_UV_TEMPORARY=1; fi
     "$VENV_PY" "$PROJECT/scripts/install_tools.py" "$@"
     status=$?
     if [ "$OS" = macos ] && has_command xattr && [ -d "$PROJECT/.tools" ]; then
         xattr -dr com.apple.quarantine "$PROJECT/.tools" 2>/dev/null
     fi
     rm -rf "$PROJECT/.tools/cache/tmp"
+    [ "$status" -eq 0 ] && remove_bundled_uv
     return "$status"
 }
 

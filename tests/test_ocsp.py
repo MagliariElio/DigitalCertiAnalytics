@@ -24,6 +24,7 @@ from cryptography.x509 import ocsp
 
 import utils.ocsp_utils as ocsp_utils
 from db.database import DatabaseType
+from utils.chain_utils import find_root_certificate, intermediate_certificates
 from utils.ocsp_utils import run_ocsp_analysis
 
 ALGORITHM_NAMES = {hashes.SHA256: "sha256", hashes.SHA1: "sha1", hashes.SHA384: "sha384", hashes.SHA512: "sha512",
@@ -112,14 +113,23 @@ async def responder(pki, issuer_handler=None, revoked=frozenset({5003})):
 
 
 def ingest(database, dao, rows):
+    """Store the occurrences of the rows as the ingestion does for the database type."""
     # One transaction: a commit per row made the tests slow on a busy disk
     with database.transaction():
         for row in rows:
             if row["data"]["tls"]["status"] != "success":
                 continue
             server = row["data"]["tls"]["result"]["handshake_log"]["server_certificates"]
-            dao.process_insert_certificate(row, server["certificate"], server["chain"], 0)
-    database.finalize_analysis()
+            certificate, chain = server["certificate"], server["chain"]
+            if database.db_type is DatabaseType.LEAF:
+                dao.process_insert_certificate(row, certificate, chain, 0)
+            elif database.db_type is DatabaseType.INTERMEDIATE:
+                for emitted, (intermediate, remaining) in enumerate(intermediate_certificates(chain, certificate), 1):
+                    dao.process_insert_certificate(row, intermediate, remaining, emitted)
+            else:
+                root, emitted = find_root_certificate(chain, certificate)
+                if root:
+                    dao.process_insert_certificate(row, root, [], emitted)
 
 
 def set_urls(database, ocsp_urls, issuer_url=None, drop_issuers=False):
@@ -127,9 +137,16 @@ def set_urls(database, ocsp_urls, issuer_url=None, drop_issuers=False):
     aia = {"ocsp_urls": ocsp_urls}
     if issuer_url:
         aia["issuer_urls"] = [issuer_url]
-    database.conn.execute("UPDATE Certificates SET authority_info_access = ?", (json.dumps(aia),))
+    database.conn.execute("INSERT OR IGNORE INTO TextValues (value) VALUES (?)", (json.dumps(aia),))
+    database.conn.execute("UPDATE CertificateData SET authority_info_access = "
+                          "(SELECT value_id FROM TextValues WHERE value = ?)", (json.dumps(aia),))
     if drop_issuers:
-        database.conn.execute("UPDATE Issuers SET raw = NULL")
+        database.conn.execute("UPDATE IssuerData SET raw_id = NULL")
+    database.conn.commit()
+
+
+def reset_statuses(database):
+    database.conn.execute("UPDATE Occurrences SET ocsp_check = 0")
     database.conn.commit()
 
 
@@ -168,8 +185,7 @@ def test_ocsp_analysis_with_fallback_backup_and_resume(tmp_path, open_database, 
     assert rows[0] == ["OCSP Check", "Certificate Id", "Leaf Domain"] and len(rows) == 7
 
     # A rebuilt database resumes from the backup and from a temp file whose last row is truncated
-    database.conn.execute("UPDATE Certificates SET ocsp_check = 'No Request Done'")
-    database.conn.commit()
+    reset_statuses(database)
     with open(tmp_path / "ocsp_check_results_temp.csv", "w", newline="") as temp_file:
         temp_file.write("Unknown,1,site0.example.test\nGood,2")
     run(run_ocsp_analysis(database, tmp_path))
@@ -238,7 +254,7 @@ from db.database import Database, DatabaseType
 from utils.ocsp_utils import run_ocsp_analysis
 
 async def main():
-    database = Database(sys.argv[1], "db/schema_db.sql", DatabaseType.LEAF)
+    database = Database(sys.argv[1], DatabaseType.LEAF)
     database.connect(delete_database=True)
     task = asyncio.create_task(run_ocsp_analysis(database, sys.argv[2]))
     await asyncio.sleep(0)
@@ -304,23 +320,110 @@ def test_keep_alive_and_pages_pipeline(tmp_path, open_database, monkeypatch, pki
     assert len(state["connections"]) == 1
 
 
-def test_pending_rows_prefetch_and_early_close(open_database, pki, monkeypatch):
-    """Pages come in id order; closing the iterator early cancels the prefetched page and leaves the connection usable."""
+def test_pending_pairs_prefetch_and_early_close(open_database, pki, monkeypatch):
+    """Pages come in pair order; closing the iterator early cancels the prefetched page and leaves the connection usable."""
     monkeypatch.setattr(ocsp_utils, "OCSP_BATCH_SIZE", 2)
     database, dao = open_database(DatabaseType.LEAF)
     ingest(database, dao, pki.rows(5))
-    ids = [row[0] for row in database.conn.execute("SELECT certificate_id FROM Certificates ORDER BY 1")]
+    ids = [row[0] for row in database.conn.execute("SELECT occurrence_id FROM Occurrences ORDER BY 1")]
 
     async def scenario():
         async with aiosqlite.connect(database.db_path) as db:
-            every = [row[0] async for row in ocsp_utils._pending_rows(db)]
-            rows = ocsp_utils._pending_rows(db)
-            first = [(await rows.__anext__())[0] for _ in range(3)]
-            await rows.aclose()
-            async with db.execute("SELECT COUNT(*) FROM Certificates") as cursor:
+            assert await ocsp_utils._prepare_pending(db) == 5
+            every = [pair.occurrence_id async for pair in ocsp_utils._pending_pairs(db)]
+            pairs = ocsp_utils._pending_pairs(db)
+            first = [(await pairs.__anext__()).occurrence_id for _ in range(3)]
+            await pairs.aclose()
+            async with db.execute("SELECT COUNT(*) FROM OcspPending") as cursor:
                 return every, first, (await cursor.fetchone())[0]
 
     assert run(scenario()) == (ids, ids[:3], 5)
+
+
+def success_rows(pki, count):
+    return [row for row in pki.rows(count) if row["data"]["tls"]["status"] == "success"]
+
+
+def test_pairs_group_the_occurrences_across_pages(open_database, pki, monkeypatch):
+    """One pair per (certificate, issuer row); big pairs and pairs going on after their page are read again when
+    their result is written, a page at a time."""
+    monkeypatch.setattr(ocsp_utils, "OCSP_BATCH_SIZE", 2)
+    monkeypatch.setattr(ocsp_utils, "OCSP_HELD_OCCURRENCES", 2)
+    database, dao = open_database(DatabaseType.LEAF)
+    rows = success_rows(pki, 4)
+    ingest(database, dao, [rows[0], rows[1], rows[0], rows[2], rows[2], rows[2], rows[3]])
+
+    async def scenario():
+        async with aiosqlite.connect(database.db_path) as db:
+            assert await ocsp_utils._prepare_pending(db) == 7
+            pairs = [pair async for pair in ocsp_utils._pending_pairs(db)]
+            read = ocsp_utils._occurrences_reader(db)
+            pages = []
+            for pair in pairs:      # no async comprehension inside a comprehension before Python 3.11
+                pages.append([page async for page in read(pair)])
+            return [(pair.occurrence_id, pair.count, pair.occurrences) for pair in pairs], pages
+
+    pairs, pages = run(scenario())
+    domain = [f"site{i}.example.test" for i in range(4)]
+    assert pairs == [(1, 2, [(1, domain[0]), (3, domain[0])]), (2, 1, [(2, domain[1])]), (4, 3, None),
+                     (7, 1, [(7, domain[3])])]
+    assert pages == [[[(1, domain[0]), (3, domain[0])]], [[(2, domain[1])]],
+                     [[(4, domain[2]), (5, domain[2])], [(6, domain[2])]], [[(7, domain[3])]]]
+
+
+def test_each_pair_is_checked_once_for_all_its_occurrences(tmp_path, open_database, pki, monkeypatch, caplog):
+    """A repeated certificate is requested once; each occurrence gets the result, also in the CSV files, and the
+    problems of the check are logged once per occurrence, as when each occurrence was checked."""
+    monkeypatch.setattr(ocsp_utils, "OCSP_BATCH_SIZE", 2)
+    monkeypatch.setattr(ocsp_utils, "OCSP_HELD_OCCURRENCES", 2)
+
+    async def scenario():
+        async with responder(pki) as (base_url, state):
+            rows = success_rows(with_ocsp_url(pki, f"{base_url}/ocsp"), 4)
+            del rows[2]["data"]["tls"]["result"]["handshake_log"]["server_certificates"]["certificate"]["raw"]
+            database, dao = open_database(DatabaseType.LEAF)
+            ingest(database, dao, [rows[0], rows[1], rows[0], rows[2], rows[2], rows[2], rows[3]])
+            await run_ocsp_analysis(database, tmp_path)
+            return database, state
+
+    with caplog.at_level(logging.ERROR):
+        database, state = run(scenario())
+    # Odd serials need two requests (SHA256, then SHA1); the certificate without raw sends none
+    assert sorted(attempt[0] for attempt in state["attempts"]) == [5000, 5001, 5001, 5003, 5003]
+    domain = [f"site{i}.example.test" for i in range(4)]
+    impossible = "Impossible Retrieve OCSP Information"
+    expected = [["Good", "1", domain[0]], ["Good", "2", domain[1]], ["Good", "3", domain[0]],
+                [impossible, "4", domain[2]], [impossible, "5", domain[2]], [impossible, "6", domain[2]],
+                ["Revoked", "7", domain[3]]]
+    assert read_csv(tmp_path / ocsp_utils.OCSP_BACKUP_FILE)[1:] == expected
+    statuses_by_id = database.conn.execute("SELECT certificate_id, ocsp_check FROM Certificates ORDER BY 1").fetchall()
+    assert [list(row) for row in statuses_by_id] == [[int(row[1]), row[0]] for row in expected]
+    assert caplog.messages.count("Cannot send the OCSP request: the certificate is missing") == 3
+
+
+@pytest.mark.parametrize("db_type, requested, expected", [
+    # One intermediate in every chain: the root (its issuer raw) is in the even chains only, and without issuer URL
+    # the odd ones cannot be checked
+    (DatabaseType.INTERMEDIATE, [1001, 1001], ["Good", "No Issuer Url Found"] * 4 + ["Good"]),
+    # A root is its own issuer
+    (DatabaseType.ROOT, [1000], ["Good"] * 5),
+])
+def test_chain_certificates_are_checked_once(tmp_path, open_database, pki, monkeypatch, db_type, requested, expected):
+    monkeypatch.setattr(ocsp_utils, "OCSP_BATCH_SIZE", 2)
+
+    async def scenario():
+        async with responder(pki) as (base_url, state):
+            database, dao = open_database(db_type)
+            ingest(database, dao, pki.rows(9))
+            set_urls(database, [f"{base_url}/ocsp"])
+            await run_ocsp_analysis(database, tmp_path)
+            return database, state
+
+    database, state = run(scenario())
+    assert sorted(attempt[0] for attempt in state["attempts"]) == requested
+    rows = database.conn.execute("SELECT ocsp_check FROM Certificates ORDER BY certificate_id").fetchall()
+    assert [row[0] for row in rows] == expected
+    assert [row[0] for row in read_csv(tmp_path / ocsp_utils.OCSP_BACKUP_FILE)[1:]] == expected
 
 
 async def issuer_der(request, state):
@@ -522,38 +625,45 @@ def test_open_files_limit_without_resource_module(monkeypatch):
         assert limit is None
 
 
+def pair(occurrence_id, count=1):
+    """A pending pair whose occurrences are occurrence_id.. (domains d<id>), held in memory."""
+    occurrences = [(i, f"d{i}") for i in range(occurrence_id, occurrence_id + count)]
+    return ocsp_utils._Pair(occurrence_id, occurrence_id + count - 1, occurrence_id, "{}", None, (None, None),
+                            (None, None), occurrences)
+
+
 def test_first_failure_stops_the_checks():
     """An error writing a result is raised at once and cancels the checks in flight."""
     started, cancelled = [], []
 
     class Checker:
-        async def check(self, row):
-            started.append(row[0])
+        async def check(self, pair):
+            started.append(pair.occurrence_id)
             try:
-                await asyncio.sleep(0 if row[0] == 3 else 30)
+                await asyncio.sleep(0 if pair.occurrence_id == 3 else 30)
             except asyncio.CancelledError:
-                cancelled.append(row[0])
+                cancelled.append(pair.occurrence_id)
                 raise
-            return "Good", row[0], row[-1]
+            return "Good"
 
     class Writer:
-        def writerow(self, row):
-            if row[1] == 3:
+        def writerows(self, rows):
+            if rows[0][1] == 3:
                 raise OSError("disk full")
 
     closed = []
 
-    async def rows():
+    async def pairs():
         try:
-            for certificate_id in range(1, 100):
-                yield certificate_id, f"d{certificate_id}"
+            for occurrence_id in range(1, 100):
+                yield pair(occurrence_id)
         finally:
             closed.append(True)
 
     async def scenario():
         pbar = SimpleNamespace(update=lambda n: None)
         with pytest.raises(OSError, match="disk full"):
-            await ocsp_utils._run_checks(rows(), Checker(), 5, Writer(), pbar)
+            await ocsp_utils._run_checks(pairs(), Checker(), 5, Writer(), pbar)
         # Checked before asyncio.run closes the async generators left open
         assert closed == [True]
 
@@ -562,57 +672,82 @@ def test_first_failure_stops_the_checks():
 
 
 def test_failure_after_the_last_row_is_raised():
-    """A check failing after the last row was dispatched, before the iterator ends, is raised by the final wait."""
+    """A check failing after the last pair was dispatched, before the iterator ends, is raised by the final wait."""
     events = []
 
     class Checker:
-        async def check(self, row):
+        async def check(self, pair):
             await asyncio.sleep(0)
-            return "Good", row[0], row[-1]
+            return "Good"
 
     class Writer:
-        def writerow(self, row):
-            events.append(row[1])
-            if row[1] == 3:
+        def writerows(self, rows):
+            events.append(rows[0][1])
+            if rows[0][1] == 3:
                 raise OSError("disk full")
 
-    async def rows():
-        for certificate_id in range(1, 4):
-            yield certificate_id, f"d{certificate_id}"
-        # Ends once the failed check is over: no further row start sees the failure
+    async def pairs():
+        for occurrence_id in range(1, 4):
+            yield pair(occurrence_id)
+        # Ends once the failed check is over: no further pair start sees the failure
         await asyncio.sleep(0.05)
         events.append("end")
 
     async def scenario():
         pbar = SimpleNamespace(update=lambda n: None)
         with pytest.raises(OSError, match="disk full"):
-            await ocsp_utils._run_checks(rows(), Checker(), 5, Writer(), pbar)
+            await ocsp_utils._run_checks(pairs(), Checker(), 5, Writer(), pbar)
 
     run(scenario())
     assert events == [1, 2, 3, "end"]
 
 
 def test_checks_are_bounded_and_every_result_is_written():
-    """At most `concurrency` checks in flight, completing out of order; each result written and counted once."""
+    """At most `concurrency` checks in flight, completing out of order; one result per occurrence, counted once."""
     stats = {"in_flight": 0, "peak": 0}
     written, progress = [], []
 
     class Checker:
-        async def check(self, row):
+        async def check(self, pair):
             stats["in_flight"] += 1
             stats["peak"] = max(stats["peak"], stats["in_flight"])
-            await asyncio.sleep(0.001 * (row[0] % 3))
+            await asyncio.sleep(0.001 * (pair.occurrence_id % 3))
             stats["in_flight"] -= 1
-            return "Good", row[0], row[-1]
+            return "Good"
 
-    async def rows():
-        for certificate_id in range(1, 51):
-            yield certificate_id, f"d{certificate_id}"
+    async def pairs():
+        for occurrence_id in range(1, 51):
+            yield pair(occurrence_id)
+        yield pair(51, count=3)
 
     async def scenario():
-        writer, pbar = SimpleNamespace(writerow=written.append), SimpleNamespace(update=progress.append)
-        await ocsp_utils._run_checks(rows(), Checker(), 4, writer, pbar)
+        writer, pbar = SimpleNamespace(writerows=written.extend), SimpleNamespace(update=progress.append)
+        await ocsp_utils._run_checks(pairs(), Checker(), 4, writer, pbar)
 
     run(scenario())
-    assert sorted(written) == [("Good", i, f"d{i}") for i in range(1, 51)] and written != sorted(written)
-    assert progress == [1] * 50 and stats == {"in_flight": 0, "peak": 4}
+    assert sorted(written) == [("Good", i, f"d{i}") for i in range(1, 54)] and written != sorted(written)
+    assert sorted(progress) == [1] * 50 + [3] and stats == {"in_flight": 0, "peak": 4}
+
+
+def test_check_logs_problems_once_per_occurrence(caplog):
+    """Records >= WARNING of a check are handled once per occurrence of its pair, the others once."""
+    class Codec:
+        def der(self, der_zstd, raw):
+            return b"not a certificate"
+
+    async def scenario():
+        checker = ocsp_utils._OcspChecker(None, DatabaseType.LEAF, Codec())
+        aia = json.dumps({"ocsp_urls": ["http://127.0.0.1:1/ocsp"], "issuer_urls": ["http://127.0.0.1:1/issuer"]})
+        broken = pair(1, count=4)._replace(authority_info_access=aia, issuer_raw=(b"zstd", None), raw=(b"zstd", None))
+        with ocsp_utils.log_replay.replaying():
+            return await checker.check(broken), await checker.check(pair(9, count=2)._replace(
+                authority_info_access="not json"))
+
+    with caplog.at_level(logging.DEBUG):
+        statuses = run(scenario())
+    assert statuses == ("Impossible Retrieve OCSP Information", "Impossible Retrieve OCSP Information")
+    parse_errors = [message for message in caplog.messages if message.startswith("Invalid certificate, parsing error")]
+    assert len(parse_errors) == 8     # issuer and certificate, for each of the 4 occurrences
+    assert caplog.messages.count("Cannot send the OCSP request: the certificate is missing") == 4
+    # Debug details once per check
+    assert len([message for message in caplog.messages if "OCSP check of certificate ID 9" in message]) == 1

@@ -100,16 +100,17 @@ The repository contains a program that analyses the data further, checks specifi
 
 ### Main features:
 - **Certificate analysis**: extracts the relevant data from the certificates and stores it in a database for further analysis. The JSON file is read in parallel on all CPU cores, and only once even when several certificate types are analysed.
-- **Additional checks**: OCSP status, ZLint compliance checks (results stored in MongoDB) and chain validation with sslyze.
+- **Additional checks**: OCSP status, ZLint compliance checks and chain validation with sslyze, all stored in the SQLite databases.
+- **Compact storage**: each distinct certificate is stored once, with the list of the places where it was seen, and the raw certificates are compressed, so the databases are many times smaller than the scan file. The scan file itself can be kept compressed (`.zst`, `.gz`, `.xz` or `.bz2`): `--compress_input` makes it about five times smaller and it is still read in parallel.
 - **Charts of the results**: generates charts, LaTeX tables and captions that describe the analysed data.
 
 ---
 
 ## Quick Start
 
-The installer sets up everything the program needs (Python 3.12 and its packages, ZLint and a MongoDB server) inside
-the project folder, on Windows, macOS and Linux. It needs no administrator rights and changes nothing else on the
-computer: to uninstall, delete the folder. **[INSTALL.md](INSTALL.md)** explains every step for people with no
+The installer sets up everything the program needs (Python 3.12 and its packages, and ZLint) inside the project
+folder, on Windows, macOS and Linux, in about 170 MB of disk space (250 MB on Linux). It needs no administrator rights and changes nothing
+else on the computer: to uninstall, delete the folder. **[INSTALL.md](INSTALL.md)** explains every step for people with no
 computer experience, with the warnings you may see and how to fix problems.
 
 1. **Install.**
@@ -125,14 +126,16 @@ computer experience, with the warnings you may see and how to fix problems.
      In a copy of the project you already have, run `sh install.sh` in its folder, or double-click
      `install.command` on macOS.
 2. **Check** the installation: `./install.sh --check` (macOS, Linux) or `install.bat --check` (Windows).
-3. **Add the scan file**: copy the ZGrab2 output to `res/certs_polito.json` (see [Dataset](#dataset)).
+3. **Add the scan file**: copy the ZGrab2 output to `res/certs_polito.json` (see [Dataset](#dataset)). It can also be
+   compressed (`res/certs_polito.json.zst`, `.gz`, `.xz` or `.bz2`): `./dca --compress_input` (Windows:
+   `dca.bat --compress_input`) compresses it for you to about a fifth of its size.
 4. **Run** the program with the `dca` launcher: `./dca --leaf_analysis --plot_leaf_results` (macOS, Linux) or
    `dca.bat --leaf_analysis --plot_leaf_results` (Windows). You can also double-click `dca.command` (macOS) or `dca.bat`
    (Windows), which asks for the options.
 
 Running the installer again is safe: it skips what is installed and repairs what is broken (for example after the
 project folder was moved). Running the one-line command again, also inside a copy of the project, updates the code to
-the newest version and keeps your data. Developers who prefer their own Python environment, MongoDB service or ZLint build will
+the newest version and keeps your data. Developers who prefer their own Python environment or ZLint build will
 find the manual steps in [INSTALL.md](INSTALL.md#10-manual-installation-for-developers).
 
 ## Usage Guide
@@ -140,13 +143,21 @@ find the manual steps in [INSTALL.md](INSTALL.md#10-manual-installation-for-deve
 ### 1. Install the program
 Follow the [Quick Start](#quick-start) above, or [INSTALL.md](INSTALL.md) for the detailed guide. The installer puts:
 
-- ZLint, built from the exact version used by the analysis (commit `989baef`, Go pseudo-version
-  `v3.6.5-0.20241104164204-989baefda32f`), in `.tools/zlint`;
-- a portable MongoDB server in `.tools/mongodb`, which the program starts by itself when the ZLint results must be
-  saved (see [the MongoDB section](#viewing-and-managing-the-mongodb-database));
+- ZLint, the exact version used by the analysis (commit `989baef`, Go pseudo-version
+  `v3.6.5-0.20241104164204-989baefda32f`), in `.tools/zlint`: the ready-made program that the project's GitHub workflow
+  `zlint-binaries.yml` builds and publishes, used only when its SHA-256 equals the pinned reproducible build;
+  otherwise ZLint is built from its source code with Go, which is removed afterwards;
 - Python 3.12 in `.tools/python` and the packages of `requirements.txt` in the virtual environment `.venv`, with sslyze;
 - the Certificate Transparency log list `res/log_list.json`, downloaded from Google only if it is missing or damaged
   (`--force` keeps a valid list; `--force --only log_list` replaces it and keeps the old one as `res/log_list.json.old`).
+
+Afterwards it removes what the program does not need: uv and its download cache (uv is downloaded again, checked, when
+the installer runs again; `DCA_KEEP_UV=1` keeps it), the parts of Python the program never uses (Tk, IDLE, pip, the C
+headers; they are removed only after checking that Python still works), and the MongoDB server installed by older
+versions. An old `data/mongodb` folder, with the ZLint results of an older version, is deleted only if you answer `y`.
+The installation then takes about 55 MB in `.tools` and 110 MB in `.venv` on macOS (on Linux the `.venv` is about
+190 MB, because several Linux packages, numpy above all, carry their own compiled libraries); the Python
+bytecode cache in `.tools/cache/pycache` adds about 25 MB after the first run.
 
 ### 2. Run the program
 The program runs from the terminal or the command line, with several options that control what it does. Start it with
@@ -157,9 +168,11 @@ launcher works from any folder and runs the program with the project's own Pytho
 ./dca --help
 ```
 
-The input files are `res/certs_polito.json` (the ZGrab2 output, see [Dataset](#dataset)) and `res/log_list.json` (the list of the Certificate Transparency logs used to analyse the SCTs, available at https://www.gstatic.com/ct/log_list/v3/all_logs_list.json).
+The input files are `res/certs_polito.json` (the ZGrab2 output, see [Dataset](#dataset); also compressed, see [Compressed scan file](#compressed-scan-file)) and `res/log_list.json` (the list of the Certificate Transparency logs used to analyse the SCTs, available at https://www.gstatic.com/ct/log_list/v3/all_logs_list.json).
 
 #### Available options:
+- `--compress_input`: compresses the scan file in `res/` into `res/certs_polito.json.zst` (about a fifth of the space, still read in parallel), then runs the other requested options. See [Compressed scan file](#compressed-scan-file).
+
 - `--delete_all_db`: deletes all the existing databases before starting.
 - `--delete_leaf_db`: deletes the leaf certificate database before starting.
 - `--delete_intermediate_db`: deletes the intermediate certificate database before starting.
@@ -187,7 +200,9 @@ The input files are `res/certs_polito.json` (the ZGrab2 output, see [Dataset](#d
 
 The OCSP, ZLint, chain validation and chart options work on a database created by an earlier analysis of the same certificate type (or in the same command). If a database is deleted with a `--delete_*` option and not analysed again, the other options for that certificate type are skipped.
 
-The OCSP analysis and the chain validation contact servers on the internet. The ZLint options store their results in MongoDB: the program uses the MongoDB server that answers on `localhost:27017`, and starts the one included with the project when none is running.
+The OCSP analysis and the chain validation contact servers on the internet. The ZLint options store their results in the database of the certificate type (the `Zlint*` tables, see `Database Description.md`): no database server is needed.
+
+Databases created by older versions of the program cannot be used: the program says so (*"The leaf database '...' was created by an older version of DigitalCertiAnalytics: run the analysis again with --leaf_analysis to recreate it."*) and stops. Run the analysis of that certificate type again.
 
 #### Usage examples:
 The examples use `./dca` (macOS, Linux); on Windows write `dca.bat` instead, with the same options.
@@ -219,6 +234,10 @@ The examples use `./dca` (macOS, Linux); on Windows write `dca.bat` instead, wit
    ```bash
    ./dca --leaf_zlint_check --leaf_chain_validation
    ```
+7. **Compress the scan file to save disk space, then analyse it**:
+   ```bash
+   ./dca --compress_input --leaf_analysis
+   ```
 
 #### Running the program without the launcher (for developers)
 The launcher runs `python -m analysis.main` from the `src/` folder with the Python of `.venv`, with `.venv`'s programs
@@ -234,13 +253,44 @@ This is why the help text starts with `usage: python -m analysis.main`.
 
 #### Parallel reading of the JSON file
 
-The ZGrab2 JSON file is read only once, even when several analyses are requested (leaf, intermediate and root). Worker processes (one per CPU core, minus the one used by the main process) parse blocks of lines and write the rows of every database to temporary SQLite files in a staging folder, `src/analysis/<type>/ingestion_staging_*`. The main process stays the only writer of the databases and copies the rows in the order of the file, so the databases are the same as with a sequential reading. A file that fits in a single block is read without worker processes. The staging folder, next to the database of the first analysed type (leaf, then intermediate, then root), is deleted at the end of the analysis; if the program is killed, the next analysis of that certificate type deletes it.
+The ZGrab2 JSON file is read only once, even when several analyses are requested (leaf, intermediate and root). Worker processes (one per CPU core, minus the one used by the main process) parse blocks of lines and write the rows of every database to temporary SQLite files in a staging folder, `src/analysis/<type>/ingestion_staging_*`; each worker writes every distinct certificate, issuer and policy of its block once. The main process stays the only writer of the databases: it recognises the certificates already stored (by a 128-bit digest of all their values, kept in a temporary keys file in the staging folder) and copies the rows in the order of the file, so the databases are the same as with a sequential reading. A file that fits in a single block is read without worker processes. The staging folder, next to the database of the first analysed type (leaf, then intermediate, then root), is deleted at the end of the analysis; if the program is killed, the next analysis of that certificate type deletes it.
+
+#### Compressed scan file
+
+The scan file can be in `res/` with any of these names, read in this order of preference: `certs_polito.json`,
+`certs_polito.json.zst`, `certs_polito.json.gz`, `certs_polito.json.xz`, `certs_polito.json.bz2` (when several exist,
+the first is used and the log says so). The format is recognised from the content of the file.
+
+`--compress_input` converts the file into `res/certs_polito.json.zst`, a zstd file made of independent frames of about
+8 MB of whole lines with an index, which the workers decompress in parallel: it is read about as fast as the plain file
+and takes about a fifth of its space (an 80 GB scan becomes about 16 GB). It needs free space for the compressed file
+(about a third of the original), writes it as `certs_polito.json.zst.part`, checks it against the original, and only
+then gives it its name; after that it asks whether to delete the original (only in a terminal: elsewhere the original
+is kept). The 8 GB test file of 1 million lines took 8 seconds, checks included. `zstd -d` also reads the result.
+
+Files compressed with other programs (`gzip`, `xz`, `bzip2`, or `zstd` itself) are read by one thread that feeds the
+workers; gzip is still fast, while xz and bzip2 are much slower (about 190 and 60 MB/s): convert them once with
+`--compress_input`.
+
+A damaged or truncated compressed file (for example an interrupted copy) is reported with an error. A truncated
+`certs_polito.json.zst` made by `--compress_input` is refused before anything is read; with the other formats, and
+with a damaged frame, the lines read before the error are stored and the error says so: copy the file again (or
+compress the original again) and repeat the analysis.
+
+#### Database size
+
+Each distinct certificate is stored once (subject and extensions included), with one small row for every place where
+it was seen; repeated values (issuers, policies, dates, algorithm names, ...) are kept in lookup tables, and the raw
+certificates are stored as DER compressed with zstd. With 1 million scan lines the databases take 0.7 GB (leaf), 24 MB
+(intermediate) and 12 MB (root), instead of 2.9 GB, 1.8 GB and 0.4 GB with the first version of the schema; the
+results of every analysis are the same. `Database Description.md` describes the tables and the views that keep the
+original table names for queries.
 
 #### Parallelism of the other stages
 
-- **OCSP**: up to 200 concurrent requests over reused (keep-alive) connections; each issuer certificate is downloaded once per URL.
-- **ZLint**: up to 100 certificates per ZLint run, with one run per CPU core at a time.
-- **Chain validation**: up to 100 domains per sslyze run, with 16 runs in parallel.
+- **OCSP**: one request for each distinct pair of certificate and issuer (its result is saved for every occurrence), up to 200 concurrent requests over reused (keep-alive) connections; each issuer certificate is downloaded once per URL.
+- **ZLint**: each distinct certificate is linted once; up to 100 certificates per ZLint run, with one run per CPU core at a time.
+- **Chain validation**: one sslyze scan for each distinct leaf domain; up to 100 domains per sslyze run, with 16 runs in parallel.
 - **Charts**: the statistics are computed from one parallel read of each table and the charts are drawn in parallel processes (details, measured times and memory in `Plot Description.md`).
 
 ### 3. File Structure
@@ -252,17 +302,18 @@ The ZGrab2 JSON file is read only once, even when several analyses are requested
 - `install.bat`: double-clickable installer for Windows (runs `install.ps1` for this run only with `-ExecutionPolicy Bypass`; it accepts the same options, such as `install.bat --check`).
 - `dca`, `dca.bat`: launchers of the program for macOS/Linux and Windows (`./dca --help`, `dca.bat --help`).
 - `dca.command`: double-clickable launcher for macOS, which asks for the options.
-- `scripts/install_tools.py`: the cross-platform part of the installer, run with the `.venv` Python: it installs ZLint, the MongoDB server and the CT log list (pinned versions, every download verified with SHA-256, the log list with Google's signature) and prints the status table of `--check`.
-- `.tools/` (created by the installer, not in git): `uv/` (the uv program), `python/` (Python 3.12), `zlint/` (ZLint), `mongodb/` (the MongoDB server, `bin/mongod`), `cache/` (download and package caches, temporary files), `manifest.json` (what is installed, with versions and checksums) and `install.log` (the output of the last installation).
+- `scripts/install_tools.py`: the cross-platform part of the installer, run with the `.venv` Python: it installs ZLint and the CT log list (pinned versions, every download verified with SHA-256, the log list with Google's signature), removes the unused parts of Python and the leftovers of older versions, and prints the status table of `--check`.
+- `.tools/` (created by the installer, not in git): `python/` (Python 3.12), `zlint/` (ZLint), `cache/` (the matplotlib font cache and the Python bytecode cache; during the installation also `uv/`, the downloads and the temporary files), `manifest.json` (what is installed, with versions and checksums) and `install.log` (the output of the last installation).
 - `.venv/` (created by the installer, not in git): the virtual environment with the packages of `requirements.txt`.
-- `data/` (created by the installer, not in git): `data/mongodb/` holds the database files of the bundled MongoDB server, and `data/mongodb.log` its log (moved to `data/mongodb.log.old` above 50 MB).
+- `data/` (only from older versions, not in git): `data/mongodb/` holds the ZLint results that older versions stored in MongoDB. It is no longer used: the installer offers to delete it.
 - `requirements.txt`: the pinned Python packages. `environment.yml`: the same packages for conda (Python 3.10), used by the conda GitHub Action.
 - `zlint/`: legacy location of a ZLint built by hand (`zlint/v3/zlint`), still searched by the program; the installer puts ZLint in `.tools/zlint`.
-- `.github/workflows/install.yml`: GitHub Action that runs the installer on Linux, macOS (Apple Silicon and Intel) and Windows, then `--check`, the tests, flake8 and a short analysis of a generated scan file. `.github/workflows/python-package-conda.yml` runs flake8 and the tests in the conda environment.
-- `res/queries.sql`: SQL file with analysis queries on the relational databases.
+- `.github/workflows/install.yml`: GitHub Action that runs the installer on Linux, macOS (Apple Silicon and Intel) and Windows, then `--check`, a check of the installation size, the tests, flake8 and a short analysis of a generated scan file (also compressed with `--compress_input`, and ZLint with its results in SQLite). `.github/workflows/python-package-conda.yml` runs flake8 and the tests in the conda environment.
+- `.github/workflows/zlint-binaries.yml`: GitHub Action, started by hand, that builds ZLint for the six supported platforms with the installer's exact build, checks that every program has the pinned SHA-256 of the reproducible build, and publishes them in the release `zlint-<version>` that the installer downloads.
+- `res/queries.sql`: SQL file with analysis queries on the databases (they read the views with the names of the original tables; the `UPDATE` statements and the optional indexes use the base tables).
 - `res/queries_big_query.sql`: SQL file with the query used to get a list of European domains from Google's BigQuery service.
 - `res/log_list.json`: JSON file with the list of Certificate Transparency logs used by the program to analyse the SCTs.
-- `res/certs_polito.json`: JSON file with the certificates to analyse: the output of the ZGrab2 scan run on the list of input domains (not in git; put it there before running the `--*_analysis` options).
+- `res/certs_polito.json`: JSON file with the certificates to analyse: the output of the ZGrab2 scan run on the list of input domains (not in git; put it there before running the `--*_analysis` options). It can also be `res/certs_polito.json.zst`, `.gz`, `.xz` or `.bz2` (see [Compressed scan file](#compressed-scan-file)).
 - `res/README.md`: notes on the names of the input files.
 - `src/analysis/`: folder with the databases and the other analysis files.
 - `src/analysis/leaf/leaf_certificates.db`: SQLite database with the results of the leaf certificate analysis.
@@ -280,32 +331,37 @@ The ZGrab2 JSON file is read only once, even when several analyses are requested
   described in `Plot Description.md`.
 - `src/analysis/<type>/ingestion_staging_*`: temporary files of the parallel reading of the JSON file, deleted at the end
   of the analysis (if the program is killed, the next analysis of the same certificate type deletes them).
-- `src/analysis/zlint_analysis/reading_zlint_results.py`: Python script that extracts the data from the MongoDB (non-relational) database, used for detailed analyses of the stored certificate data. It writes three CSV files (`zlint_results.csv`, `issuer_ranking_by_result.csv` and `certificates_result_summary.csv`) to the folder where it is run, and starts and stops the bundled MongoDB server when no server is running. The name of the database to read can be passed as an argument (default `Leaf_Zlint_Checks_Google_3`, the database written by the ZLint analysis of the leaf certificates). Run it with the `.venv` Python from the project folder: `.venv/bin/python src/analysis/zlint_analysis/reading_zlint_results.py` (Windows: `.venv\Scripts\python.exe src\analysis\zlint_analysis\reading_zlint_results.py`).
-- `src/db/schema_db.sql`: SQL script that creates the schema of the leaf, intermediate and root databases (described in `Database Description.md`).
-- `src/db/mongo_server.py`: starts the MongoDB server included with the project when no server answers on `localhost:27017`, reuses one left running by an interrupted run, and stops it cleanly when the program ends.
+- `src/analysis/zlint_analysis/reading_zlint_results.py`: Python script that summarises the ZLint results stored in a certificate database, for detailed analyses. It writes three CSV files (`zlint_results.csv`, `issuer_ranking_by_result.csv` and `certificates_result_summary.csv`) to the folder where it is run. The certificate type is its argument (`leaf`, the default, `intermediate` or `root`; the database names of older versions, such as `Leaf_Zlint_Checks_Google_3`, are accepted too), and `--db PATH` reads another database file. It only reads the database. Run it with the `.venv` Python from the project folder: `.venv/bin/python src/analysis/zlint_analysis/reading_zlint_results.py leaf` (Windows: `.venv\Scripts\python.exe src\analysis\zlint_analysis\reading_zlint_results.py leaf`).
+- `src/db/schema.py`: the schema of the leaf, intermediate and root databases (schema version 2, described in `Database Description.md`): the base tables and the views with the names of the original tables.
+- `src/db/raw_codec.py`: compression of the raw certificates (DER compressed with zstd and a dictionary trained on the first certificates of the scan) and their decoding back to the original text.
+- `src/db/zlint_store.py`: the ZLint tables in the certificate database (each distinct ZLint output stored once, compressed).
 - `src/scan/`: folder with an exploratory scan script for the JSON file (`.venv/bin/python src/scan/scan_certificate_collection.py --help`, from the repository root, for the available commands; on Windows `.venv\Scripts\python.exe src\scan\scan_certificate_collection.py --help`).
 - `src/analysis/main.py`: entry point (`python -m analysis.main`, run by the `dca` launcher), runs the analysis and handles `Ctrl+C`.
 - `src/analysis/certificates_analysis.py`: command line and orchestration of the analyses. The ZGrab2 JSON file is read only once even when several analyses are requested (leaf, intermediate and root).
 - `src/analysis/ingestion.py`: parallel reading of the JSON file on all CPU cores; the main process stays the only writer of the databases, in the order of the file.
+- `src/analysis/input_file.py`: finds the scan file in `res/` (plain or compressed), reads the compressed formats, and `--compress_input`.
 - `src/bean/certificate.py`: X.509 certificate loaded from the raw ZGrab2 format (base64 DER).
-- `src/dao/certificate_dao.py` and `src/db/`: access to the SQLite and MongoDB databases.
+- `src/dao/certificate_dao.py` and `src/db/`: access to the SQLite databases.
 - `src/dao/statistics_dao.py`: statistical queries used for the charts.
 - `src/dao/statistics_facts.py`: computes the chart statistics from one parallel read of each table, with the same results as the statistical queries (used for large databases; see `Plot Description.md`).
 - `src/utils/chain_utils.py`: traversal of the certificate chains, signature checks and chain validation with sslyze (several domains per sslyze run, in parallel). sslyze is looked for on the `PATH`, then next to the running Python (the `.venv`), then run as `python -m sslyze`.
 - `src/utils/ocsp_utils.py`: OCSP analysis (concurrent requests over reused connections, resumed from the temporary and backup CSV files).
-- `src/utils/zlint_utils.py`: ZLint analysis run in parallel (many certificates per ZLint run), with the results saved in MongoDB. ZLint is looked for in the file named by the `DCA_ZLINT_PATH` environment variable, then in `.tools/zlint/zlint`, then in `zlint/v3/zlint`, then on the `PATH` (`zlint.exe` on Windows).
+- `src/utils/zlint_utils.py`: ZLint analysis run in parallel (many certificates per ZLint run, each distinct certificate once), with the results saved in the certificate database. ZLint is looked for in the file named by the `DCA_ZLINT_PATH` environment variable, then in `.tools/zlint/zlint`, then in `zlint/v3/zlint`, then on the `PATH` (`zlint.exe` on Windows).
 - `src/utils/graph_plotter.py` and `src/utils/plotter_utils.py`: generation of the charts, tables and captions, in parallel.
 - `src/utils/process_utils.py`: management of the worker processes (stopped with `Ctrl+C`, and closed if the main process ends).
+- `src/utils/log_replay.py`: repeats the warnings of a check made once for many occurrences (OCSP, chain validation) once per occurrence, so the log is the same as when every occurrence was checked.
 - `src/utils/utils.py`: logging setup, progress bars and the command-line help format.
 - `tests/`: automated tests (pytest), also run by the GitHub Actions together with the flake8 check.
 
 ### 4. Log
-The program writes the `app.log` log file, which records the progress of the application and any errors. The log is written in the folder where the program is run: the `dca` launcher runs it from `src/`, so the file is `src/app.log`. The installer writes its output to `.tools/install.log`, and the bundled MongoDB server writes its log to `data/mongodb.log`.
+The program writes the `app.log` log file, which records the progress of the application and any errors. The log is written in the folder where the program is run: the `dca` launcher runs it from `src/`, so the file is `src/app.log`. The installer writes its output to `.tools/install.log`.
 
-Stopping the program with `Ctrl+C` closes the connections and the worker processes in an orderly way, and the process exits with exit code `130`: the data already saved stay in the databases, and the OCSP analysis can be resumed from where it stopped. If the main process is killed, its worker processes exit on their own. The bundled MongoDB server is not interrupted by `Ctrl+C`: it finishes saving the ZLint results and is then stopped cleanly. On macOS and Linux, closing the terminal window (SIGHUP) or a `kill` (SIGTERM) during the ZLint stage or `reading_zlint_results.py` is handled in the same way, so the bundled server is never left running. On Windows, `cmd` then asks *"Terminate batch job (Y/N)?"*; either answer is fine.
+Stopping the program with `Ctrl+C` closes the connections and the worker processes in an orderly way, and the process exits with exit code `130`: the data already saved stay in the databases, and the OCSP analysis can be resumed from where it stopped. If the main process is killed, its worker processes exit on their own. During the ZLint stage, the batch of results being saved is completed first (or not at all), so the database stays consistent; on macOS and Linux, closing the terminal window (SIGHUP) or a `kill` (SIGTERM) during the ZLint stage or `reading_zlint_results.py` is handled in the same way. `--compress_input` interrupted leaves no partial file. On Windows, `cmd` then asks *"Terminate batch job (Y/N)?"*; either answer is fine.
+
+When the run cannot start (the scan file or a database needed by the requested stages is missing, a database was created by an older version, or `--compress_input` failed), the error is logged and the exit code is `1`.
 
 ### 5. Tests
-The automated tests need no network, MongoDB, ZLint or sslyze (they are simulated with small shell scripts), and run on macOS and Linux (on Windows, in WSL). From the project's root folder, with the `.venv` created by the installer:
+The automated tests need no network, ZLint or sslyze (they are simulated with small shell scripts), and run on macOS and Linux (on Windows, in WSL). The installer removes its uv at the end: run it once with `DCA_KEEP_UV=1 sh install.sh` to keep it in `.tools/uv`. Then, from the project's root folder, with the `.venv` created by the installer:
 
 ```bash
 UV_CACHE_DIR=.tools/cache/uv .tools/uv/uv pip install --python .venv/bin/python pytest flake8
@@ -313,52 +369,19 @@ UV_CACHE_DIR=.tools/cache/uv .tools/uv/uv pip install --python .venv/bin/python 
 .venv/bin/python -m flake8 --extend-exclude .tools,data
 ```
 
-With an environment of your own, activate it and run `pip install pytest flake8`, `pytest` and `flake8 --extend-exclude .tools,data`. The `--extend-exclude` option keeps flake8 out of the tools installed in `.tools`. If the installer used a `uv` already installed on the computer, `.tools/uv` does not exist: use `uv` instead.
+With an environment of your own, activate it and run `pip install pytest flake8`, `pytest` and `flake8 --extend-exclude .tools,data`. The `--extend-exclude` option keeps flake8 out of the tools installed in `.tools`. If the installer used a `uv` already installed on the computer, `.tools/uv` does not exist: use `uv` instead. `UV_CACHE_DIR=.tools/cache/uv .tools/uv/uv cache clean` frees the space of the downloaded packages afterwards.
 
-The tests cover the ingestion pipeline and the databases, the command line and `Ctrl+C` handling, the OCSP and ZLint analyses, chain and signature validation, the worker processes, the statistical queries and the charts, the installer (`tests/test_install_tools.py`, also `install.sh` and `dca.command`) and the bundled MongoDB server (`tests/test_mongo_server.py`, also the closing of the terminal window).
+The tests cover the ingestion pipeline and the databases (also from compressed scan files and `--compress_input`), the command line and `Ctrl+C` handling, the OCSP and ZLint analyses and the ZLint storage, chain and signature validation, the worker processes and the closing of the terminal window, the statistical queries and the charts, and the installer (`tests/test_install_tools.py`, also `install.sh` and `dca.command`).
 
-## Viewing and Managing the MongoDB Database
+## Viewing the Databases
 
-The ZLint results are stored in MongoDB, in the databases named in `ZLINT_DB_NAMES` (`src/db/MongoDbDatabase.py`): `Leaf_Zlint_Checks_Google_3` and `Intermediate_Zlint_Checks_Google_3`.
+The databases are ordinary SQLite files (`src/analysis/<type>/<type>_certificates.db`): open them with
+[DB Browser for SQLite](https://sqlitebrowser.org/) or the `sqlite3` program, preferably while no analysis is running.
+The views `Certificates`, `Subjects`, `Issuers`, `Extensions`, `CertificatePolicies`, `SignedCertificateTimestamps` and
+`Errors` have the names and columns of the original tables, so queries written for them keep working: `res/queries.sql`
+has many examples. The `raw` columns hold the certificates compressed with zstd; `Database Description.md` explains how
+to read them back, and how to change data (on the base tables: the views cannot be changed).
 
-### The MongoDB server included with the project
-The installer puts a portable MongoDB Community server in `.tools/mongodb` (version 8.0.34; 7.0.45 on systems where 8.0 has no build). You do not need to install or start MongoDB yourself:
-
-- When a ZLint option (or `reading_zlint_results.py`) needs MongoDB and no server answers on `localhost:27017`, the program starts the bundled server on `127.0.0.1:27017`, so it accepts connections only from this computer. Its data are in `data/mongodb` and its log in `data/mongodb.log`.
-- At the end of the ZLint stage, and at the latest when the program exits (also after `Ctrl+C`), the program stops the server cleanly. A server left running by a program that was killed is reused by the next run and then stopped.
-- If another program is connected to the bundled server (another analysis, or MongoDB Compass), the server is left running with a warning, and the last analysis that uses it stops it.
-- A MongoDB server that you run yourself on `localhost:27017` (a service, Docker, ...) is used instead and is never stopped. Install with `sh install.sh --skip mongodb` (or `install.bat --skip mongodb`) to leave the bundled server out.
-- If port 27017 is used by a program that is not MongoDB, the program says so: close that program and run the analysis again.
-
-To use other tools with the bundled server (MongoDB Compass, `mongodump`), start it by hand in a terminal, from the project folder, and leave that window open:
-
-```bash
-.tools/mongodb/bin/mongod --dbpath data/mongodb --bind_ip 127.0.0.1 --port 27017 --nounixsocket
-```
-
-On Windows: `.tools\mongodb\bin\mongod.exe --dbpath data\mongodb --bind_ip 127.0.0.1 --port 27017`. Press `Ctrl+C` in that window to stop it when you have finished. Do not start it while an analysis is running. An analysis started while it runs uses it and may stop it at the end, when no other program is connected.
-
-### MongoDB Compass
-To view and manage the MongoDB database easily, a MongoDB management tool with a graphical interface is recommended, such as **MongoDB Compass**. Compass lets you explore the data, run queries, analyse the structure of the database, and much more.
-
-1. Go to the official MongoDB Compass website: [MongoDB Compass](https://www.mongodb.com/products/compass).
-2. Download and install the version for your operating system (Windows, macOS, Linux).
-3. Start the MongoDB server (see above), open Compass and connect to `mongodb://localhost:27017` (the bundled server has no user name or password).
-
-Compass offers an easy-to-use interface to view the data, analyse the collections and edit the documents.
-
-### How to dump a MongoDB database (optional)
-
-To create a backup (dump) of a MongoDB database, use the **`mongodump`** command, while the server is running (see above). It copies the data of the database into a given folder. `mongodump` is not included with the project: it is part of the [MongoDB Database Tools](https://www.mongodb.com/try/download/database-tools), a separate download. Once installed, `mongodump --version` prints its version.
-
-1. **For the "Leaf_Zlint_Checks_Google_3" database**:
-   ```bash
-   mongodump --db Leaf_Zlint_Checks_Google_3 --out Leaf_Zlint_Checks_Google_3
-   ```
-
-2. **For the "Intermediate_Zlint_Checks_Google_3" database**:
-   ```bash
-   mongodump --db Intermediate_Zlint_Checks_Google_3 --out Intermediate_Zlint_Checks_Google_3
-   ```
-
-These commands copy the data of each database into the folder given with `--out`. You can then use these dump files to restore the data (with `mongorestore`, also part of the Database Tools) or to analyse it. To keep the whole database of the bundled server instead, you can also copy the `data/mongodb` folder while the server is stopped.
+The ZLint results are in the same files: the `ZlintDocuments` view has one row per linted certificate occurrence, and
+`reading_zlint_results.py` summarises them in three CSV files (see [File Structure](#3-file-structure)). To keep a
+copy of the results, copy the database file while no analysis is running.

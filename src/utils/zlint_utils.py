@@ -12,17 +12,16 @@ import signal
 import subprocess
 import tempfile
 import threading
-from collections import Counter, deque
+from collections import deque
 from concurrent.futures import Executor, Future, ProcessPoolExecutor, ThreadPoolExecutor
-from datetime import datetime
 from pathlib import Path
 from typing import Iterator, NamedTuple
 
 from bean.certificate import Certificate
 from dao.certificate_dao import CertificateDAO
-from db.MongoDbDatabase import MongoDbDatabase
-from db.mongo_server import MongoServerError, stop_requested, stop_signals_as_ctrl_c
-from utils.process_utils import init_worker_process, sigint_blocked
+from db.raw_codec import RawCodec
+from db.zlint_store import LintResult, ZlintStore, body_digest, encode_body, timestamp
+from utils.process_utils import init_worker_process, sigint_blocked, stop_requested, stop_signals_as_ctrl_c
 from utils.utils import progress_bar
 
 # Admin: Anuar Elio Magliari
@@ -42,15 +41,13 @@ ZLINT_PATH: Path | None = None
 _WINDOWS_MAX_WORKERS = 61
 ZLINT_WORKERS = min(os.cpu_count() or 4, _WINDOWS_MAX_WORKERS) if os.name == "nt" else os.cpu_count() or 4
 ZLINT_TIMEOUT = 60      # Seconds per zlint process (a single certificate or a chunk)
-BATCH_SIZE = 1000       # Certificates read from the DB and saved to MongoDB per batch
+VERSION_TIMEOUT = 10    # Seconds for `zlint -version`, recorded with the results
+BATCH_SIZE = 1000       # Certificates read from the DB and saved per transaction
 ZLINT_CHUNK_SIZE = 100  # Certificates linted by one zlint process, so its start-up is paid once per chunk
 
 # From this many certificates the chunks are linted in worker processes instead of threads: threads of one process
 # contend for the GIL (writing the PEM files, parsing zlint's JSON), while starting the processes takes ~0.5-1 s
 ZLINT_PROCESSES_FROM = 10000
-
-RESULTS_COLLECTION = 'zlint_results'
-ERRORS_COLLECTION = 'zlint_errors'
 
 # Temporary directory of a run, named after its main process so that a later run can remove it if that process was killed.
 # The '-' is never in the random part of a name, so the directories of earlier versions ('zlint_<random>') never match
@@ -68,21 +65,8 @@ class _Settings(NamedTuple):
     directory: str  # Temporary directory of the run
 
 
-def _timestamp() -> str:
-    """Current time in the logging format (e.g. '2024-10-06 12:30:00,123')."""
-    now = datetime.now()
-    return f"{now:%Y-%m-%d %H:%M:%S},{now.microsecond // 1000:03d}"
-
-
-def _count_results(zlint_result: object) -> dict[str, int]:
-    """Count each lint result (pass, NA, NE, info, ...) in the ZLint output."""
-    if not isinstance(zlint_result, dict):
-        return {}
-    return dict(Counter(lint['result'] for lint in zlint_result.values() if isinstance(lint, dict) and 'result' in lint))
-
-
 class _ZLintError(Exception):
-    """ZLint failure (non-zero exit or invalid output); the message is saved to MongoDB."""
+    """ZLint failure (non-zero exit or invalid output); the message is saved with the results."""
 
 
 def _run_zlint(raw: str | None, settings: _Settings) -> object:
@@ -97,37 +81,24 @@ def _run_zlint(raw: str | None, settings: _Settings) -> object:
         raise _ZLintError("Error decoding the ZLint JSON output.") from None
 
 
-def _result_document(row, zlint_result: object) -> tuple[str, dict]:
-    certificate_id, leaf_domain, _, common_name, organization, issuer_dn = row
-    return RESULTS_COLLECTION, {
-        'count_results': _count_results(zlint_result),
-        'certificate_id': certificate_id,
-        'leaf_domain': leaf_domain,
-        'issuer_common_name': common_name,
-        'issuer_organization': organization,
-        'issuer_dn': issuer_dn,
-        'zlint_results': zlint_result,
-    }
+def _lint_result(raw_id: int, zlint_result: object) -> LintResult:
+    """The stored form of a ZLint output, computed in the worker so that the main process only saves it."""
+    body = encode_body(zlint_result)
+    return LintResult(raw_id, body_digest(body), body, None, None)
 
 
-def _lint_certificate(row, settings: _Settings) -> tuple[str, dict]:
-    """Lint a certificate with its own zlint process, returning the target MongoDB collection and the document to store."""
+def _lint_certificate(row: tuple[int, object], settings: _Settings) -> LintResult:
+    """Lint a certificate, a (raw_id, raw) pair, with its own zlint process."""
     try:
-        zlint_result = _run_zlint(row[2], settings)
+        zlint_result = _run_zlint(row[1], settings)
     except _ZLintError as e:
         error_message = str(e)
     except Exception as e:
         # A NULL raw fails here, before zlint is started
         error_message = f"Unexpected error during processing: {e}"
     else:
-        return _result_document(row, zlint_result)
-
-    return ERRORS_COLLECTION, {
-        'certificate_id': row[0],
-        'leaf_domain': row[1],
-        'error_message': error_message,
-        'timestamp': _timestamp(),
-    }
+        return _lint_result(row[0], zlint_result)
+    return LintResult(row[0], None, None, error_message, timestamp())
 
 
 def _lint_files(paths: list[str], settings: _Settings) -> list[object] | None:
@@ -156,28 +127,6 @@ def _lint_files(paths: list[str], settings: _Settings) -> list[object] | None:
     return results
 
 
-def _share_equal_lints(zlint_result: object, shared: dict) -> object:
-    """Make equal lint results one object, so the chunk's documents are pickled for the main process 2-3x faster.
-
-    A chunk has only about ten distinct lint results, flat objects of strings such as {"result": "pass"}. Only these
-    are shared: values of other types can be equal but of different types (True == 1 == 1.0).
-    """
-    if isinstance(zlint_result, dict):
-        for name, lint in zlint_result.items():
-            try:
-                key = tuple(lint.items())
-                shared_lint = shared.get(key)
-            except (AttributeError, TypeError):
-                # Not an object, or one with nested values
-                continue
-            if shared_lint is not None:
-                # Shared objects hold only strings, and a string is equal only to a string
-                zlint_result[name] = shared_lint
-            elif all(type(value) is str for value in lint.values()):
-                shared[key] = lint
-    return zlint_result
-
-
 def _write_pem_files(rows: list, settings: _Settings) -> list[tuple[int, str]]:
     """Write each certificate with a raw to its own PEM file; return (row index, path) pairs.
 
@@ -189,42 +138,41 @@ def _write_pem_files(rows: list, settings: _Settings) -> list[tuple[int, str]]:
     with _pem_files_lock or contextlib.nullcontext():
         os.makedirs(directory, exist_ok=True)
         for index, row in enumerate(rows):
-            if row[2] is not None:
+            if row[1] is not None:
                 path = os.path.join(directory, f"{index}.pem")
                 with open(path, "wb") as file:
-                    file.write(Certificate.to_pem(row[2]).encode())
+                    file.write(Certificate.to_pem(row[1]).encode())
                 files.append((index, path))
     return files
 
 
-def _lint_chunk(rows: list, settings: _Settings) -> list[tuple[str, dict]]:
-    """Lint a chunk of certificates with as few zlint processes as possible; documents keep the input order.
+def _lint_chunk(rows: list[tuple[int, object]], settings: _Settings) -> list[LintResult]:
+    """Lint a chunk of (raw_id, raw) certificates with as few zlint processes as possible; results keep the order.
 
     When a process stops early, the certificates it printed keep their results, the one it stopped at is linted
-    alone (giving exactly the single-certificate document) and the rest are retried together.
+    alone (giving exactly the single-certificate result) and the rest are retried together.
     """
-    # A NULL raw gets its error document without starting zlint
-    documents = [None if row[2] is not None else _lint_certificate(row, settings) for row in rows]
+    # A NULL raw gets its error without starting zlint
+    results = [None if row[1] is not None else _lint_certificate(row, settings) for row in rows]
     try:
         queue = _write_pem_files(rows, settings)
     except OSError:
         # e.g. no space left for the temporary files: one zlint process per certificate, as before
-        return [document or _lint_certificate(row, settings) for row, document in zip(rows, documents)]
+        return [result or _lint_certificate(row, settings) for row, result in zip(rows, results)]
 
-    shared: dict = {}
     together = True
     while queue:
-        results = _lint_files([path for _, path in queue], settings) if together and len(queue) > 1 else []
-        if results is None:
-            together, results = False, []
+        outputs = _lint_files([path for _, path in queue], settings) if together and len(queue) > 1 else []
+        if outputs is None:
+            together, outputs = False, []
 
-        for (index, _), zlint_result in zip(queue, results):
-            documents[index] = _result_document(rows[index], _share_equal_lints(zlint_result, shared))
-        if len(results) < len(queue):
-            index = queue[len(results)][0]
-            documents[index] = _lint_certificate(rows[index], settings)
-        queue = queue[len(results) + 1:]
-    return documents
+        for (index, _), zlint_result in zip(queue, outputs):
+            results[index] = _lint_result(rows[index][0], zlint_result)
+        if len(outputs) < len(queue):
+            index = queue[len(outputs)][0]
+            results[index] = _lint_certificate(rows[index], settings)
+        queue = queue[len(outputs) + 1:]
+    return results
 
 
 def _remove_worker_files(directory: str) -> None:
@@ -280,42 +228,47 @@ def _submit(executor: Executor, rows: list, settings: _Settings) -> Future:
         return executor.submit(_lint_chunk, rows, settings)
 
 
-def _save_documents(mongo: MongoDbDatabase, documents: dict[str, list[dict]]) -> None:
-    for collection_name, collection_documents in documents.items():
-        if not collection_documents:
-            continue
-        try:
-            mongo.get_collection(collection_name).insert_many(collection_documents)
-        except Exception as e:
-            logging.error(f"Error saving the results to MongoDB: {e}")
+def _save_results(store: ZlintStore, results: list[LintResult]) -> None:
+    try:
+        store.save(results)
+    except Exception as e:
+        logging.error(f"Error saving the ZLint results to the database: {e}")
 
 
-def _chunks(dao: CertificateDAO) -> Iterator[tuple[list, bool]]:
-    """Yield chunks of certificates, flagging the last chunk of each DB batch."""
-    for batch in dao.iter_raw_certificates(BATCH_SIZE):
-        for start in range(0, len(batch), ZLINT_CHUNK_SIZE):
-            yield batch[start:start + ZLINT_CHUNK_SIZE], start + ZLINT_CHUNK_SIZE >= len(batch)
+def _chunks(store: ZlintStore, codec: RawCodec) -> Iterator[tuple[list, bool]]:
+    """Yield chunks of (raw_id, raw) certificates, flagging the last chunk of each DB batch."""
+    for batch in store.iter_units(BATCH_SIZE):
+        rows = [(raw_id, codec.decode(der_zstd, raw)) for raw_id, der_zstd, raw in batch]
+        for start in range(0, len(rows), ZLINT_CHUNK_SIZE):
+            yield rows[start:start + ZLINT_CHUNK_SIZE], start + ZLINT_CHUNK_SIZE >= len(rows)
 
 
-def _collect(documents: dict[str, list[dict]], chunk_documents: list[tuple[str, dict]]) -> None:
-    for collection_name, document in chunk_documents:
-        if collection_name == ERRORS_COLLECTION:
-            logging.error(f"Error processing certificate ID {document['certificate_id']}: "
-                          f"{document['error_message']}")
-        documents[collection_name].append(document)
+def _collect(results: list[LintResult], chunk_results: list[LintResult]) -> None:
+    results.extend(chunk_results)
 
 
-def _lint_certificates(dao: CertificateDAO, mongo: MongoDbDatabase, directory: str, zlint_path: str) -> None:
-    """Lint all certificates in parallel chunks, saving results to MongoDB one DB batch at a time.
+def _log_errors(store: ZlintStore) -> None:
+    """Log the error of every certificate occurrence that could not be linted (each distinct raw is linted once)."""
+    try:
+        for certificate_id, error_message in store.error_occurrences():
+            logging.error(f"Error processing certificate ID {certificate_id}: {error_message}")
+    except Exception as e:
+        logging.error(f"Error reading the ZLint errors from the database: {e}")
 
-    On interruption (Ctrl+C) or error, the results already collected are saved too.
+
+def _lint_certificates(dao: CertificateDAO, store: ZlintStore, directory: str, zlint_path: str) -> None:
+    """Lint each distinct certificate in parallel chunks, saving the results one DB batch at a time.
+
+    On interruption (Ctrl+C) or error, the results already collected are saved too, and the errors of the saved
+    results are logged once per certificate occurrence.
     """
-    total = dao.get_certificates_count()
+    total = store.prepare_units()
+    logging.info(f"{total} distinct certificates to check ({dao.get_certificates_count()} in the database).")
     settings = _Settings(zlint_path, ZLINT_TIMEOUT, directory)
     executor = _start_executor(total, directory)
-    chunks = _chunks(dao)
+    chunks = _chunks(store, RawCodec.for_connection(dao.connection))
     in_flight: deque[tuple[Future, bool]] = deque()
-    documents: dict[str, list[dict]] = {RESULTS_COLLECTION: [], ERRORS_COLLECTION: []}
+    results: list[LintResult] = []
     try:
         with progress_bar(total, " 🔍  [magenta bold]Processing Certificates[/magenta bold]", "magenta") as pbar:
             while True:
@@ -325,25 +278,27 @@ def _lint_certificates(dao: CertificateDAO, mongo: MongoDbDatabase, directory: s
                 if not in_flight:
                     break
 
-                # Chunks are consumed in submission order, so documents are saved by certificate_id
+                # Chunks are consumed in submission order, so results are saved by raw_id
                 future, batch_end = in_flight.popleft()
-                chunk_documents = future.result()
-                _collect(documents, chunk_documents)
-                pbar.update(len(chunk_documents))
+                chunk_results = future.result()
+                _collect(results, chunk_results)
+                pbar.update(len(chunk_results))
                 if batch_end:
-                    # Most of the main thread's time goes into these saves: a Ctrl+C waits for the end of the save, so
-                    # that the batch is neither lost nor, taken out first, saved twice
-                    batch, documents = documents, {RESULTS_COLLECTION: [], ERRORS_COLLECTION: []}
+                    # A Ctrl+C waits for the end of the save, so that the batch is neither lost nor, taken out first,
+                    # saved twice
+                    batch, results = results, []
                     with sigint_blocked():
-                        _save_documents(mongo, batch)
+                        _save_results(store, batch)
     finally:
         # On interruption, drop the queued chunks and wait for the running ones (a chunk takes a fraction of a second).
         # A second Ctrl+C is deferred to the end of the wait: interrupting it hangs the interpreter at exit on Python < 3.13
         with sigint_blocked():
             executor.shutdown(wait=True, cancel_futures=True)
             # The chunks consumed since the last save; the running ones may hold errors of zlint processes stopped by
-            # the Ctrl+C. The MongoDB server is still running: the bundled one is stopped only after this stage
-            _save_documents(mongo, documents)
+            # the Ctrl+C
+            _save_results(store, results)
+            store.drop_units()
+        _log_errors(store)
 
 
 def _process_exists(pid: int) -> bool:
@@ -418,11 +373,21 @@ def _zlint_executable() -> str | None:
     return None
 
 
-def run_zlint_check(dao: CertificateDAO) -> None:
-    """Run ZLint on the database certificates and save the results to MongoDB.
+def _zlint_version(zlint_path: str) -> str | None:
+    """The version line printed by `zlint -version`, recorded with the results; None if it prints none."""
+    try:
+        result = subprocess.run([zlint_path, "-version"], capture_output=True, timeout=VERSION_TIMEOUT)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    lines = result.stdout.decode(errors="replace").strip().splitlines()
+    return lines[0].strip() if result.returncode == 0 and lines else None
 
-    Closing the terminal window (or SIGTERM) meanwhile works like Ctrl+C: the results collected are saved, the
-    temporary files removed and the bundled MongoDB server stopped, instead of being left running.
+
+def run_zlint_check(dao: CertificateDAO) -> None:
+    """Run ZLint on the database certificates and save the results in the same database (see db.zlint_store).
+
+    Each distinct certificate is linted once; its result belongs to all its occurrences. Closing the terminal window
+    (or SIGTERM) meanwhile works like Ctrl+C: the results collected are saved and the temporary files removed.
     """
     zlint_path = _zlint_executable()
     if zlint_path is None:
@@ -431,31 +396,37 @@ def run_zlint_check(dao: CertificateDAO) -> None:
         _check_and_save(dao, zlint_path)
 
 
-def _check_and_save(dao: CertificateDAO, zlint_path: str) -> None:
-    mongo = MongoDbDatabase(dao.certificate_type)
-    try:
-        # Check MongoDB up front, otherwise every result would be discarded with an error
+def _record_end(store: ZlintStore, state: str) -> None:
+    if not store.started:
+        return
+    with sigint_blocked():
         try:
-            mongo.connect()
-        except MongoServerError as e:
-            # The MongoDB server included with the project cannot start: the message says why and what to do
-            logging.error(str(e))
-            return
-        except Exception:
-            logging.error("Could not connect to MongoDB: check that the service is running (see the README).")
-            return
+            store.finish(state)
+        except Exception as e:
+            logging.error(f"Error saving the state of the ZLint run: {e}")
+
+
+def _check_and_save(dao: CertificateDAO, zlint_path: str) -> None:
+    store = ZlintStore(dao.connection)
+    state = "failed"
+    try:
         _remove_killed_runs_directories()
+        store.start(_zlint_version(zlint_path))
+        logging.info(f"Previous ZLint results removed from the {dao.certificate_type.value} database.")
         with tempfile.TemporaryDirectory(prefix=_RUN_DIRECTORY_PREFIX.format(pid=os.getpid()),
                                          ignore_cleanup_errors=True) as directory:
-            _lint_certificates(dao, mongo, directory, zlint_path)
+            _lint_certificates(dao, store, directory, zlint_path)
+        state = "finished"
     except Exception as e:
         if stop_requested():
             # Raised while stopping after the terminal window was closed (e.g. a write to it): still a stop
+            state = "interrupted"
             logging.info(f"Error while stopping the ZLint check: {e}")
             raise KeyboardInterrupt from e
         logging.error(f"Error running run_zlint_check: {e}")
     except KeyboardInterrupt:
+        state = "interrupted"
         logging.info("Interrupt signal (SIGINT) received: shutting down...")
         raise   # Stop the app instead of moving on to the next analyses
     finally:
-        mongo.close()
+        _record_end(store, state)

@@ -1,3 +1,4 @@
+import logging
 import multiprocessing
 import os
 import signal
@@ -65,3 +66,88 @@ def init_worker_process(parent_pid: int, on_parent_exit: Callable[[], None] | No
     """
     signal.signal(signal.SIGINT, signal.SIG_IGN)
     threading.Thread(target=_watch_parent, args=(parent_pid, on_parent_exit), daemon=True).start()
+
+
+# Signals that stop the program like Ctrl+C inside stop_signals_as_ctrl_c(): the terminal window was closed (SIGHUP)
+# or the program was asked to stop (SIGTERM, e.g. by `kill` or at logout). Their default action ends the program at
+# once, which would lose the results not saved yet and leave the worker processes' temporary files. Windows has
+# neither: closing the console ends the program within seconds.
+_STOP_SIGNAL_NAMES = ("SIGHUP", "SIGTERM")
+# Standard output and error when they are a terminal, noted while it still works: once the window is closed (and the
+# terminal revoked), isatty() can no longer tell
+_terminal_outputs: set[int] = set()
+_stop_received = False
+
+
+def stop_requested() -> bool:
+    """Whether a stop signal (see stop_signals_as_ctrl_c) arrived: the program is stopping."""
+    return _stop_received
+
+
+def _note_terminal_outputs() -> None:
+    for descriptor in (1, 2):
+        try:
+            if os.isatty(descriptor):
+                _terminal_outputs.add(descriptor)
+        except OSError:
+            pass
+
+
+def _silence_closed_terminal() -> None:
+    """Send the output meant for the closed terminal to the null device: writing to it would fail (app.log still gets
+    the log)."""
+    try:
+        null = os.open(os.devnull, os.O_WRONLY)
+    except OSError:
+        return
+    try:
+        for descriptor in (1, 2):
+            try:
+                if descriptor in _terminal_outputs or os.isatty(descriptor):
+                    os.dup2(null, descriptor)
+            except OSError:
+                pass
+    finally:
+        os.close(null)
+
+
+def _stop_like_ctrl_c(signum: int, frame) -> None:
+    global _stop_received
+    _stop_received = True
+    for name in _STOP_SIGNAL_NAMES:
+        # The program is stopping: another signal (a closed terminal can send SIGHUP twice) must not cut its clean-up
+        signal.signal(getattr(signal, name), signal.SIG_IGN)
+    if signum == getattr(signal, "SIGHUP", None):
+        _silence_closed_terminal()
+    logging.info(f"{signal.Signals(signum).name} received (the terminal window was closed, or the program was asked "
+                 "to stop): stopping as after Ctrl+C...")
+    if callable(signal.getsignal(signal.SIGINT)):
+        # Through the Ctrl+C handler, so that it waits wherever a Ctrl+C waits (e.g. while the results are saved)
+        signal.raise_signal(signal.SIGINT)
+    else:
+        raise KeyboardInterrupt
+
+
+@contextmanager
+def stop_signals_as_ctrl_c() -> Iterator[None]:
+    """Handle SIGHUP (the terminal window was closed) and SIGTERM like Ctrl+C while the block runs (macOS, Linux).
+
+    Signals that are ignored (e.g. under nohup) or have a handler of their own are left alone. After a stop signal the
+    next ones stay ignored, also after the block, so that the program can finish its clean-up.
+    """
+    if os.name != "posix" or threading.current_thread() is not threading.main_thread():
+        yield
+        return
+    _note_terminal_outputs()
+    installed = []
+    for name in _STOP_SIGNAL_NAMES:
+        number = getattr(signal, name, None)
+        if number is not None and signal.getsignal(number) == signal.SIG_DFL:
+            signal.signal(number, _stop_like_ctrl_c)
+            installed.append(number)
+    try:
+        yield
+    finally:
+        for number in installed:
+            if signal.getsignal(number) == _stop_like_ctrl_c:
+                signal.signal(number, signal.SIG_DFL)

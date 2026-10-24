@@ -1,3 +1,12 @@
+-- Queries on the SQLite databases of DigitalCertiAnalytics (schema version 2, see "Database Description.md").
+--
+-- The queries read the views Certificates, Subjects, Issuers, Extensions, CertificatePolicies,
+-- SignedCertificateTimestamps and Errors, which have the names, columns and values of the tables of the first
+-- version (certificate_id is the occurrence id, the position in the scan file). The views cannot be changed:
+-- the UPDATE statements and the indexes below work on the base tables (Occurrences, CertificateData, IssuerData,
+-- SctData, ...). The raw columns hold the certificates compressed with zstd: see "Database Description.md" to read
+-- them back. Run one statement at a time (for example in DB Browser for SQLite, or the sqlite3 program).
+
 SELECT COUNT(*) FROM Certificates;
 
 SELECT COUNT(DISTINCT leaf_domain) FROM Certificates;
@@ -38,33 +47,38 @@ GROUP BY ocsp_check;
 
 SELECT COUNT(*) AS count
 FROM Certificates
-WHERE (authority_info_access LIKE '{}' OR NOT authority_info_access LIKE '%ocsp_urls%')
+WHERE (authority_info_access LIKE '{}' OR NOT authority_info_access LIKE '%ocsp_urls%');
 
 SELECT COUNT(*) AS count, *
 FROM Certificates AS c INNER JOIN Issuers AS i ON c.issuer_id = i.issuer_id
-WHERE (NOT c.authority_info_access LIKE '{}' AND NOT c.authority_info_access LIKE '%issuer_urls%' AND i.raw IS NULL)
+WHERE (NOT c.authority_info_access LIKE '{}' AND NOT c.authority_info_access LIKE '%issuer_urls%' AND i.raw IS NULL);
 
-UPDATE Certificates
-SET ocsp_check = 'No Issuer Url Found'
-WHERE NOT authority_info_access LIKE '{}' 
-  AND NOT authority_info_access LIKE '%issuer_urls%' 
-  AND issuer_id IN (
-      SELECT issuer_id
-      FROM Issuers
-      WHERE raw IS NULL
+-- The OCSP result is stored per occurrence, as a code of the OcspStatuses table
+UPDATE Occurrences
+SET ocsp_check = (SELECT code FROM OcspStatuses WHERE name = 'No Issuer Url Found')
+WHERE occurrence_id IN (
+      SELECT certificate_id
+      FROM Certificates
+      WHERE NOT authority_info_access LIKE '{}' 
+        AND NOT authority_info_access LIKE '%issuer_urls%' 
+        AND issuer_id IN (
+            SELECT issuer_id
+            FROM Issuers
+            WHERE raw IS NULL
+        )
   );
 
 SELECT COUNT(*) AS count
 FROM Certificates
-WHERE NOT (authority_info_access LIKE '{}' OR NOT authority_info_access LIKE '%ocsp_urls%')
+WHERE NOT (authority_info_access LIKE '{}' OR NOT authority_info_access LIKE '%ocsp_urls%');
 
 SELECT COUNT(*) AS count, ocsp_check, authority_info_access
 FROM Certificates
 WHERE (authority_info_access LIKE '{}' OR NOT authority_info_access LIKE '%ocsp_urls%')
 GROUP BY ocsp_check, authority_info_access;
 
-UPDATE Certificates
-SET ocsp_check = 'No Request Done';
+UPDATE Occurrences
+SET ocsp_check = (SELECT code FROM OcspStatuses WHERE name = 'No Request Done');
 
 SELECT SAN, domain_matches_san, COUNT(DISTINCT(subject_key_id)) AS count
 FROM Certificates AS c JOIN Subjects AS s ON c.subject_id = s.subject_id
@@ -146,7 +160,7 @@ SELECT
 FROM Certificates AS c
 LEFT JOIN Extensions AS e ON c.certificate_id = e.certificate_id
 INNER JOIN Subjects AS s ON c.subject_id = s.subject_id
-GROUP BY crl_distr_point_is_critical
+GROUP BY crl_distr_point_is_critical;
 
 
 
@@ -176,7 +190,7 @@ ORDER BY count DESC;
 
 -- Count the distinct serial numbers
 SELECT COUNT(DISTINCT(serial_number))
-FROM Certificates
+FROM Certificates;
 
 -- Distribution of the number of intermediate certificates in the chain
 SELECT certificates_up_to_root_count, COUNT(DISTINCT(subject_dn)) AS count
@@ -279,39 +293,39 @@ SELECT c.certificate_id, e.max_path_length, c.certificates_emitted_up_to, c.has_
 FROM Certificates AS c INNER JOIN Extensions AS e ON c.certificate_id = e.certificate_id
 WHERE max_path_length = 0 AND c.certificates_emitted_up_to > 0;
 
--- Indexes for the Certificates table
-CREATE INDEX IF NOT EXISTS idx_certificates_issuer_id ON Certificates(issuer_id);
-CREATE INDEX IF NOT EXISTS idx_certificates_subject_id ON Certificates(subject_id);
-CREATE INDEX IF NOT EXISTS idx_certificates_version ON Certificates(version);
-CREATE INDEX IF NOT EXISTS idx_certificates_validity_end ON Certificates(validity_end);
-CREATE INDEX IF NOT EXISTS idx_certificates_ocsp_check ON Certificates(ocsp_check);
-CREATE INDEX IF NOT EXISTS idx_certificates_signature_valid ON Certificates(signature_valid);
-CREATE INDEX IF NOT EXISTS idx_certificates_self_signed ON Certificates(self_signed);
+-- Optional indexes, only for your own queries: the program needs none of them (it reads the tables in order or by
+-- primary key). Views cannot have indexes, so they go on the base tables. Each index takes disk space (remove it with
+-- DROP INDEX), and it can change the order of rows with equal values in a query whose ORDER BY does not decide it.
 
--- Indexes for the Issuers table
-CREATE INDEX IF NOT EXISTS idx_issuers_common_name ON Issuers(common_name);
-CREATE INDEX IF NOT EXISTS idx_issuers_organization ON Issuers(organization);
+-- Occurrences (the per-occurrence columns of the Certificates view)
+CREATE INDEX IF NOT EXISTS idx_occurrences_certificate_id ON Occurrences(certificate_id);
+CREATE INDEX IF NOT EXISTS idx_occurrences_issuer_id ON Occurrences(issuer_id);
+CREATE INDEX IF NOT EXISTS idx_occurrences_leaf_domain ON Occurrences(leaf_domain);
+CREATE INDEX IF NOT EXISTS idx_occurrences_ocsp_check ON Occurrences(ocsp_check);
+CREATE INDEX IF NOT EXISTS idx_occurrences_signature_valid ON Occurrences(signature_valid);  -- leaf and root only
 
--- Indexes for the Subjects table
-CREATE INDEX IF NOT EXISTS idx_subjects_subject_dn ON Subjects(subject_dn);
-CREATE INDEX IF NOT EXISTS idx_subjects_common_name ON Subjects(common_name);
+-- CertificateData (the columns of each distinct certificate, with its subject and extensions)
+CREATE INDEX IF NOT EXISTS idx_certificate_data_version ON CertificateData(version);
+CREATE INDEX IF NOT EXISTS idx_certificate_data_validity_end ON CertificateData(validity_end);
+CREATE INDEX IF NOT EXISTS idx_certificate_data_self_signed ON CertificateData(self_signed);
+CREATE INDEX IF NOT EXISTS idx_certificate_data_subject_dn ON CertificateData(subject_dn);
+CREATE INDEX IF NOT EXISTS idx_certificate_data_subject_common_name ON CertificateData(subject_common_name);
+CREATE INDEX IF NOT EXISTS idx_certificate_data_key_usage ON CertificateData(key_usage);
+CREATE INDEX IF NOT EXISTS idx_certificate_data_extended_key_usage ON CertificateData(extended_key_usage);
 
--- Indexes for the Extensions table
-CREATE INDEX IF NOT EXISTS idx_extensions_certificate_id ON Extensions(certificate_id);
-CREATE INDEX IF NOT EXISTS idx_extensions_key_usage ON Extensions(key_usage);
-CREATE INDEX IF NOT EXISTS idx_extensions_extended_key_usage ON Extensions(extended_key_usage);
+-- IssuerData (each distinct issuer)
+CREATE INDEX IF NOT EXISTS idx_issuer_data_common_name ON IssuerData(common_name);
+CREATE INDEX IF NOT EXISTS idx_issuer_data_organization ON IssuerData(organization);
 
--- Indexes for the SignedCertificateTimestamps table
-CREATE INDEX IF NOT EXISTS idx_signed_cert_timestamps_certificate_id ON SignedCertificateTimestamps(certificate_id);
-CREATE INDEX IF NOT EXISTS idx_signed_cert_timestamps_log_id ON SignedCertificateTimestamps(log_id);
+-- SctData (the SCTs of each distinct certificate; its primary key already starts with certificate_id)
+CREATE INDEX IF NOT EXISTS idx_sct_data_log_id ON SctData(log_id);
 
--- Indexes for the Errors table
-CREATE INDEX IF NOT EXISTS idx_errors_domain ON Errors(domain);
-CREATE INDEX IF NOT EXISTS idx_errors_status ON Errors(status);
+-- ErrorData (leaf database only)
+CREATE INDEX IF NOT EXISTS idx_error_data_domain ON ErrorData(domain);
+CREATE INDEX IF NOT EXISTS idx_error_data_status ON ErrorData(status);
 
--- Indexes for the Logs table
+-- Logs (Logs.log_id is UNIQUE, so it already has an index)
 CREATE INDEX IF NOT EXISTS idx_logs_operator_id ON Logs(operator_id);
-CREATE INDEX IF NOT EXISTS idx_logs_log_id ON Logs(log_id);
 
 
 
@@ -326,7 +340,7 @@ SELECT c.certificate_id, c.authority_info_access, i.common_name, i.raw AS issuer
 FROM certificates AS c 
 INNER JOIN Issuers AS i ON c.issuer_id = i.issuer_id
 WHERE c.ocsp_check = 'No Request Done'
-LIMIT 1000
+LIMIT 1000;
 
 --------------
 -- Queries for the charts of the results
@@ -338,7 +352,7 @@ WITH IssuersCounts AS (
 	INNER JOIN Issuers ON Certificates.issuer_id = Issuers.issuer_id 
 	WHERE Issuers.organization IS NOT NULL AND TRIM(Issuers.organization) <> ''
 	GROUP BY Issuers.organization
-	ORDER BY certificate_count DESC
+	ORDER BY certificate_count DESC, Issuers.organization
 ),
 TopIssuers AS (
 	SELECT organization, certificate_count
@@ -354,8 +368,8 @@ SELECT * FROM TopIssuers
 UNION ALL
 SELECT * FROM Others;
 
--- Rename DigiCert
-UPDATE Issuers
+-- Rename DigiCert (the program does it before drawing the charts); each distinct issuer is stored once in IssuerData
+UPDATE IssuerData
 SET organization = 'DigiCert Inc'
 WHERE organization = 'DigiCert, Inc.';
 
@@ -365,7 +379,7 @@ WITH IssuersCounts AS (
 	FROM Issuers
 	WHERE TRIM(Issuers.country) <> '' AND TRIM(Issuers.country) <> '--'
 	GROUP BY Issuers.country
-	ORDER BY country_count DESC
+	ORDER BY country_count DESC, Issuers.country
 ),
 TopCountry AS (
 	SELECT country, country_count

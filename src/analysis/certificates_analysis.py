@@ -10,12 +10,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterator
 
-import pyfiglet
 from rich.console import Console
 
 from analysis.ingestion import ingest_certificates
+from analysis.input_file import INPUT_NAMES, InputFileError, compress_input, detect_format, find_input
 from dao.certificate_dao import CertificateDAO
-from db.database import Database, DatabaseType
+from db.database import Database, DatabaseType, OutdatedDatabaseError, database_state
 from utils.chain_utils import validate_leaf_certificate_chains
 from utils.utils import ArgparseFormatter, progress_bar, setup_logging
 
@@ -28,12 +28,24 @@ INTERRUPT_MESSAGE = "Interrupt signal (SIGINT) received: shutting down..."
 # Paths resolved from the package, independent of the working directory
 SRC_DIR = Path(__file__).resolve().parents[1]
 RESULTS_DIR = SRC_DIR / "analysis"
-SCHEMA_PATH = SRC_DIR / "db" / "schema_db.sql"
-CERTIFICATES_FILE = SRC_DIR.parent / "res" / "certs_polito.json"     # ZGrab2 output
-LOG_LIST_FILE = SRC_DIR.parent / "res" / "log_list.json"             # SCT log list
+RES_DIR = SRC_DIR.parent / "res"
+LOG_LIST_FILE = RES_DIR / "log_list.json"             # SCT log list
+
+# Logo printed at start-up (the 'standard' FIGlet font)
+_BANNER = "\n".join((
+    '         ____  _       _ _        _  ____          _   _    _                _       _   _          ',
+    '        |  _ \\(_) __ _(_) |_ __ _| |/ ___|___ _ __| |_(_)  / \\   _ __   __ _| |_   _| |_(_) ___ ___ ',
+    "        | | | | |/ _` | | __/ _` | | |   / _ \\ '__| __| | / _ \\ | '_ \\ / _` | | | | | __| |/ __/ __|",
+    '        | |_| | | (_| | | || (_| | | |__|  __/ |  | |_| |/ ___ \\| | | | (_| | | |_| | |_| | (__\\__ \\',
+    '        |____/|_|\\__, |_|\\__\\__,_|_|\\____\\___|_|   \\__|_/_/   \\_\\_| |_|\\__,_|_|\\__, |\\__|_|\\___|___/',
+    '                 |___/                                                         |___/                ',
+    '',
+))
 
 # Boolean CLI flags: (names, help text)
 _CLI_FLAGS = (
+    (('--compress_input',), 'Compress the ZGrab2 JSON file in res/ into certs_polito.json.zst, which uses about a fifth of '
+                            'the space and is read in parallel, then run the other requested stages.\n\n'),
     (('--delete_all_db',), 'Delete all the databases before starting.'),
     (('--delete_leaf_db',), 'Delete the leaf database before starting.'),
     (('--delete_intermediate_db',), 'Delete the intermediate database before starting.'),
@@ -159,20 +171,27 @@ def _print_banner() -> None:
     """Clear the console and print the application logo."""
     Console().clear()
     print("\n")
-    print(pyfiglet.figlet_format("        DigitalCertiAnalytics", font="standard", width=150))
+    print(_BANNER)
     print("\n")
 
 
-def _check_input_files(configs: list[StageConfig]) -> bool:
-    """Check that the input files exist when at least one analysis is requested."""
+def _check_input_files(configs: list[StageConfig]) -> Path | None | bool:
+    """The ZGrab2 file when an analysis is requested (None if none is), False if an input file is missing."""
     if not any(config.analysis for config in configs):
-        return True
+        return None
 
-    if not CERTIFICATES_FILE.exists():
+    certificates_file = find_input(RES_DIR)
+    if certificates_file is None:
         logging.error(
-            f"The file '{CERTIFICATES_FILE}' does not exist or has a different name: "
-            "see the README for how to generate it with ZGrab2."
+            f"The file '{RES_DIR / INPUT_NAMES[0]}' does not exist or has a different name (accepted names: "
+            f"{', '.join(INPUT_NAMES)}): see the README for how to generate it with ZGrab2."
         )
+        return False
+    try:
+        # A truncated line-indexed file is refused here, before the databases are recreated
+        detect_format(certificates_file)
+    except InputFileError as e:
+        logging.error(str(e))
         return False
 
     if not LOG_LIST_FILE.exists():
@@ -181,7 +200,7 @@ def _check_input_files(configs: list[StageConfig]) -> bool:
             "https://www.gstatic.com/ct/log_list/v3/all_logs_list.json"
         )
         return False
-    return True
+    return certificates_file
 
 
 def _delete_database(config: StageConfig) -> None:
@@ -200,14 +219,19 @@ def _prepare_databases(configs: list[StageConfig]) -> bool:
     for config in configs:
         if config.delete_only:
             _delete_database(config)
-        elif config.has_stages and not config.analysis and not config.db_path.exists():
-            logging.error(
-                "The %s database was not found at '%s': "
-                "run the certificate analysis on the JSON file first to create it, "
-                "or place the database at that path.",
-                config.name, config.db_path
-            )
-            return False
+        elif config.has_stages and not config.analysis:
+            state = database_state(config.db_path)
+            if state == "missing":
+                logging.error(
+                    "The %s database was not found at '%s': "
+                    "run the certificate analysis on the JSON file first to create it, "
+                    "or place the database at that path.",
+                    config.name, config.db_path
+                )
+                return False
+            if state == "outdated":
+                logging.error(OutdatedDatabaseError(config.db_type, config.db_path))
+                return False
     return True
 
 
@@ -225,7 +249,7 @@ def _load_log_list() -> dict | None:
 
 def _open_database(config: StageConfig, log_list: dict | None, stack: ExitStack) -> _Target:
     """Open the database (recreated if analysed) and insert the SCT operators and logs."""
-    database = Database(db_path=config.db_path, schema_path=SCHEMA_PATH, db_type=config.db_type)
+    database = Database(db_path=config.db_path, db_type=config.db_type)
     stack.callback(database.close)
     database.connect(delete_database=config.analysis)
     dao = CertificateDAO(database.conn, config.db_type)
@@ -243,20 +267,23 @@ def _open_databases(configs: list[StageConfig], stack: ExitStack) -> list[_Targe
     return [_open_database(config, log_list, stack) for config in configs if config.needs_database]
 
 
-def _read_certificates_file(targets: list[_Target]) -> None:
-    """Read the ZGrab2 JSON file once, inserting each line into all target databases."""
+def _read_certificates_file(certificates_file: Path, targets: list[_Target]) -> None:
+    """Read the ZGrab2 JSON file (plain or compressed) once, inserting each line into all target databases."""
     with ExitStack() as stack:
         for target in targets:
             stack.enter_context(target.database.bulk_insert_mode())
 
         pbar = stack.enter_context(progress_bar(
-            total=CERTIFICATES_FILE.stat().st_size, description=" 🔍  [magenta bold]Processing Certificates[/magenta bold]",
+            total=certificates_file.stat().st_size, description=" 🔍  [magenta bold]Processing Certificates[/magenta bold]",
             colour="magenta", unit="B", unit_scale=True, unit_divisor=1024
         ))
-        ingest_certificates(CERTIFICATES_FILE, [(target.database, target.dao) for target in targets], pbar.update)
+        try:
+            ingest_certificates(certificates_file, [(target.database, target.dao) for target in targets], pbar.update)
+        except InputFileError as e:
+            logging.error(str(e))
 
 
-def _analyse_certificates(targets: list[_Target]) -> None:
+def _analyse_certificates(certificates_file: Path | None, targets: list[_Target]) -> None:
     """Populate the databases to analyse in a single pass over the JSON file."""
     analysed = [target for target in targets if target.config.analysis]
     if not analysed:
@@ -265,11 +292,18 @@ def _analyse_certificates(targets: list[_Target]) -> None:
     for target in analysed:
         logging.info(f"Starting the analysis of the '{target.config.label}' certificates.")
 
-    _read_certificates_file(analysed)
+    _read_certificates_file(certificates_file, analysed)
 
     for target in analysed:
         logging.info(f"Analysis of the '{target.config.label}' certificates completed.")
-        target.database.finalize_analysis()
+
+
+def _compress_input_file() -> bool:
+    """--compress_input: convert the input file into the compressed format read in parallel."""
+    def progress(total: int):
+        return progress_bar(total=total, description=" 🗜  [cyan bold]Compressing the input file[/cyan bold]",
+                            colour="cyan", unit="B", unit_scale=True, unit_divisor=1024)
+    return compress_input(RES_DIR, progress)
 
 
 @contextmanager
@@ -318,7 +352,7 @@ async def _run_stages(target: _Target, is_verbose: bool) -> None:
     """Run the requested stages: OCSP, ZLint, chain validation and charts."""
     config, database, dao = target.config, target.database, target.dao
 
-    # Stage modules are imported lazily: aiohttp, matplotlib and pymongo slow down startup
+    # Stage modules are imported lazily: aiohttp and matplotlib slow down startup
     if config.ocsp:
         from utils.ocsp_utils import run_ocsp_analysis
         with _stage(f"Starting the OCSP analysis of the '{config.label}' certificates."), _ctrl_c_cancels_current_task():
@@ -350,8 +384,12 @@ def _plots_at_once(target: _Target | None) -> bool:
     return config.plot and not (config.ocsp or config.zlint or config.chain_validation)
 
 
-async def certificates_analysis_main() -> None:
-    """Parse the command line and run the requested analyses on leaf, intermediate and root certificates."""
+async def certificates_analysis_main() -> int:
+    """Parse the command line and run the requested analyses on leaf, intermediate and root certificates.
+
+    Returns the exit status: 1 when the run cannot start (the input file or a needed database is missing or outdated,
+    or --compress_input failed), 0 otherwise.
+    """
     _print_banner()
     args = _build_parser().parse_args()
 
@@ -362,12 +400,16 @@ async def certificates_analysis_main() -> None:
     for config in configs:
         config.results_dir.mkdir(parents=True, exist_ok=True)
 
-    if not (_check_input_files(configs) and _prepare_databases(configs)):
-        return
+    if args.compress_input and not _compress_input_file():
+        return 1
+
+    certificates_file = _check_input_files(configs)
+    if certificates_file is False or not _prepare_databases(configs):
+        return 1
 
     with ExitStack() as stack:
         targets = _open_databases(configs, stack)
-        _analyse_certificates(targets)
+        _analyse_certificates(certificates_file, targets)
 
         for target, next_target in zip(targets, [*targets[1:], None]):
             await _run_stages(target, args.verbose)
@@ -377,3 +419,4 @@ async def certificates_analysis_main() -> None:
                 shutdown_render_pool()
 
     logging.info("Application finished successfully.\n")
+    return 0

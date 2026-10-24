@@ -128,39 +128,39 @@ minimum months and durations) depend on the certificate type and are given in th
 
 ## Execution
 
-The plot stage of each certificate type has three steps:
+The plot stage of each certificate type has two steps:
 
-1. **Indexes** (`Database.prepare_for_plots`): two indexes, `idx_certificates_issuer_id` and
-   `idx_issuers_organization`, built in one transaction with a 16 MiB page cache and 4 sorter threads. The statistics
-   read the tables sequentially and need no index: these two only fix the plan, and so the order of issuers with equal
-   counts, of the `get_issuer_certificate_count` query, which the computed statistics reproduce
-   (`idx_issuers_organization` also serves the correction). Databases of earlier versions keep the indexes they have.
-2. **Correction**: issuers stored as `DigiCert, Inc.` become `DigiCert Inc`.
-3. **Statistics and charts.** The statistics of every chart are computed from one parallel read of each table
-   (`StatisticsDAO.materialize`):
-   - five scans (`Certificates` joined to `Subjects`, `Extensions`, `CertificatePolicies`, `SignedCertificateTimestamps`
-     joined to `Logs`, `Issuers`) are split into rowid ranges of about half a second each and run in the render
-     processes (one per CPU), on read-only connections with a 4 MiB page cache. The `Errors` count runs as one more
-     task;
-   - each row is reduced to integer codes of its values, computed in SQL with the same expressions as the queries;
+1. **Correction** (`Database.prepare_for_plots`): issuers stored as `DigiCert, Inc.` become `DigiCert Inc`. Each
+   distinct issuer is stored once (`IssuerData`, see `Database Description.md`), so only a few rows change and the
+   rollback journal stays small. No index is built: the statistics need none, and the query of
+   `get_issuer_certificate_count` orders the issuers with equal counts by name (`ORDER BY count DESC, label`).
+2. **Statistics and charts.** The statistics of every chart are computed from one parallel read of each base table
+   (`StatisticsDAO.materialize`, `src/dao/statistics_facts.py`):
+   - the scans of `Occurrences` (integer keys and codes only), `CertificateData` (each distinct certificate, with its
+     subject and extensions), `IssuerData`, `SctData` and `PolicySetMembers` are split into row ranges and run in the
+     render processes (one per CPU), on read-only connections. The `Errors` count runs as one more task;
+   - each row is reduced to integer codes of its values, computed in SQL with the same expressions as the queries; the
+     values stored per certificate are evaluated once per distinct certificate, and the counts of rows of the views
+     (OCSP statuses, issuer organizations and countries, SCT months and operators, SCTs per certificate) weigh every
+     certificate by its number of occurrences;
    - the main process counts the unique certificates exactly, with numpy: the certificate identity (Subject Key
-     Identifier, or the raw certificate when it has none) is compared through its SQLite type and a 128-bit BLAKE2b
-     digest (collision probability about 1e-25 for 6.5 million certificates);
+     Identifier, or the original raw certificate text when it has none) is compared through its SQLite type and a
+     128-bit BLAKE2b digest (collision probability about 1e-25 for 6.5 million certificates);
    - the final grouping, filtering and ordering of each statistic run in SQLite, on small temporary tables, with the
      SQL of the per-query path: values, order and key types are identical to those of the queries.
 
-   The charts are then drawn in the render processes from these data. The log reports "Computing the statistics (one
-   read per table)...", "Statistics computed in ... s." and, for every figure, "Generating chart ..." and its outcome
-   in the order of the tables above, whatever the order in which the drawings finish.
+   Without render processes the same statistics are computed in the main process. The charts are then drawn in the
+   render processes from these data. The log reports "Computing the statistics (one read per table)...", "Statistics
+   computed in ... s." and, for every figure, "Generating chart ..." and its outcome in the order of the tables above,
+   whatever the order in which the drawings finish.
 
 If the statistics cannot be computed this way, the stage falls back to the per-query path, with the same results: each
-`get_*` query runs in a render process on its own read-only connection (64 MiB page cache, memory-mapped reads, at most
-four queries at the same time), followed by its charts. This happens with in-memory databases and connections with
-uncommitted changes (queried in the main process), databases of earlier versions whose `Certificates` table lost its
-PRIMARY KEY, or any error during the scans, for example a render process that dies (warning "Statistics not
-materialized ..."). A statistic that a database cannot give (the `signature_valid` column of intermediate databases,
-the `Errors` table missing in intermediate and root databases) always runs its own query, which logs the same error as
-before.
+`get_*` query runs on the views (`Certificates`, `Subjects`, `Issuers`, ...) in a render process on its own read-only
+connection (at most four queries at the same time), followed by its charts. This happens with in-memory databases and
+connections with uncommitted changes (queried in the main process), or any error during the scans, for example a
+render process that dies (warning "Statistics not materialized ..."). A statistic that a database cannot give (the
+`signature_valid` column of intermediate databases, the `Errors` view missing in intermediate and root databases)
+always runs its own query, which logs the same error as before.
 
 The render processes are reused for leaf, intermediate and root and closed with `shutdown_render_pool()` after the plot
 stage, so they do not stay alive during the following stages. If they are not available, or one of them ends
@@ -170,54 +170,35 @@ example with `kill -9`), the render processes exit on their own as soon as it is
 
 ### Time and memory
 
-Measured on a machine with 12 CPUs, 24 GiB of memory and an SSD (Python 3.12, load 2-3, database file already in the
-file cache), for the whole `--plot_<type>_results` stage on a copy of a database made from the 100k-domain dataset
-repeated 30 times ("30x"). Time: total (indexes / correction / statistics / charts). Peak: physical memory summed over
-the main process and its 12 render processes.
+Measured on a machine with 12 CPUs and an SSD (Python 3.12), on the databases made from the dataset of 1 million scan
+lines (about 649,000 leaf certificate occurrences):
 
-| Database (30x) | Rows | File before indexes | Time | Peak | Largest process |
-|---|---|---|---|---|---|
-| leaf | 1,960,290 certificates | 6.6 GB | 8.0 s (0.7 / 2.5 / 3.8 / 0.6) | 2.15 GiB | 0.66 GiB (main) |
-| intermediate | 1,960,290 rows of 18 certificates | 4.6 GB | 4.3 s (0.65 / 1.4 / 1.5 / 0.4) | 1.56 GiB | 0.30 GiB |
-| root | 886,740 rows of 6 certificates | 1.8 GB | 2.4 s (0.4 / 0.25 / 1.0 / 0.4) | 1.34 GiB | 0.22 GiB |
+| Step | Time |
+|---|---|
+| leaf statistics, in the main process only | 3.1-3.8 s (4.4 s with schema version 1) |
+| leaf statistics, scans in 12 render processes | 1.1 s |
+| intermediate statistics, in the main process only | 0.28 s (2.9 s with schema version 1) |
+| root statistics, in the main process only | 0.14 s (0.9 s with schema version 1) |
+| the whole `--plot_all_results` stage | 17.7 s with an empty matplotlib font cache, 3.7 s afterwards (21.7 s with schema version 1) |
 
-Three runs of the leaf stage took 7.7-9.1 s, with peaks of 2.15-2.26 GiB (the slowest had a 1.6 s index phase).
-
-The same leaf stage took 123 s with the previous version (23 indexes in 21 s, statistics queries 93 s; peak 4.8 GiB,
-largest process 2.4 GiB) and 163-604 s with the original code. With the leaf database repeated 60 times (3.9 million
-certificates) the stage took 33.4 s with a 3.06 GiB peak (measured with a 256 MiB index cache). Every statistic is identical to the per-query path on all
-these databases, order and key types included.
-
-For the real leaf database, with 6.5 million certificates (a 27 GB file, larger than the file cache), these are
-estimates, not measurements: indexes 20-60 s (one scan of `Issuers` and one of `Certificates`, against 248 s for the
-23 indexes of the previous version), correction 20-60 s depending on the share of issuers to correct, statistics
-15-40 s (one parallel read of about 22 GB), charts about 1 s: in total about 1-4 minutes, against 73 minutes measured
-for the previous version.
+The main process used at most 285 MB of memory. On the per-query path the leaf queries took 44.7 s (43.0 s
+with schema version 1): the views always join all their lookup tables, so this path is the slower one.
 
 Memory:
-- The main process holds the codes of every row while it aggregates them: about 0.4 GB plus 0.18 GB per million
-  certificates, about 1.6-1.8 GB at 6.5 million. It grows linearly with the rows and does not depend on the number of
-  render processes.
+- The main process holds the codes of every scanned row while it aggregates them, so it grows linearly with the
+  distinct certificates and the occurrences, and does not depend on the number of render processes.
 - Each render process uses 0.1-0.25 GiB (Python, matplotlib, the rows of the scan in progress). There is one per CPU,
-  so the total grows with the CPU count: on the 12-CPU target machine the estimated peak at 6.5 million certificates is
-  3.5-4 GiB (measured: 2.26 GiB at 30x, 3.06 GiB at 60x).
-- The index build stays within its 16 MiB page cache (main process 0.67 GiB at 30x, against 1.09 GiB with 256 MiB).
+  so the total grows with the CPU count.
 
 On the per-query path the temporary tables of DISTINCT and GROUP BY are kept in memory only if the database file is at
-most one eighth of the physical memory (3 GiB on a 24 GiB machine); above that they are written to temporary files and
-every process stays below about 330 MiB, whatever the size of the database. In memory each query uses up to 11% of the
-file and the process keeps that memory until it ends: the worst case of about 12 × (11% of 3 GiB + 150 MiB) ≈ 5.8 GiB
-assumes 12 render processes and grows with the CPU count. On this path the leaf stage at 30x took 100-208 s with
-temporary files and 71-75 s in memory (the longer times under heavy load).
+most one eighth of the physical memory; above that they are written to temporary files and every process stays below
+about 330 MiB, whatever the size of the database.
 
 ### Temporary disk space
 
 - The statistics write no temporary files: the scans keep their rows in memory and the final temporary tables hold a
   few rows.
-- The two indexes take 66 MiB at 30x (about 220 MB at 6.5 million certificates); their sort uses temporary files of at
-  most about that size in the system temporary folder (`SQLITE_TMPDIR` or `TMPDIR`).
 - The correction writes a rollback journal next to the database with the original content of the pages it changes:
-  1.8 GB at 30x, with 3% of the issuer rows to correct, about 6 GB at 6.5 million certificates with the same share. It is
-  the largest transient use and is removed at the end of the correction.
+  only the pages of the distinct issuers to correct, a few MB at most.
 - Only on the per-query path, the temporary files of the queries need up to about 11% of the database file for each of
-  the four queries in progress, about 10 GB for the real database.
+  the four queries in progress.

@@ -317,6 +317,19 @@ def test_plot_certificates_in_process(in_process):
     assert r"\providecommand{\plotsfolderleaf}{" + f"{reference.folder.parent.name}/plots" + "}" in captions
     assert r"\includegraphics[width=\textwidth]{\plotsfolderleaf/validity_days_distribution.pdf}" in captions
     assert reference.records[-1].getMessage() == "Chart generation for the Leaf certificate analysis completed."
+    # Without render processes the tables are still read once, here
+    assert any(record.getMessage().startswith("Statistics computed in") for record in reference.records)
+
+
+def test_queries_run_here_when_not_materialized_without_a_pool(database, tmp_path, caplog, monkeypatch, in_process):
+    reference = in_process(DatabaseType.LEAF)
+    caplog.clear()
+    monkeypatch.setattr(StatisticsDAO, "materialize", lambda self, *args, **kwargs: False)
+    with caplog.at_level(logging.DEBUG):
+        plot_certificates(StatisticsDAO(database, DatabaseType.LEAF), tmp_path / "here", False, workers=1)
+    assert generated(tmp_path / "here") == reference.charts
+    assert not any(record.getMessage().startswith("Statistics computed in") for record in caplog.records)
+    assert_chart_log(caplog.records, expected_chart_log(DatabaseType.LEAF, generated(tmp_path / "here")))
 
 
 def test_one_failing_chart_does_not_stop_the_others(database, tmp_path, monkeypatch, caplog, in_process):

@@ -40,8 +40,9 @@ def main() -> None:
     asyncio.set_event_loop(loop)
 
     interrupted = False
+    status = 0
     try:
-        loop.run_until_complete(certificates_analysis_main())
+        status = loop.run_until_complete(certificates_analysis_main()) or 0
     except KeyboardInterrupt:
         interrupted = True
         logging.info(INTERRUPT_MESSAGE)
@@ -56,6 +57,8 @@ def main() -> None:
 
     if interrupted:
         sys.exit(SIGINT_EXIT_CODE)
+    if status:
+        sys.exit(status)
 
 
 if __name__ == "__main__":

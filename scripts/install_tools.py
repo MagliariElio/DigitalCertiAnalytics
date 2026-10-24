@@ -4,17 +4,19 @@
 install.sh (macOS, Linux) and install.ps1 (Windows) set up uv, Python 3.12 and the project's .venv, then run this
 script with the .venv Python. It installs, inside the project folder only:
 
-- zlint:     ZLint, built from the exact commit the analysis uses (.tools/zlint);
-- mongodb:   a portable MongoDB server (.tools/mongodb), which the program starts by itself when it needs it;
+- zlint:     ZLint, the exact commit the analysis uses (.tools/zlint): the ready-made program of the project's
+             GitHub release when its SHA-256 equals the pinned reproducible build, otherwise built from source with Go;
 - log_list:  the Certificate Transparency log list res/log_list.json, only when the file is missing or damaged
              (a valid list is kept, also with --force, unless log_list is named with --only).
 
 Every download is pinned to an exact version and verified with SHA-256 (the log list with Google's signature).
-Running the script again is safe: what is installed is skipped and what is broken is repaired.
+Afterwards it removes from the project's own Python what the program never uses, and the leftovers of older
+versions (the bundled MongoDB server, which is no longer needed). Running the script again is safe: what is
+installed is skipped and what is broken is repaired.
 
     install_tools.py                  install everything
     install_tools.py --check          show the status of every component
-    install_tools.py --skip mongodb   e.g. when a MongoDB server already runs on localhost:27017
+    install_tools.py --only zlint     install only ZLint
 
 It uses the Python standard library only.
 """
@@ -26,14 +28,12 @@ import hashlib
 import hmac
 import http.client
 import importlib.metadata
-import io
 import json
 import os
 import platform
 import posixpath
 import re
 import shutil
-import socket
 import stat
 import subprocess
 import sys
@@ -58,10 +58,14 @@ REQUIRED_PYTHON = (3, 12)
 # Pinned versions and checksums
 # ---------------------------------------------------------------------------------------------------------------------
 
-# ZLint has no release for the commit the analysis uses, so it is built with Go, which is then removed
+# ZLint has no official release for the commit the analysis uses. The project's GitHub workflow zlint-binaries.yml
+# builds it for every platform below, reproducibly, and publishes the programs in the release ZLINT_RELEASE_TAG; a
+# program is used only when its SHA-256 equals ZLINT_BUILD_SHA256. Otherwise it is built here with Go, then removed.
 ZLINT_COMMIT = "989baefda32f5d50969ceafacc6d54215e28cc7b"
 ZLINT_VERSION = "v3.6.5-0.20241104164204-989baefda32f"  # Go pseudo-version of the commit, printed by `zlint -version`
 ZLINT_PACKAGE = "github.com/zmap/zlint/v3/cmd/zlint"
+ZLINT_RELEASE_TAG = f"zlint-{ZLINT_VERSION}"
+ZLINT_RELEASE_URL = f"https://github.com/MagliariElio/DigitalCertiAnalytics/releases/download/{ZLINT_RELEASE_TAG}/"
 
 GO_VERSION = "1.27.2"
 GO_MIRRORS = ("https://dl.google.com/go/", "https://go.dev/dl/")
@@ -88,7 +92,8 @@ GO_OLD_MACOS_ARCHIVES = {
     "arm64": ("go1.24.13.darwin-arm64.tar.gz", "f282d882c3353485e2fc6c634606d85caf36e855167d59b996dbeae19fa7629a"),
     "x86_64": ("go1.24.13.darwin-amd64.tar.gz", "6cc6549b06725220b342b740497ffd24e0ebdcef75781a77931ca199f46ad781"),
 }
-# The build is reproducible: Go 1.27.2 with the flags used here gives these binaries (a mismatch is only a warning)
+# The build is reproducible: Go 1.27.2 with the flags of build_zlint gives these programs, on any computer (also
+# cross-compiled by zlint-binaries.yml). A local build that differs is only a warning; a downloaded one is refused.
 ZLINT_BUILD_SHA256 = {
     ("macos", "arm64"): "1e66ee37906c05ad14599ada424fcd796df78a94124a36341ce89c9781b2bf2d",
     ("macos", "x86_64"): "c9fbdccd5797f23f3576ca87601450444b044147a3cbfe68df245c9533531242",
@@ -105,50 +110,6 @@ ZLINT_PREBUILT = {
     "linux": ("Linux", "0703f74ef7156b353f58969ffa50a6a12ad6ecd9ab194231c98c81743c830a02"),
     "windows": ("Windows", "90eb0e3dfbc05420ef1e67b5333b8a2aa899263299236c23bab7f3d52fd02100"),
 }
-
-# MongoDB 8.0 (LTS) is supported by pymongo 4.10.1; 7.0 only where 8.0 has no build. 8.0 data cannot be opened by 7.0.
-MONGODB_VERSION = "8.0.34"
-MONGODB_FALLBACK_VERSION = "7.0.45"
-MONGODB_DOWNLOADS = "https://fastdl.mongodb.org"
-MONGODB_SHA256 = {
-    MONGODB_VERSION: {
-        "macos-arm64": "3255cbf2e70cc5de04220046e006067d20068656d1bfa674828768a51d20d5a6",
-        "macos-x86_64": "3d391b8c41df069671afaa88ca21def057178aecce1813437539143b71f28152",
-        "windows-x86_64": "6b021a0864494e4decf278b36477a29eb36072432773e4e62c2f42c302630db0",
-        "linux-x86_64-ubuntu2404": "3e55cdcf7013fbc805d29d8195230df4b23c7688733ee15ad58ac6bc2a416611",
-        "linux-aarch64-ubuntu2404": "52655dd90adf0dbcbb87011075233285f44e262048ea30a9a48ad2a834c67736",
-        "linux-x86_64-ubuntu2204": "8eef2a821651ac20f732b6636731a51b407675674ced8d7f1f1578ebc7aced43",
-        "linux-aarch64-ubuntu2204": "fe918ca853000d5b48fcd3b2bc6119c72f4aab9e2b04a9a10e42923cb3aef6a4",
-        "linux-x86_64-ubuntu2004": "f85e7aafabc52231e00ac05762e5a612f0a8e120364ab0d73a43ad00cade5ba3",
-        "linux-aarch64-ubuntu2004": "35db4afa4fa391b6d19a009f8f73425eb284512f9931259386cbf060a3185b6b",
-        "linux-x86_64-debian12": "0e869e044162d101d4ee468e89bc139628c4c9e041bdcdaec19bf99331827215",
-        "linux-x86_64-rhel8": "675c97f72f57d64d177006f82aabccda68730ed7a13e7c27d4244cfa1cf729e8",
-        "linux-aarch64-rhel8": "d34edb8e846c284983f6e62321bb624c82d27ebc58895b4bb84a2535a8d9b7b9",
-        "linux-x86_64-rhel93": "6caa90892d5b3693789d1955761237ac686ac0a8b7bede201aacc25dc20be677",
-        "linux-aarch64-rhel93": "f13892a11eb5b38ecb45b8079edb7b77f9724b63873c3a34f7fd4d6fa0d12f94",
-        "linux-x86_64-rhel10": "e35cc984522d24b922b0c7d3d1c81bee99060a72adf5e1820b312e9cbb23bdd8",
-        "linux-aarch64-rhel10": "91ab354eed1859ca3e768c27b91c8a653c0f4b255fb82c3e45bab2f2422986b7",
-        "linux-x86_64-amazon2023": "b9fe750304de8a2f9e7f1c306e92c718a4c22d0c22d9c5ba20c8ab8426e899f7",
-        "linux-aarch64-amazon2023": "eee86a2859ea1d2ea639395e47c1c843001a394db418d888373fe6d333ce53e9",
-        "linux-x86_64-suse15": "3d3b418c180318bdaf20221820fde72a858333cbccd926bfe49b271cc55fb2a3",
-    },
-    MONGODB_FALLBACK_VERSION: {
-        "macos-arm64": "23fa267630e47fb8b95935a4bbb6fed5f43f313735b6e17fe55cacce98403deb",
-        "macos-x86_64": "f9fb2104e7eb525b48b61f7e5ab8af2b2172b031fded1a7f2c5be1b487a20b1a",
-        "linux-x86_64-debian11": "299e78c177105e137ada530f2fe310d2301733a4953be4394c295644f3848f93",
-        "linux-x86_64-amazon2": "e2281a165fa631b88cdf94332d047280a47359152e7971d2f90fa63f716424c4",
-        "linux-aarch64-amazon2": "61add15c8bbb0a1ccbab22305b81e2399da8b26687698012acf7402643da6f7f",
-        "linux-x86_64-rhel70": "97919a007c497875a74bfcf111f8bc39984895ce538bc9340bce60cb3855ebf8",
-        "linux-x86_64-suse12": "ac6c30ed40afd374b039eea85201104b49392951030f0164d8acd649ee845179",
-    },
-}
-# The Windows zip is 808 MB, mostly debug files: only mongod.exe is read from it, with HTTP Range requests
-MONGOD_EXE_SHA256 = {
-    (MONGODB_VERSION, "windows-x86_64"): "4c9e9764cbac5be8eb92733e23ce7f70b52f8ae84b6879b4d5cc010c90ec6082",
-}
-MONGODB_INSTALL_DOCS = "https://www.mongodb.com/docs/manual/administration/install-community/"
-VC_RUNTIME_URL = "https://aka.ms/vs/17/release/vc_redist.x64.exe"
-VC_RUNTIME_DLLS = ("msvcp140.dll", "msvcp140_1.dll", "vcruntime140.dll", "vcruntime140_1.dll")
 
 # Google's list of all the CT logs, including the retired ones, signed with this key (sha256 of the PEM file:
 # a284e4ad744211a6636a03c59aca9446ecd5ff2c14d7cb6edd69f7ba2108bf95, from www.gstatic.com/ct/log_list/v3/)
@@ -178,21 +139,21 @@ USER_AGENT = "DigitalCertiAnalytics-installer/1.0"
 NETWORK_TIMEOUT = 60                # Seconds without data before a download attempt is abandoned
 RETRY_DELAYS = (3, 10, 30)          # Pauses between download attempts
 CHUNK_SIZE = 1 << 16
-RANGE_BLOCK_SIZE = 4 << 20          # Bytes fetched per HTTP Range request
 GO_BUILD_TIMEOUT = 1800
 GB = 1 << 30
 MB = 1 << 20
-SPACE_FOR_GO_BUILD = int(1.0 * GB)  # Go toolchain, modules and build cache, removed after the build
-SPACE_FOR_MONGODB = int(0.5 * GB)   # Archive and the extracted server
-SPACE_FOR_MONGODB_ZIP = int(1.9 * GB)
-RECOMMENDED_FREE_SPACE = 100 * GB   # The scan file can be 80 GB, and the SQLite databases need space too
+SPACE_FOR_GO_BUILD = int(1.3 * GB)  # Go toolchain, modules and build cache, removed after the build
+# The scan file compressed with --compress_input (about 16 GB for 80 GB of JSON) and its SQLite databases (under
+# 10 GB for 10 million lines)
+RECOMMENDED_FREE_SPACE = 30 * GB
 
 NETWORK_ERRORS = (urllib.error.URLError, http.client.HTTPException, OSError, ValueError)
 PROCESS_TIMED_OUT = -1001
 PROCESS_NOT_STARTED = -1002
 
-COMPONENT_NAMES = ("zlint", "mongodb", "log_list")
-COMPONENT_ALIASES = {"log-list": "log_list", "loglist": "log_list", "mongo": "mongodb", "mongod": "mongodb"}
+COMPONENT_NAMES = ("zlint", "log_list")
+COMPONENT_ALIASES = {"log-list": "log_list", "loglist": "log_list"}
+OBSOLETE_COMPONENTS = ("mongodb", "mongo", "mongod")  # MongoDB is no longer used: naming it changes nothing
 
 RUN_AGAIN = "Run the installer again: it continues where it stopped."
 NETWORK_HINT = ("Check your internet connection, then run the installer again: it continues where it stopped. "
@@ -200,9 +161,6 @@ NETWORK_HINT = ("Check your internet connection, then run the installer again: i
 CERTIFICATE_HINT = ("The secure connection could not be verified. On a company or university network that inspects "
                     "traffic, set SSL_CERT_FILE to the file of your organisation's certificates and run the installer "
                     "again.")
-MONGODB_ALTERNATIVE = ("Everything else works. Only the ZLint checks (--leaf_zlint_check, --intermediate_zlint_check) "
-                       "need MongoDB: install MongoDB yourself (" + MONGODB_INSTALL_DOCS + ") and keep it running on "
-                       "localhost:27017, and the program uses it automatically.")
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -307,6 +265,19 @@ class Ui:
 
     def detail(self, message: str) -> None:
         self.line(f"           {message}")
+
+    def confirm(self, question: str) -> bool:
+        """Ask a yes/no question on a terminal; without one (e.g. under "curl | bash") the answer is no."""
+        stdin = sys.stdin
+        if not (self.interactive and stdin is not None and hasattr(stdin, "isatty") and stdin.isatty()):
+            return False
+        prompt = f"           {question} [y/N] "
+        try:
+            answer = input(prompt)
+        except EOFError:
+            answer = ""
+        self.log_only(prompt + answer)
+        return answer.strip().lower() in ("y", "yes")
 
 
 class Progress:
@@ -503,15 +474,21 @@ class Layout:
         return self.root / "zlint" / "v3" / self.exe("zlint")
 
     @property
-    def mongodb_dir(self) -> Path:
+    def python_dir(self) -> Path:
+        return self.tools / "python"
+
+    @property
+    def pycache(self) -> Path:
+        return self.cache / "pycache"
+
+    @property
+    def legacy_mongodb(self) -> Path:
+        """The MongoDB server bundled by older versions (the ZLint results are now in the SQLite databases)."""
         return self.tools / "mongodb"
 
     @property
-    def mongod(self) -> Path:
-        return self.mongodb_dir / "bin" / self.exe("mongod")
-
-    @property
-    def mongodb_data(self) -> Path:
+    def legacy_mongodb_data(self) -> Path:
+        """The ZLint results that older versions stored in MongoDB: deleted only when the user confirms."""
         return self.root / "data" / "mongodb"
 
     @property
@@ -757,90 +734,6 @@ def fetch_bytes(url: str, label: str, limit: int = 32 * MB) -> bytes:
     raise InstallError(f"Could not download {label}: {errors[-1]}.", _network_hint(errors))
 
 
-class RangeNotSupported(Exception):
-    """The server does not answer HTTP Range requests."""
-
-
-class HttpRangeReader(io.RawIOBase):
-    """Read-only, seekable view of a remote file, fetched in blocks with HTTP Range requests.
-
-    zipfile reads only the central directory and the members it extracts, so one file of a large zip archive can be
-    downloaded without the rest.
-    """
-
-    def __init__(self, url: str, size: int, block_size: int = RANGE_BLOCK_SIZE):
-        super().__init__()
-        self.url, self.size, self.block_size = url, size, block_size
-        self.position = 0
-        self.block_start = 0
-        self.block = b""
-        self.requests = 0
-        self.fetched = 0
-        self.on_fetch: Callable[[int], None] | None = None
-
-    @classmethod
-    def open(cls, url: str, block_size: int = RANGE_BLOCK_SIZE) -> "HttpRangeReader":
-        with _urlopen(url, {"Range": "bytes=0-0"}) as response:
-            content_range = response.headers.get("Content-Range", "") or ""
-            response.read()
-            match = re.fullmatch(r"bytes 0-0/(\d+)", content_range.strip())
-            if _response_status(response) != 206 or not match:
-                raise RangeNotSupported(url)
-        return cls(url, int(match.group(1)), block_size)
-
-    def readable(self) -> bool:
-        return True
-
-    def seekable(self) -> bool:
-        return True
-
-    def tell(self) -> int:
-        return self.position
-
-    def seek(self, offset: int, whence: int = io.SEEK_SET) -> int:
-        base = {io.SEEK_SET: 0, io.SEEK_CUR: self.position, io.SEEK_END: self.size}[whence]
-        self.position = max(0, base + offset)
-        return self.position
-
-    def readinto(self, buffer) -> int:
-        """Fill the buffer up to the end of the file: zipfile reads its headers with a single read() and does not
-        retry a short one, so a read that crosses a block boundary continues in the next block."""
-        view = memoryview(buffer).cast("B")
-        filled = 0
-        while filled < len(view) and self.position < self.size:
-            if not self.block_start <= self.position < self.block_start + len(self.block):
-                self._load(self.position)
-            offset = self.position - self.block_start
-            data = self.block[offset:offset + len(view) - filled]
-            view[filled:filled + len(data)] = data
-            filled += len(data)
-            self.position += len(data)
-        return filled
-
-    def _load(self, start: int) -> None:
-        end = min(start + self.block_size, self.size) - 1
-        errors = []
-        for attempt in range(len(RETRY_DELAYS) + 1):
-            try:
-                with _urlopen(self.url, {"Range": f"bytes={start}-{end}"}) as response:
-                    if _response_status(response) != 206:
-                        raise RangeNotSupported(self.url)
-                    data = response.read()
-                if len(data) != end - start + 1:
-                    raise OSError(f"received {len(data)} bytes instead of {end - start + 1}")
-                break
-            except NETWORK_ERRORS as error:
-                errors.append(_describe_error(error))
-                _pause_before_retry(attempt)
-        else:
-            raise OSError(f"could not read {self.url}: {errors[-1]}")
-        self.requests += 1
-        self.fetched += len(data)
-        self.block_start, self.block = start, data
-        if self.on_fetch is not None:
-            self.on_fetch(self.fetched)
-
-
 # ---------------------------------------------------------------------------------------------------------------------
 # Archive extraction (safe against "zip slip": nothing is written outside the destination)
 # ---------------------------------------------------------------------------------------------------------------------
@@ -950,12 +843,6 @@ def select_basename(*names: str) -> Selector:
     return select
 
 
-def select_mongod(member: str) -> str | None:
-    """Selector keeping only bin/mongod[.exe] of a MongoDB archive, whatever its top folder is called."""
-    match = re.search(r"(?:^|/)bin/(mongod(?:\.exe)?)$", member.replace("\\", "/"))
-    return f"bin/{match.group(1)}" if match else None
-
-
 # ---------------------------------------------------------------------------------------------------------------------
 # ZLint
 # ---------------------------------------------------------------------------------------------------------------------
@@ -1049,14 +936,14 @@ def _record_zlint(ctx: Context, expected: str, source: str, go_version: str = GO
                            f"{expected!r}).", explain_not_runnable(binary))
     digest = file_sha256(binary)
     reference = None
-    if source == "go-build" and go_version == GO_VERSION:
+    if source in ("go-build", "release") and go_version == GO_VERSION:
         reference = ZLINT_BUILD_SHA256.get((ctx.platform.system, ctx.platform.arch))
     if reference and digest != reference:
         ctx.ui.warn("The ZLint program differs from the reference build (it can happen with another Go setup); its "
                     "version is the right one, so it is used.")
     entry = {"status": "installed", "version": version, "source": source, "path": relative_to_tools(ctx.layout, binary),
              "sha256": digest}
-    if source == "go-build":
+    if source in ("go-build", "release"):
         entry.update(commit=ZLINT_COMMIT, go=go_version, reference_build=digest == reference)
     set_component(ctx, "zlint", entry)
     ctx.ui.ok(f"ZLint {version} installed in {binary}")
@@ -1066,7 +953,8 @@ def build_zlint(ctx: Context) -> None:
     layout, ui = ctx.layout, ctx.ui
     go_version, name, digest = go_toolchain_for(ctx.platform)
     ensure_free_space(layout.tools, SPACE_FOR_GO_BUILD, "building ZLint")
-    ui.detail("ZLint is built from its source code with Go, which is removed afterwards (about 170 MB to download).")
+    ui.detail("ZLint is built from its source code with Go, which is removed afterwards (about 170 MB to download and "
+              "1.2 GB of temporary files).")
     archive = download(ui, [mirror + name for mirror in GO_MIRRORS], layout.downloads / name, digest,
                        f"Go {go_version}")
     go = env = None
@@ -1122,7 +1010,57 @@ def install_prebuilt_zlint(ctx: Context) -> None:
     _record_zlint(ctx, ZLINT_PREBUILT_VERSION, "prebuilt")
 
 
+def zlint_release_asset(plat: PlatformInfo) -> str | None:
+    """The name of this computer's program in the release ZLINT_RELEASE_TAG, or None when there is none for it."""
+    if (plat.system, plat.arch) not in ZLINT_BUILD_SHA256:
+        return None
+    if plat.system == "macos" and plat.mac_version and plat.mac_version < GO_MINIMUM_MACOS:
+        return None  # Programs built with Go 1.27 need macOS 13: older Macs build it with an older Go
+    return f"zlint-{plat.system}-{plat.arch}" + (".exe" if plat.system == "windows" else "")
+
+
+def install_release_zlint(ctx: Context) -> bool:
+    """Install the ready-made program of the project's release; False (with the reason shown) when it cannot be used.
+
+    It is accepted only if its SHA-256 equals the pinned reproducible build, the same check as a local build."""
+    layout, ui, plat = ctx.layout, ctx.ui, ctx.platform
+    asset = zlint_release_asset(plat)
+    if asset is None:
+        return False
+    expected = ZLINT_BUILD_SHA256[(plat.system, plat.arch)]
+    staging = layout.tools / "zlint.new"
+    remove_tree(staging)
+    staging.mkdir(parents=True)
+    part = staging / layout.exe("zlint")
+    reason = ""
+    try:
+        try:
+            _fetch(ui, ZLINT_RELEASE_URL + asset, part, f"ZLint {ZLINT_VERSION} (ready-made)")
+        except urllib.error.HTTPError as error:
+            reason = "it is not published yet" if error.code == 404 else _describe_error(error)
+        except NETWORK_ERRORS as error:
+            reason = _describe_error(error)
+        if not reason and file_sha256(part) != expected:
+            reason = "its SHA-256 differs from the pinned build"
+        if not reason:
+            part.chmod(0o755)
+            layout.zlint.parent.mkdir(parents=True, exist_ok=True)
+            os.replace(part, layout.zlint)
+            try:
+                _record_zlint(ctx, ZLINT_VERSION, "release")
+                return True
+            except InstallError as error:
+                layout.zlint.unlink(missing_ok=True)
+                reason = error.message
+    finally:
+        remove_tree(staging)
+    ui.detail(f"The ready-made ZLint cannot be used ({reason.rstrip('.')}): it is built from its source code instead.")
+    return False
+
+
 def install_zlint(ctx: Context) -> None:
+    if install_release_zlint(ctx):
+        return
     try:
         build_zlint(ctx)
     except InstallError as error:
@@ -1134,6 +1072,13 @@ def install_zlint(ctx: Context) -> None:
         ctx.ui.detail(f"Installing the official prebuilt ZLint {ZLINT_PREBUILT_VERSION} instead. It is a slightly older "
                       f"version (3 lints fewer); run the installer again later to build the exact one.")
         install_prebuilt_zlint(ctx)
+
+
+def explain_not_runnable(path: Path | None) -> str:
+    where = f" ({path})" if path else ""
+    return ("The program could not run" + where + ". The disk or folder may not allow running programs (a USB stick, a "
+            "network share or a folder mounted with 'noexec'), or an antivirus blocked it. Move the project folder to "
+            "your home folder and run the installer again.")
 
 
 def find_zlint(layout: Layout) -> tuple:
@@ -1149,465 +1094,225 @@ def find_zlint(layout: Layout) -> tuple:
 
 
 # ---------------------------------------------------------------------------------------------------------------------
-# MongoDB: choosing the build
+# Footprint: the unused parts of the project's Python, and the leftovers of older versions
 # ---------------------------------------------------------------------------------------------------------------------
 
-@dataclass(frozen=True)
-class MongoBuild:
-    version: str
-    key: str                  # e.g. 'macos-arm64', 'windows-x86_64', 'linux-x86_64-ubuntu2404'
-    url: str
-    sha256: str               # Of the archive
-    mongod_sha256: str = ""   # Of mongod.exe inside the Windows zip, which is not downloaded whole
-    official: bool = True     # False when MongoDB does not list this build for the system, but it should run
-
-    @property
-    def filename(self) -> str:
-        return self.url.rsplit("/", 1)[-1]
+# Never imported by the program (it draws its charts with matplotlib's Agg backend, without Tk)
+PYTHON_UNUSED_STDLIB = ("ensurepip", "idlelib", "tkinter", "turtledemo", "turtle.py")
+PYTHON_UNUSED_LIBS = ("tcl[0-9]*", "tk[0-9]*", "libtcl*", "libtk*", "itcl*", "thread[0-9]*")
+PYTHON_UNUSED_SCRIPTS = ("pip*", "idle*", "2to3*")
+# Run after the removal: if it fails, everything is put back
+PYTHON_SMOKE_TEST = ("import ssl, sqlite3, lzma, bz2, zlib, ctypes, asyncio, multiprocessing, sysconfig, json, csv, "
+                     "numpy, zstandard, aiohttp, aiosqlite, cryptography.x509, rich, tqdm, sslyze, matplotlib; "
+                     "matplotlib.use('Agg'); import matplotlib.pyplot; sysconfig.get_paths()")
+PRUNE_FOLDER = "python-unused"
+PRUNE_RECORD = "moved.json"
 
 
-def mongo_build(version: str, key: str, official: bool = True) -> MongoBuild:
-    sha256 = MONGODB_SHA256[version][key]
-    if key.startswith("macos-"):
-        url = f"{MONGODB_DOWNLOADS}/osx/mongodb-{key}-{version}.tgz"
-    elif key.startswith("windows-"):
-        url = f"{MONGODB_DOWNLOADS}/windows/mongodb-{key}-{version}.zip"
-    else:
-        url = f"{MONGODB_DOWNLOADS}/linux/mongodb-{key}-{version}.tgz"
-    return MongoBuild(version, key, url, sha256, MONGOD_EXE_SHA256.get((version, key), ""), official)
+def tree_size(path: Path) -> int:
+    """Bytes of the files under path; a file linked several times is counted once, symbolic links not at all."""
+    if path.is_symlink() or not path.exists():
+        return 0
+    if path.is_file():
+        return path.stat().st_size
+    seen, total = set(), 0
+    for folder, _folders, files in os.walk(path):
+        for name in files:
+            try:
+                info = os.lstat(os.path.join(folder, name))
+            except OSError:
+                continue
+            if stat.S_ISLNK(info.st_mode):
+                continue
+            if (info.st_dev, info.st_ino) not in seen or not info.st_ino:
+                seen.add((info.st_dev, info.st_ino))
+                total += info.st_size
+    return total
 
 
-DISTRO_FAMILIES = (
-    ("nixos", {"nixos"}),
-    ("amazon", {"amzn"}),
-    ("fedora", {"fedora"}),
-    ("rhel", {"rhel", "centos", "rocky", "almalinux", "ol", "circle", "eurolinux", "navy", "scientific"}),
-    ("suse", {"sles", "sled", "opensuse-leap", "suse", "opensuse"}),
-    ("ubuntu", {"ubuntu"}),
-    ("debian", {"debian", "raspbian"}),
-)
-UBUNTU_CODENAMES = {
-    "bionic": (18, 4), "focal": (20, 4), "groovy": (20, 10), "hirsute": (21, 4), "impish": (21, 10),
-    "jammy": (22, 4), "kinetic": (22, 10), "lunar": (23, 4), "mantic": (23, 10), "noble": (24, 4),
-}
-DEBIAN_CODENAMES = {"buster": 10, "bullseye": 11, "bookworm": 12, "trixie": 13, "forky": 14}
+def size_text(size: int) -> str:
+    return f"{size / GB:.1f} GB" if size >= GB else f"{size / MB:.0f} MB"
 
 
-def distro_family(os_release: dict) -> str:
-    """'ubuntu', 'debian', 'rhel', 'fedora', 'amazon', 'suse', 'nixos' or 'unknown', from ID first, then ID_LIKE."""
-    candidates = [os_release.get("ID", "").lower()] + os_release.get("ID_LIKE", "").lower().split()
-    for candidate in candidates:
-        for family, members in DISTRO_FAMILIES:
-            if candidate in members:
-                return family
-    return "unknown"
-
-
-def _major(text: str) -> int | None:
-    version = parse_version(text)
-    return version[0] if version else None
-
-
-def _ubuntu_version(os_release: dict) -> tuple | None:
-    """Ubuntu's (major, minor); derivatives (Mint, Pop!_OS, ...) are mapped through UBUNTU_CODENAME."""
-    if os_release.get("ID", "").lower() == "ubuntu":
-        version = parse_version(os_release.get("VERSION_ID", ""))
-        if len(version) >= 2:
-            return version[:2]
-    codename = (os_release.get("UBUNTU_CODENAME") or os_release.get("VERSION_CODENAME") or "").lower()
-    return UBUNTU_CODENAMES.get(codename)  # None: a release newer than this table
-
-
-def _ubuntu_targets(os_release: dict, arch: str) -> list:
-    version = _ubuntu_version(os_release)
-    if version is None or version >= (24, 4):
-        return [(MONGODB_VERSION, "ubuntu2404", True)]
-    if version >= (22, 4):
-        return [(MONGODB_VERSION, "ubuntu2204", True)]
-    if version >= (20, 4):
-        return [(MONGODB_VERSION, "ubuntu2004", True)]
-    return []
-
-
-def _debian_major(os_release: dict) -> int:
-    if os_release.get("ID", "").lower() == "debian" and _major(os_release.get("VERSION_ID", "")):
-        return _major(os_release["VERSION_ID"])
-    codename = os_release.get("VERSION_CODENAME", "").lower()
-    return DEBIAN_CODENAMES.get(codename, 13)  # Testing, unstable and rolling derivatives: like the newest release
-
-
-def _debian_targets(os_release: dict, arch: str) -> list:
-    major = _debian_major(os_release)
-    if major >= 12 and arch == "x86_64":
-        return [(MONGODB_VERSION, "debian12", major == 12)] + ([(MONGODB_VERSION, "ubuntu2404", False)] if major > 12 else [])
-    if major >= 12:
-        return [(MONGODB_VERSION, "ubuntu2204" if major == 12 else "ubuntu2404", False)]
-    if major == 11 and arch == "x86_64":
-        return [(MONGODB_FALLBACK_VERSION, "debian11", True)]
-    return []
-
-
-def _rhel_targets(os_release: dict, arch: str) -> list:
-    major = _major(os_release.get("VERSION_ID", ""))
-    targets = {8: "rhel8", 9: "rhel93", 10: "rhel10"}
-    if major in targets:
-        return [(MONGODB_VERSION, targets[major], True)]
-    if major == 7 and arch == "x86_64":
-        return [(MONGODB_FALLBACK_VERSION, "rhel70", True)]
-    if major and major > 10:
-        return [(MONGODB_VERSION, "rhel10", False)]
-    return []
-
-
-def _fedora_targets(os_release: dict, arch: str) -> list:
-    return [(MONGODB_VERSION, "rhel93", False), (MONGODB_VERSION, "rhel10", False)]
-
-
-def _amazon_targets(os_release: dict, arch: str) -> list:
-    version = os_release.get("VERSION_ID", "")
-    if version.startswith("2023"):
-        return [(MONGODB_VERSION, "amazon2023", True)]
-    if version == "2":
-        return [(MONGODB_FALLBACK_VERSION, "amazon2", True)]
-    return []
-
-
-def _suse_targets(os_release: dict, arch: str) -> list:
-    major = _major(os_release.get("VERSION_ID", ""))
-    if major == 15:
-        return [(MONGODB_VERSION, "suse15", True)]
-    if major == 12:
-        return [(MONGODB_FALLBACK_VERSION, "suse12", True)]
-    return _unknown_targets(os_release, arch)  # e.g. openSUSE Tumbleweed
-
-
-def _unknown_targets(os_release: dict, arch: str) -> list:
-    # No official build (Arch, Manjaro, Gentoo, Void, ...): the RHEL 9 build needs only common libraries
-    return [(MONGODB_VERSION, "rhel93", False), (MONGODB_VERSION, "ubuntu2204", False)]
-
-
-def _nixos_targets(os_release: dict, arch: str) -> list:
-    return []  # No standard dynamic loader: generic binaries do not run
-
-
-LINUX_TARGETS = {"ubuntu": _ubuntu_targets, "debian": _debian_targets, "rhel": _rhel_targets,
-                 "fedora": _fedora_targets, "amazon": _amazon_targets, "suse": _suse_targets,
-                 "nixos": _nixos_targets, "unknown": _unknown_targets}
-
-
-def linux_mongodb_targets(os_release: dict, arch: str) -> list:
-    """The MongoDB Linux builds to try, best first, as (version, target, official) with arch 'x86_64' or 'aarch64'."""
-    return LINUX_TARGETS[distro_family(os_release)](os_release, arch)
-
-
-def _linux_candidates(plat: PlatformInfo) -> tuple:
-    if plat.libc == "musl":
-        return [], "MongoDB has no build for Linux distributions based on musl, such as Alpine"
-    arch = {"x86_64": "x86_64", "arm64": "aarch64"}.get(plat.arch)
-    if arch is None:
-        return [], f"MongoDB has no build for {plat.arch} processors"
-    builds = []
-    for version, target, official in linux_mongodb_targets(plat.os_release, arch):
-        key = f"linux-{arch}-{target}"
-        if key in MONGODB_SHA256[version]:
-            builds.append(mongo_build(version, key, official))
-    return builds, "" if builds else f"MongoDB has no build that runs on {plat.describe()}"
-
-
-def _macos_candidates(plat: PlatformInfo) -> tuple:
-    arch = "arm64" if plat.arch == "arm64" else "x86_64"
-    if plat.mac_version >= (14,):
-        return [mongo_build(MONGODB_VERSION, f"macos-{arch}")], ""
-    minimum = (11,) if arch == "arm64" else (10, 14)
-    if plat.mac_version >= minimum:
-        return [mongo_build(MONGODB_FALLBACK_VERSION, f"macos-{arch}")], ""
-    return [], f"MongoDB needs macOS {'.'.join(map(str, minimum))} or newer"
-
-
-def _windows_candidates(plat: PlatformInfo) -> tuple:
-    if plat.arch not in ("x86_64", "arm64"):
-        return [], "MongoDB needs 64-bit Windows"
-    if plat.arch == "arm64" and plat.windows_build < 22000:
-        return [], ("MongoDB has no ARM build for Windows, and Windows 10 on ARM cannot run the x64 one "
-                    "(Windows 11 can)")
-    return [mongo_build(MONGODB_VERSION, "windows-x86_64")], ""
-
-
-def mongodb_candidates(plat: PlatformInfo) -> tuple:
-    """The MongoDB builds to try on this computer, best first, and the reason when there is none."""
-    choosers = {"macos": _macos_candidates, "windows": _windows_candidates, "linux": _linux_candidates}
-    if plat.system not in choosers:
-        return [], f"MongoDB has no build for {plat.system}"
-    return choosers[plat.system](plat)
-
-
-def _linux_cpu_supported(arch: str, cpuinfo: str) -> tuple:
-    if not cpuinfo:
-        return True, ""
-    flag_lines = [line.split(":", 1)[-1] for line in cpuinfo.splitlines()
-                  if line.lower().startswith(("flags", "features"))]
-    words = set(" ".join(flag_lines).split())
-    if arch == "x86_64" and "avx" not in words:
-        return False, "this processor has no AVX instructions, which MongoDB 5.0 and newer need (Intel 2011 or newer)"
-    if arch == "arm64" and "atomics" not in words:
-        return False, ("this ARM processor is older than ARMv8.2-A, which MongoDB 5.0 and newer need (a Raspberry "
-                       "Pi 4 is too old, a Raspberry Pi 5 works)")
-    return True, ""
-
-
-def cpu_supports_mongodb(plat: PlatformInfo, cpuinfo: str | None = None, mac_features: str | None = None) -> tuple:
-    """(True, '') when the processor can run MongoDB 5.0+ (or it cannot be told), else (False, reason)."""
-    if plat.system == "linux":
-        return _linux_cpu_supported(plat.arch, _read_text("/proc/cpuinfo") if cpuinfo is None else cpuinfo)
-    if plat.system == "macos" and plat.arch == "x86_64":
-        features = _sysctl("machdep.cpu.features") if mac_features is None else mac_features
-        if features and "AVX1.0" not in features.split():
-            return False, "this Mac's processor has no AVX instructions, which MongoDB 5.0 and newer need"
-    if plat.system == "windows" and plat.arch == "x86_64" and not _windows_has_avx():
-        return False, "this processor has no AVX instructions, which MongoDB 5.0 and newer need"
-    return True, ""
-
-
-def _windows_has_avx() -> bool:
+def bundled_python(layout: Layout) -> Path | None:
+    """The installation folder of the Python that runs this script, when it is the project's own (.tools/python)."""
     try:
-        import ctypes
-        return bool(ctypes.windll.kernel32.IsProcessorFeaturePresent(39))  # PF_AVX_INSTRUCTIONS_AVAILABLE
-    except (AttributeError, OSError, ImportError):
+        base, tools = Path(sys.base_prefix).resolve(), layout.python_dir.resolve()
+    except OSError:
+        return None
+    return base if tools in base.parents else None
+
+
+def _links_libpython(binary: Path) -> bool:
+    """Whether the interpreter needs the shared libpython: the name is then in its list of libraries (Mach-O load
+    commands, ELF NEEDED). When in doubt (the file cannot be read) the answer is yes, so the library is kept."""
+    try:
+        with open(binary, "rb") as reader:
+            return b"libpython" in reader.read()
+    except OSError:
         return True
 
 
-def missing_vc_runtime(system_dir: Path | None = None) -> list:
-    """The Visual C++ runtime DLLs mongod.exe needs that are not installed in Windows."""
-    if system_dir is None:
-        system_dir = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32"
-    return [name for name in VC_RUNTIME_DLLS if not (system_dir / name).is_file()]
+def python_unused_files(base: Path, windows: bool, version: tuple = sys.version_info[:2]) -> list:
+    """The files and folders of the Python installation in base that the program never uses (only existing ones)."""
+    found = []
+
+    def add(paths) -> None:
+        found.extend(path for path in paths if path.exists() or path.is_symlink())
+
+    if windows:
+        stdlib, dynload = base / "Lib", base / "DLLs"
+        add(stdlib / name for name in PYTHON_UNUSED_STDLIB)
+        add(sorted(dynload.glob("_tkinter*")) + sorted(dynload.glob("tcl*.dll")) + sorted(dynload.glob("tk*.dll")))
+        add((base / "tcl", base / "include", base / "libs"))
+        add(sorted((stdlib / "site-packages").glob("pip*")))
+        add(sorted((base / "Scripts").glob("pip*")) + sorted((base / "Scripts").glob("idle*")))
+        return found
+    name = f"python{version[0]}.{version[1]}"
+    lib = base / "lib"
+    stdlib = lib / name
+    add(stdlib / item for item in PYTHON_UNUSED_STDLIB)
+    add(sorted((stdlib / "lib-dynload").glob("_tkinter*")))
+    for pattern in PYTHON_UNUSED_LIBS:
+        add(sorted(lib.glob(pattern)))
+    add(sorted((stdlib / "site-packages").glob("pip*")))
+    add((base / "include", base / "share"))
+    for pattern in PYTHON_UNUSED_SCRIPTS:
+        add(sorted((base / "bin").glob(pattern)))
+    if not _links_libpython(base / "bin" / name):
+        add(sorted(lib.glob(f"libpython{version[0]}.{version[1]}*")))
+    return found
 
 
-def _data_written_by(layout: Layout, ctx: Context) -> str | None:
-    """The MongoDB version that wrote data/mongodb, if it has data."""
-    if not (layout.mongodb_data / "WiredTiger").exists():
-        return None
-    version = component_entry(ctx, "mongodb").get("version") or ""
-    if not version:
-        version = _read_text(str(layout.mongodb_dir / "VERSION")).strip()
-    return version or None
-
-
-def guard_data_version(ctx: Context, builds: list, reason: str) -> tuple:
-    """Never install a MongoDB older than the one that wrote the existing data: it would refuse to open it."""
-    written_by = _data_written_by(ctx.layout, ctx)
-    if not builds or not written_by:
-        return builds, reason
-    kept = [build for build in builds if _major(build.version) >= _major(written_by)]
-    if kept:
-        return kept, reason
-    return [], (f"the database folder {ctx.layout.mongodb_data} was written by MongoDB {written_by}, which is newer "
-                f"than the MongoDB this computer can run ({builds[0].version}), so it could not be opened. Move that "
-                "folder somewhere else (or delete it if its ZLint results are no longer needed) and run the installer "
-                "again")
-
-
-# ---------------------------------------------------------------------------------------------------------------------
-# MongoDB: installing and testing the build
-# ---------------------------------------------------------------------------------------------------------------------
-
-STATUS_ILLEGAL_INSTRUCTION = 0xC000001D
-STATUS_DLL_NOT_FOUND = 0xC0000135
-
-
-def mongod_version(binary: Path) -> tuple:
-    """(version or None, CompletedProcess) of `mongod --version`."""
-    result = run([binary, "--version"], timeout=60)
-    match = re.search(r"db version v(\S+)", result.stdout)
-    return (match.group(1) if result.returncode == 0 and match else None), result
-
-
-def _library_hint(plat: PlatformInfo) -> str:
-    family = distro_family(plat.os_release)
-    if family in ("ubuntu", "debian"):
-        return ("Install the missing system libraries with: sudo apt install libcurl4 openssl (on Ubuntu 24.04 and "
-                "newer: sudo apt install libcurl4t64 openssl), then run the installer again.")
-    if family in ("rhel", "fedora", "amazon"):
-        return ("Install the missing system libraries with: sudo dnf install libcurl openssl xz-libs, then run the "
-                "installer again.")
-    if family == "suse":
-        return ("Install the missing system libraries with: sudo zypper install libcurl4 libopenssl3, then run the "
-                "installer again.")
-    return ("Install the curl and OpenSSL 3 libraries with your package manager, then run the installer again. "
-            + MONGODB_ALTERNATIVE)
-
-
-def explain_mongod_failure(plat: PlatformInfo, result: subprocess.CompletedProcess) -> tuple:
-    """(reason, hint) for a mongod that does not start."""
-    output = (result.stderr or "") + (result.stdout or "")
-    code = result.returncode
-    if code in (-4, STATUS_ILLEGAL_INSTRUCTION, 132) or "Illegal instruction" in output:
-        return "the processor lacks instructions MongoDB needs (AVX, or ARMv8.2-A on ARM)", MONGODB_ALTERNATIVE
-    if code == STATUS_DLL_NOT_FOUND or "MSVCP140" in output.upper() or "VCRUNTIME140" in output.upper():
-        return "the Microsoft Visual C++ runtime is missing", VC_RUNTIME_HINT
-    library = re.search(r"error while loading shared libraries: (\S+?):", output)
-    if library:
-        return f"the system library {library.group(1)} is missing", _library_hint(plat)
-    if re.search(r"(GLIBC|GLIBCXX|CURL_OPENSSL|OPENSSL)_[\d.]+' not found|version `[^']+' not found", output):
-        return "the system libraries are too old or different from the ones MongoDB was built for", _library_hint(plat)
-    if code == PROCESS_NOT_STARTED:
-        return f"it cannot be started ({output.strip()})", explain_not_runnable(None)
-    return f"it exits with code {code}:\n{tail(output, 6)}", MONGODB_ALTERNATIVE
-
-
-VC_RUNTIME_HINT = ("MongoDB needs the Microsoft Visual C++ Redistributable (x64). Download it from " + VC_RUNTIME_URL
-                   + " and run it (it asks once for administrator permission; ask your IT department on a managed "
-                   "computer), then run install.bat again. " + MONGODB_ALTERNATIVE)
-
-
-def explain_not_runnable(path: Path | None) -> str:
-    where = f" ({path})" if path else ""
-    return ("The program could not run" + where + ". The disk or folder may not allow running programs (a USB stick, a "
-            "network share or a folder mounted with 'noexec'), or an antivirus blocked it. Move the project folder to "
-            "your home folder and run the installer again.")
-
-
-def _download_mongod_exe(ctx: Context, build: MongoBuild, dest: Path) -> None:
-    """Read only mongod.exe from the 808 MB Windows zip, with HTTP Range requests; verify it."""
-    reader = HttpRangeReader.open(build.url)
-    part = dest.with_name(dest.name + ".part")
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    with zipfile.ZipFile(reader) as zipped:
-        info = next((item for item in zipped.infolist() if select_mongod(item.filename)), None)
-        if info is None:
-            raise InstallError("The MongoDB archive does not contain mongod.exe.", RUN_AGAIN)
-        progress = Progress(ctx.ui, f"MongoDB {build.version} server", info.compress_size)
-        reader.on_fetch = progress.update
-        with zipped.open(info) as source, open(part, "wb") as writer:
-            shutil.copyfileobj(source, writer, CHUNK_SIZE * 16)
-        progress.finish(min(reader.fetched, info.compress_size))
-    actual = file_sha256(part)
-    if actual != build.mongod_sha256:
-        part.unlink()
-        raise InstallError(f"The downloaded mongod.exe did not match its expected SHA-256 checksum ({actual}), so it was "
-                           "deleted.", "The file was damaged or changed on the way. Run the installer again.")
-    os.replace(part, dest)
-
-
-def _fetch_windows_mongod(ctx: Context, build: MongoBuild, staging: Path) -> None:
-    target = staging / "bin" / "mongod.exe"
-    ensure_free_space(staging, SPACE_FOR_MONGODB, "the MongoDB server")
+def _restore_moved(folder: Path) -> None:
+    """Put back what an interrupted or failed removal moved away (listed in its record)."""
     try:
-        _download_mongod_exe(ctx, build, target)
+        moved = json.loads((folder / PRUNE_RECORD).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        moved = []
+    for original, kept in reversed(moved):
+        if Path(kept).exists() or Path(kept).is_symlink():
+            os.replace(kept, original)
+    remove_tree(folder)
+
+
+def python_works(ctx: Context) -> subprocess.CompletedProcess:
+    env = dict(os.environ, MPLCONFIGDIR=str(ctx.layout.cache / "matplotlib"), MPLBACKEND="Agg",
+               PYTHONPYCACHEPREFIX=str(ctx.layout.pycache))
+    return run([ctx.layout.venv_python, "-c", PYTHON_SMOKE_TEST], timeout=600, env=env)
+
+
+def prune_python(ctx: Context, base: Path | None = None, version: tuple = sys.version_info[:2]) -> None:
+    """Remove the parts of the project's Python that the program never uses (about 30 MB).
+
+    Everything is first moved aside, then the program's modules are imported: only if that works is it deleted,
+    otherwise everything is put back. The record of the moves lets the next run put back what an interrupted run
+    moved."""
+    layout, ui = ctx.layout, ctx.ui
+    folder = layout.tools / PRUNE_FOLDER
+    if folder.exists():
+        _restore_moved(folder)
+    base = bundled_python(layout) if base is None else base
+    if base is None:
         return
-    except (RangeNotSupported, zipfile.BadZipFile, *NETWORK_ERRORS) as error:
-        ctx.ui.detail(f"Partial download not possible ({_describe_error(error)}): downloading the whole archive "
-                      f"(808 MB) instead.")
-    ensure_free_space(staging, SPACE_FOR_MONGODB_ZIP, "the MongoDB archive")
-    archive = download(ctx.ui, [build.url], ctx.layout.downloads / build.filename, build.sha256,
-                       f"MongoDB {build.version} archive")
-    extract_archive(archive, staging, select_mongod)
-    archive.unlink(missing_ok=True)
-
-
-def _fetch_mongod(ctx: Context, build: MongoBuild, staging: Path) -> Path:
-    """Put the build's mongod in staging/bin and return its path."""
-    remove_tree(staging)
-    if build.mongod_sha256:
-        _fetch_windows_mongod(ctx, build, staging)
-    else:
-        ensure_free_space(ctx.layout.tools, SPACE_FOR_MONGODB, "the MongoDB server")
-        label = f"MongoDB {build.version} server" + ("" if build.official else " (generic build for this system)")
-        archive = download(ctx.ui, [build.url], ctx.layout.downloads / build.filename, build.sha256, label)
-        extract_archive(archive, staging, select_mongod)
-        archive.unlink(missing_ok=True)
-    binary = staging / "bin" / ctx.layout.exe("mongod")
-    if not binary.is_file():
-        raise InstallError("The MongoDB archive does not contain the mongod program.", RUN_AGAIN)
-    return binary
-
-
-def _activate_mongodb(ctx: Context, build: MongoBuild, staging: Path) -> None:
-    layout = ctx.layout
+    unused = python_unused_files(base, layout.windows, version)
+    if not unused:
+        return
+    size = sum(tree_size(path) for path in unused)
+    folder.mkdir(parents=True)
+    moved = []
+    passed = False
     try:
-        remove_tree(layout.mongodb_dir)
-        os.replace(staging, layout.mongodb_dir)
+        for index, path in enumerate(unused):
+            kept = folder / f"{index}-{path.name}"
+            moved.append((str(path), str(kept)))
+            (folder / PRUNE_RECORD).write_text(json.dumps(moved), encoding="utf-8")
+            os.replace(path, kept)
+        result = python_works(ctx)
+        passed = result.returncode == 0
+        if not passed:
+            ui.warn("Python does not work without its unused parts, so they are kept:\n" + tail(result.stderr, 6))
     except OSError as error:
-        raise InstallError(f"Could not replace the MongoDB server in {layout.mongodb_dir}: {error}.",
-                           "The MongoDB server of this project may still be running: close the program (or restart the "
-                           "computer) and run the installer again.") from error
-    (layout.mongodb_dir / "VERSION").write_text(build.version + "\n", encoding="utf-8")
-    layout.mongodb_data.mkdir(parents=True, exist_ok=True)
-    set_component(ctx, "mongodb", {
-        "status": "installed", "version": build.version, "build": build.key, "official_build": build.official,
-        "url": build.url, "archive_sha256": build.sha256, "path": relative_to_tools(layout, layout.mongod),
-        "sha256": file_sha256(layout.mongod)})
-    ctx.ui.ok(f"MongoDB {build.version} server installed in {layout.mongodb_dir}")
-    ctx.ui.detail("The program starts it by itself when needed (database files in data/mongodb).")
+        ui.warn(f"The unused parts of Python could not be removed ({error}), so they are kept.")
+    finally:
+        if passed:
+            remove_tree(folder)
+        else:
+            _restore_moved(folder)
+    if passed:
+        ui.ok(f"Removed {size_text(size)} of Python that the program never uses (Tk, IDLE, pip, C headers)")
 
 
-def _try_mongodb_build(ctx: Context, build: MongoBuild) -> tuple | None:
-    """Install one build; None when it works, else (reason, hint) for why it does not run here."""
-    staging = ctx.layout.tools / "mongodb.new"
-    binary = _fetch_mongod(ctx, build, staging)
-    version, result = mongod_version(binary)
-    if version is None:
-        remove_tree(staging)
-        return explain_mongod_failure(ctx.platform, result)
-    _activate_mongodb(ctx, build, staging)
-    return None
+def stale_bytecode(layout: Layout) -> list:
+    """The folders of .tools/cache/pycache that belong to an older location of the project.
+
+    Python keeps the bytecode cache (PYTHONPYCACHEPREFIX) under the full path of every source file, so after the
+    project folder is moved the bytecode of the old location is never used again."""
+    fold = str.casefold if layout.windows or sys.platform == "darwin" else str
+    keep = set()
+    for root in (str(layout.root), os.path.realpath(layout.root)):
+        rest = os.path.splitdrive(root)[1].replace("\\", "/")  # Python leaves the drive out of the cache path
+        keep.add(tuple(fold(part) for part in rest.split("/") if part))
+    stale = []
+
+    def visit(folder: Path, parts: tuple) -> None:
+        for child in sorted(folder.iterdir()):
+            path = parts + (fold(child.name),)
+            matches = [root for root in keep if root[:len(path)] == path]
+            if not matches:
+                stale.append(child)
+            elif all(len(path) < len(root) for root in matches):
+                if child.is_dir() and not child.is_symlink():
+                    visit(child, path)
+                else:
+                    stale.append(child)
+
+    if layout.pycache.is_dir():
+        visit(layout.pycache, ())
+    return stale
 
 
-def _mark_mongodb_unavailable(ctx: Context, reason: str, hint: str) -> None:
-    previous = component_entry(ctx, "mongodb")
-    if previous.get("status") == "installed" and ctx.layout.mongod.is_file():
-        ctx.ui.warn(f"The bundled MongoDB server could not be updated: {reason}.", hint)
+def remove_leftovers(ctx: Context, success: bool) -> None:
+    """Remove what older versions or interrupted runs left in .tools, and offer to delete the old MongoDB data.
+
+    The Go files and the downloads are removed only after a successful installation: a failed build keeps the
+    verified Go archive, so that the next run does not download it again."""
+    layout, ui = ctx.layout, ctx.ui
+    leftovers = [(layout.legacy_mongodb, "the MongoDB server of an older version (no longer needed)")]
+    leftovers += [(path, "the Python bytecode of an older location of the project") for path in stale_bytecode(layout)]
+    if success:
+        leftovers += [(layout.go_dir, "temporary Go files"), (layout.downloads, "downloaded archives")]
+    for path, what in leftovers:
+        if path.exists():
+            size = tree_size(path)
+            try:
+                remove_tree(path)
+                if size:
+                    ui.ok(f"Removed {what}: {path} ({size_text(size)})")
+            except OSError as error:
+                ui.warn(f"Could not remove {path}: {error}", "You can delete that folder by hand.")
+    offer_to_delete_mongodb_data(ctx)
+
+
+def offer_to_delete_mongodb_data(ctx: Context) -> None:
+    """The ZLint results of older versions (tens of GB at most) are deleted only when the user says so."""
+    ui, data = ctx.ui, ctx.layout.legacy_mongodb_data
+    if not data.exists():
         return
-    set_component(ctx, "mongodb", {"status": "unavailable", "reason": reason, "hint": hint})
-    ctx.ui.warn(f"The MongoDB server cannot be installed on this computer: {reason}.", hint)
-
-
-def _mongodb_plan(ctx: Context) -> tuple:
-    builds, reason = mongodb_candidates(ctx.platform)
-    builds, reason = guard_data_version(ctx, builds, reason)
-    if builds:
-        supported, cpu_reason = cpu_supports_mongodb(ctx.platform)
-        if not supported:
-            return [], cpu_reason
-    return builds, reason
-
-
-def mongodb_current(ctx: Context) -> str | None:
-    entry = component_entry(ctx, "mongodb")
-    if entry.get("status") != "installed" or not ctx.layout.mongod.is_file():
-        return None
-    builds, _ = _mongodb_plan(ctx)
-    if not any(build.key == entry.get("build") and build.version == entry.get("version") for build in builds):
-        return None
-    if entry.get("sha256") != file_sha256(ctx.layout.mongod) or mongod_version(ctx.layout.mongod)[0] is None:
-        return None
-    return f"MongoDB {entry['version']} server"
-
-
-def install_mongodb(ctx: Context) -> None:
-    builds, reason = _mongodb_plan(ctx)
-    if not builds:
-        _mark_mongodb_unavailable(ctx, reason, MONGODB_ALTERNATIVE)
+    size = tree_size(data)
+    ui.warn(f"The folder {data} ({size_text(size)}) holds the ZLint results of an older version, stored by MongoDB, "
+            "which is no longer used: the ZLint results are now kept in the SQLite databases (run the ZLint checks "
+            "again to recreate them).")
+    if not ui.confirm(f"Delete {data} ({size_text(size)}) now?"):
+        ui.detail("It is kept. You can delete that folder yourself when its results are no longer needed.")
         return
-    if ctx.platform.windows and missing_vc_runtime():
-        ctx.ui.warn("The Microsoft Visual C++ runtime that MongoDB needs is not installed.", VC_RUNTIME_HINT)
-    failures = []
-    for build in builds:
-        failure = _try_mongodb_build(ctx, build)
-        if failure is None:
-            return
-        failures.append(failure)
-        ctx.ui.detail(f"The {build.key} build does not run here: {failure[0]}.")
-    _mark_mongodb_unavailable(ctx, failures[-1][0], failures[-1][1])
-
-
-def mongodb_server_answers(host: str = "127.0.0.1", port: int = 27017, timeout: float = 1.0) -> bool:
-    """Whether something (normally a MongoDB server) accepts connections on host:port."""
     try:
-        with socket.create_connection((host, port), timeout=timeout):
-            return True
-    except OSError:
-        return False
+        remove_tree(data)
+        if data.parent.is_dir() and not any(data.parent.iterdir()):
+            data.parent.rmdir()
+        ui.ok(f"Deleted {data}")
+    except OSError as error:
+        ui.warn(f"Could not delete {data}: {error}", "You can delete that folder by hand.")
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -1801,27 +1506,6 @@ def check_zlint(ctx: Context) -> Status:
     return Status("ZLint", "ok", f"{version} (.tools/zlint)")
 
 
-def check_mongodb(ctx: Context) -> Status:
-    layout = ctx.layout
-    running = mongodb_server_answers()
-    running_note = "; a MongoDB server is running now on localhost:27017" if running else ""
-    if layout.mongod.is_file():
-        version, result = mongod_version(layout.mongod)
-        if version is not None:
-            return Status("MongoDB", "ok", f"{version} (.tools/mongodb, started by the program when needed{running_note})")
-        reason, hint = explain_mongod_failure(ctx.platform, result)
-        return Status("MongoDB", "warn" if running else "fail", f"the bundled server does not start: {reason}"
-                      + running_note, hint)
-    if running:
-        return Status("MongoDB", "ok", "a MongoDB server answers on localhost:27017 and is used by the program")
-    entry = component_entry(ctx, "mongodb")
-    if entry.get("status") == "unavailable":
-        return Status("MongoDB", "warn", f"not available on this computer: {entry.get('reason')}",
-                      entry.get("hint") or MONGODB_ALTERNATIVE)
-    return Status("MongoDB", "fail", "not installed, and no MongoDB server answers on localhost:27017",
-                  "Run the installer again, or start your own MongoDB server on localhost:27017.")
-
-
 def check_log_list(ctx: Context) -> Status:
     count = log_list_logs(ctx.layout.log_list)
     if count is None:
@@ -1830,10 +1514,25 @@ def check_log_list(ctx: Context) -> Status:
     return Status("CT log list", "ok", f"res/log_list.json ({count} logs)")
 
 
+# The names the program accepts for the scan file, in its order of preference (analysis/input_file.INPUT_NAMES)
+SCAN_FILE_NAMES = ("certs_polito.json", "certs_polito.json.zst", "certs_polito.json.gz", "certs_polito.json.xz",
+                   "certs_polito.json.bz2")
+
+
 def check_scan_file(ctx: Context) -> Status:
-    path = ctx.layout.scan_file
-    if path.is_file():
-        return Status("Scan file", "ok", f"res/certs_polito.json ({path.stat().st_size / GB:.1f} GB)")
+    folder = ctx.layout.scan_file.parent
+    found = [folder / name for name in SCAN_FILE_NAMES if (folder / name).is_file()]
+    if found:
+        path = found[0]
+        detail = f"res/{path.name} ({path.stat().st_size / GB:.1f} GB)"
+        if len(found) > 1:
+            detail += "; also " + ", ".join(other.name for other in found[1:]) + " (not used)"
+        hint = ""
+        if path.name == SCAN_FILE_NAMES[0]:
+            launcher = "dca.bat" if ctx.layout.windows else _quoted(ctx.layout.launcher)
+            hint = f"To save disk space, compress it (about 5 times smaller, still read in parallel): {launcher} " \
+                   "--compress_input"
+        return Status("Scan file", "ok", detail, hint)
     return Status("Scan file", "info", "res/certs_polito.json is not there yet",
                   "Put the ZGrab2 output there before running the *_analysis options (see INSTALL.md, step 6 "
                   "\"Add the scan file\").")
@@ -1852,19 +1551,40 @@ def check_launcher(ctx: Context) -> Status:
 def check_disk(ctx: Context) -> Status:
     available = free_space(ctx.layout.root)
     state = "info" if available >= RECOMMENDED_FREE_SPACE else "warn"
-    hint = "" if state == "info" else ("A large scan (up to 80 GB) and its SQLite databases need much more space: "
-                                       "free some, or move the project to a bigger disk.")
+    hint = "" if state == "info" else ("A large scan and its SQLite databases need more space (about 30 GB for an 80 GB "
+                                       "scan compressed with --compress_input): free some, or move the project to a "
+                                       "bigger disk.")
     return Status("Disk space", state, f"{available / GB:.0f} GB free", hint)
 
 
-COMPONENT_CHECKS = {"zlint": check_zlint, "mongodb": check_mongodb, "log_list": check_log_list}
+def check_footprint(ctx: Context) -> Status:
+    layout = ctx.layout
+    tools = tree_size(layout.tools)
+    if os.environ.get("DCA_UV_TEMPORARY") == "1":
+        tools -= tree_size(layout.tools / "uv")  # install.sh/install.ps1 remove it right after this script
+    sizes = f"{layout.tools.name} {size_text(tools)}, {layout.venv.name} {size_text(tree_size(layout.venv))}"
+    return Status("Installation", "info", f"{sizes} (to uninstall, delete the project folder)")
+
+
+def check_legacy_data(ctx: Context) -> Status | None:
+    data = ctx.layout.legacy_mongodb_data
+    if not data.exists():
+        return None
+    return Status("Old ZLint data", "warn", f"{data} ({size_text(tree_size(data))}) was written by the MongoDB of an "
+                  "older version, which is no longer used",
+                  "The ZLint results are now in the SQLite databases: delete that folder (the installer offers to) "
+                  "and run the ZLint checks again.")
+
+
+COMPONENT_CHECKS = {"zlint": check_zlint, "log_list": check_log_list}
 
 
 def check_all(ctx: Context, components: list) -> list:
     rows = [check_python(ctx), check_packages(ctx), check_sslyze(ctx)]
     rows += [COMPONENT_CHECKS[name](ctx) for name in COMPONENT_NAMES if name in components]
-    rows += [check_launcher(ctx), check_scan_file(ctx), check_disk(ctx)]
-    return rows
+    rows += [check_launcher(ctx), check_scan_file(ctx), check_disk(ctx), check_footprint(ctx)]
+    legacy = check_legacy_data(ctx)
+    return rows + ([legacy] if legacy else [])
 
 
 def print_status_table(ui: Ui, rows: list) -> None:
@@ -1894,7 +1614,6 @@ class Component:
 
 COMPONENTS = {
     "zlint": Component("zlint", "ZLint (certificate linter)", zlint_current, install_zlint),
-    "mongodb": Component("mongodb", "MongoDB server (stores the ZLint results)", mongodb_current, install_mongodb),
     "log_list": Component("log_list", "Certificate Transparency log list", log_list_current, install_log_list),
 }
 
@@ -1904,6 +1623,8 @@ def _component_list(values: list | None) -> list:
     for value in values or []:
         for name in value.replace(",", " ").split():
             name = COMPONENT_ALIASES.get(name.lower(), name.lower())
+            if name in OBSOLETE_COMPONENTS:
+                continue
             if name not in COMPONENT_NAMES:
                 raise argparse.ArgumentTypeError(f"unknown component '{name}' (choose from: {', '.join(COMPONENT_NAMES)})")
             names.append(name)
@@ -1919,15 +1640,15 @@ def select_components(only: list | None, skip: list | None) -> list:
 def parse_args(argv: list | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog="install_tools.py",
-        description="Install (or check) ZLint, the MongoDB server and the CT log list of DigitalCertiAnalytics, "
-                    "inside the project folder.")
+        description="Install (or check) ZLint and the CT log list of DigitalCertiAnalytics, inside the project "
+                    "folder.")
     parser.add_argument("--check", action="store_true", help="only show the status of every component")
     parser.add_argument("--only", action="append", metavar="NAMES",
-                        help="handle only these components (comma-separated: zlint, mongodb, log_list)")
+                        help="handle only these components (comma-separated: zlint, log_list)")
     parser.add_argument("--skip", action="append", metavar="NAMES",
-                        help="leave out these components, e.g. --skip mongodb when you already run MongoDB")
+                        help="leave out these components, e.g. --skip zlint when you set DCA_ZLINT_PATH")
     parser.add_argument("--force", action="store_true",
-                        help="reinstall ZLint and MongoDB even if they are installed; the CT log list is downloaded "
+                        help="reinstall ZLint even if it is installed; the CT log list is downloaded "
                              "again only when log_list is named with --only")
     parser.add_argument("--project-dir", type=Path, default=PROJECT_DIR, help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
@@ -2014,6 +1735,7 @@ def print_next_steps(ctx: Context, success: bool) -> None:
         ui.line("On macOS you can also double-click dca.command in the project folder.")
     ui.line()
     ui.line(f"Put the ZGrab2 scan file here first:  {layout.scan_file}")
+    ui.line(f"Compress it to save disk space:       {commands[0]} --compress_input")
     ui.line(f"Check the installation at any time:   {commands[1]} --check")
     ui.line(f"To uninstall, delete the folder:       {layout.root}")
 
@@ -2036,6 +1758,11 @@ def install(ctx: Context, components: list) -> int:
             ui.fail(error.message, error.hint)
             failed.append(name)
     prepare_project(ctx)
+    ui.step("Disk space used by the installation")
+    prune_python(ctx)
+    # With the older prebuilt ZLint the exact build is still to be done: its Go archive is kept for the next run
+    remove_leftovers(ctx, success=not failed and component_entry(ctx, "zlint").get("source") != "prebuilt")
+    ui.ok(check_footprint(ctx).detail)
     ui.step("Summary")
     rows = check_all(ctx, components)
     print_status_table(ui, rows)

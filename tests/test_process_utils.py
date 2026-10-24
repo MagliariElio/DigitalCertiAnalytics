@@ -186,3 +186,124 @@ def test_ctrl_c_taken_by_another_thread_is_deferred_until_the_end_of_the_block(b
         stop.set()
         other.join()
     assert events == ["block finished"]
+
+
+# --- Closing the terminal window and SIGTERM work like Ctrl+C (stop_signals_as_ctrl_c) ------------------------------
+
+# An analysis started by a shell in a terminal window (a pseudo-terminal), until the window is closed
+HANGUP_ANALYSIS = """
+import os, sys, time
+sys.path.insert(0, {src!r})
+from utils import process_utils
+report = open({report!r}, "w", buffering=1)
+with process_utils.stop_signals_as_ctrl_c():
+    report.write(f"{{os.getpid()}}\\n")
+    print("ready", flush=True)
+    try:
+        time.sleep(60)
+    except KeyboardInterrupt:
+        # The terminal is gone (revoked once its shell exits): writing to it must not fail
+        for line in range(100):
+            print("output for the closed window", line, flush=True)
+        report.write("saved\\n")
+        sys.exit(130)
+"""
+# The window's shell: it leads the session of the pseudo-terminal, as in Terminal, and runs the analysis as a child
+WINDOW_SHELL = ("import fcntl, os, sys, termios; fcntl.ioctl(0, termios.TIOCSCTTY, 0); "
+                "os.execv('/bin/sh', ['sh', '-c', sys.argv[1]])")
+
+
+def _read_until(descriptor, text, timeout=30):
+    output, deadline = b"", time.monotonic() + timeout
+    while text not in output and time.monotonic() < deadline:
+        output += os.read(descriptor, 1024)
+    return output
+
+
+def _alive(pid):
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    # A zombie has exited, even if nobody reaped it yet
+    state = subprocess.run(["ps", "-o", "stat=", "-p", str(pid)], capture_output=True, text=True).stdout.strip()
+    return bool(state) and not state.startswith("Z")
+
+
+def _wait_gone(pid, timeout=30):
+    deadline = time.monotonic() + timeout
+    while _alive(pid) and time.monotonic() < deadline:
+        time.sleep(0.05)
+    return not _alive(pid)
+
+
+@pytest.mark.skipif(not hasattr(signal, "SIGHUP"), reason="POSIX signals")
+def test_closing_the_terminal_window_stops_like_ctrl_c(tmp_path):
+    import pty
+
+    script, report = tmp_path / "analysis.py", tmp_path / "report.txt"
+    script.write_text(HANGUP_ANALYSIS.format(src=str(SRC_DIR), report=str(report)))
+    terminal, window = pty.openpty()
+    command = f'"{sys.executable}" "{script}"; status=$?; exit $status'
+    with subprocess.Popen([sys.executable, "-c", WINDOW_SHELL, command], stdin=window, stdout=window, stderr=window,
+                          start_new_session=True) as shell:
+        os.close(window)
+        try:
+            assert b"ready" in _read_until(terminal, b"ready")
+        finally:
+            # The window is closed: the shell and the analysis get SIGHUP, and the terminal stops working
+            os.close(terminal)
+        shell.wait(timeout=30)
+
+    analysis_pid = int(report.read_text().split()[0])
+    assert _wait_gone(analysis_pid)
+    assert report.read_text().split()[1:] == ["saved"]
+
+
+STOP_SIGNALS = """
+import os, signal, sys, time
+sys.path.insert(0, {src!r})
+from utils import process_utils
+
+signal.signal(signal.SIGINT, signal.default_int_handler)
+signal.signal(signal.SIGHUP, signal.SIG_IGN)  # As under nohup
+with process_utils.stop_signals_as_ctrl_c():
+    print("nohup kept:", signal.getsignal(signal.SIGHUP) == signal.SIG_IGN, flush=True)
+    try:
+        # Like Ctrl+C, SIGTERM waits for the end of a block that defers it (e.g. a save of the results)
+        with process_utils.sigint_blocked():
+            os.kill(os.getpid(), signal.SIGTERM)
+            time.sleep(0.2)
+            print("deferred", flush=True)
+    except KeyboardInterrupt:
+        print("interrupted", flush=True)
+    # The program is stopping: another stop signal does not cut its clean-up
+    os.kill(os.getpid(), signal.SIGTERM)
+    time.sleep(0.2)
+print("still ignored:", signal.getsignal(signal.SIGTERM) == signal.SIG_IGN, process_utils.stop_requested())
+"""
+
+
+@posix_only
+def test_sigterm_stops_like_ctrl_c_and_a_second_one_is_ignored(tmp_path):
+    script = tmp_path / "stop_signals.py"
+    script.write_text(STOP_SIGNALS.format(src=str(SRC_DIR)))
+    result = subprocess.run([sys.executable, str(script)], capture_output=True, text=True, timeout=30)
+    assert result.stdout.split("\n") == ["nohup kept: True", "deferred", "interrupted", "still ignored: True True", ""]
+    assert result.returncode == 0 and "Traceback" not in result.stderr
+
+
+@pytest.mark.skipif(not hasattr(signal, "SIGTERM") or os.name != "posix", reason="POSIX signals")
+def test_signals_are_restored_when_none_arrived():
+    from utils import process_utils
+
+    previous = signal.signal(signal.SIGTERM, signal.SIG_DFL)
+    try:
+        with process_utils.stop_signals_as_ctrl_c():
+            assert signal.getsignal(signal.SIGTERM) == process_utils._stop_like_ctrl_c
+        assert signal.getsignal(signal.SIGTERM) == signal.SIG_DFL
+    finally:
+        signal.signal(signal.SIGTERM, previous)
+    assert not process_utils.stop_requested()

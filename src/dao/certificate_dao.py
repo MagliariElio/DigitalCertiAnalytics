@@ -1,22 +1,27 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
+import marshal
 import sqlite3
+from dataclasses import dataclass
 from datetime import datetime
-from typing import Iterator
+from operator import itemgetter
 
 from cryptography.x509.extensions import UserNotice
 from cryptography.x509.oid import ExtensionOID
 
 from bean.certificate import Certificate
+from db import schema
 from db.database import DatabaseType
+from db.raw_codec import RawCodec
 from utils.chain_utils import count_intermediates_up_to_root, find_raw_cert_issuer, reorder_signature_algorithm
 
 # Admin: Anuar Elio Magliari
 # Politecnico di Torino
 
-# Parameters of certificate_params(), in the order they are bound ('ocsp_check' is the 'No Request Done' literal)
+# Parameters of certificate_params(), in the order they are bound by the old 'Certificates' insert
 CERTIFICATE_PARAM_COLUMNS = (
     "serial_number", "leaf_domain", "version", "signature_algorithm", "key_algorithm", "key_length",
     "validity_start", "validity_end", "validity_length", "SAN", "domain_matches_san", "issuer_id",
@@ -31,6 +36,19 @@ EXTENSION_COLUMNS = ("key_usage", "key_usage_is_critical", "extended_key_usage",
                      "basic_constraints", "max_path_length", "crl_distribution_points", "crl_distr_point_is_critical")
 POLICY_COLUMNS = ("policy_identifier", "cps", "policy_qualifiers", "is_cp_critical")
 ERROR_COLUMNS = ("domain", "status", "protocol", "timestamp", "error_message", "download_date")
+
+RAW_INDEX = CERTIFICATE_PARAM_COLUMNS.index("raw")
+SIGNATURE_VALID_INDEX = CERTIFICATE_PARAM_COLUMNS.index("signature_valid")
+
+# Lookup kinds of the stored values: inline value, TextValues or NumericValues reference
+INLINE, TEXT, NUMERIC = "c", "tv", "nv"
+LOOKUP_TABLES = {TEXT: "TextValues", NUMERIC: "NumericValues"}
+
+# Deduplicated kinds and their key tables (digest -> id), in the order the rows of a certificate are stored
+KEY_TABLES = ("RawKeys", "IssuerKeys", "PolicyKeys", "PolicySetKeys", "CertificateKeys")
+
+# The old NOT NULL columns of SignedCertificateTimestamps checked in the old insert order (after certificate_id)
+_SCT_NOT_NULL = ("log_id", "timestamp", "version", "signature")
 
 
 def _without_user_notices(qualifiers: list | None) -> str:
@@ -140,32 +158,162 @@ def policy_params(digital_certificate: Certificate) -> list[tuple] | None:
              _without_user_notices(policy['policy_qualifiers']), policy['is_cp_critical']) for policy in policies]
 
 
+# ---------------------------------------------------------------------------------------------- storage layout
+
+@dataclass(frozen=True)
+class StorageLayout:
+    """Where each value of a certificate occurrence is stored for one database type (picklable).
+
+    certificate_positions: certificate_params() positions stored per certificate, in CERTIFICATE_PARAM_COLUMNS order;
+    certificate_columns: (CertificateData column, kind) of certificate_values(), i.e. those positions, then the
+    subject and the extension values; occurrence_positions / occurrence_columns: the same for Occurrences
+    (kind 'o' inline, 'code' fixed code, 'nv' NumericValues reference).
+    """
+    kept: tuple[int, ...]
+    dropped: tuple[int, ...]
+    certificate_positions: tuple[int, ...]
+    certificate_columns: tuple[tuple[str, str], ...]
+    occurrence_positions: tuple[int, ...]
+    occurrence_columns: tuple[tuple[str, str], ...]
+
+    def certificate_values(self, params: tuple, subject: tuple, extension: tuple) -> tuple:
+        """Stored per-certificate values (lookup values as values), in certificate_columns order."""
+        return (*itemgetter(*self.certificate_positions)(params), *subject, *extension)
+
+    def occurrence_values(self, params: tuple) -> tuple:
+        """Stored per-occurrence values (signature_valid as its code, download_date as value)."""
+        return tuple(schema.SIGNATURE_CODES[params[i]] if i == SIGNATURE_VALID_INDEX else params[i]
+                     for i in self.occurrence_positions)
+
+
+def storage_layout(db_type: DatabaseType) -> StorageLayout:
+    kinds = {name: kind for name, _, kind in schema.certificate_columns(db_type)}
+    kept = tuple(i for i, name in enumerate(CERTIFICATE_PARAM_COLUMNS) if name in kinds)
+    dropped = tuple(i for i in range(len(CERTIFICATE_PARAM_COLUMNS)) if i not in kept)
+    certificate_positions = tuple(i for i in kept if kinds[CERTIFICATE_PARAM_COLUMNS[i]] in (INLINE, TEXT, NUMERIC))
+    certificate_columns = tuple((CERTIFICATE_PARAM_COLUMNS[i], kinds[CERTIFICATE_PARAM_COLUMNS[i]])
+                                for i in certificate_positions)
+    certificate_columns += tuple((column, kind) for _, _, kind, column in schema.SUBJECT_COLUMNS)
+    certificate_columns += tuple((name, kind) for name, _, kind in schema.EXTENSION_COLUMNS)
+    occurrence_positions = tuple(i for i in kept if kinds[CERTIFICATE_PARAM_COLUMNS[i]] in ("o", "code", "onv"))
+    occurrence_kinds = [kinds[CERTIFICATE_PARAM_COLUMNS[i]] for i in occurrence_positions]
+    occurrence_columns = tuple((CERTIFICATE_PARAM_COLUMNS[i], NUMERIC if kind == "onv" else kind)
+                               for i, kind in zip(occurrence_positions, occurrence_kinds))
+    return StorageLayout(kept, dropped, certificate_positions, certificate_columns, occurrence_positions,
+                         occurrence_columns)
+
+
+# Stored error values (download_date is the same value as timestamp): (ErrorData column, kind), error_params() index
+ERROR_STORED = (("domain", INLINE, 0), ("status", TEXT, 1), ("protocol", TEXT, 2), ("timestamp", NUMERIC, 3),
+                ("error_message", INLINE, 4))
+
+
+# ---------------------------------------------------------------------------------------------- deduplication keys
+
+def _digest(value: object) -> bytes:
+    """BLAKE2b-128 of the marshal (version 2) serialisation of the value.
+
+    Like repr(), it keeps 1, 1.0, '1', True, None, -0.0 and 0.0 apart and depends only on the contents (version 2
+    writes no back-references), at half the cost; lone surrogates are serialised as they are.
+    """
+    return hashlib.blake2b(marshal.dumps(value, 2), digest_size=16).digest()
+
+
+def raw_key(raw: object) -> bytes:
+    return _digest(raw)
+
+
+def issuer_key(values: tuple, raw_digest: bytes | None) -> bytes:
+    """Key of the 8 issuer values (issuer_params() order without raw) and the raw_key() of the issuer raw (None
+    when the raw is None)."""
+    return _digest((values, raw_digest))
+
+
+def policy_key(policy: tuple) -> bytes:
+    return _digest(policy)
+
+
+def policy_set_key(policy_keys: tuple[bytes, ...]) -> bytes:
+    return _digest(policy_keys)
+
+
+def certificate_key(values: tuple, scts: tuple, policies: tuple, raw: bytes | None) -> bytes:
+    """Key of the stored per-certificate values, the SCTs (JSON log id, timestamp, version, signature), the policies
+    (policy_params() rows, () without policies) and the raw key (None when raw is None)."""
+    return _digest((values, scts, policies, raw))
+
+
+def stored_lookup_value(value: object) -> object:
+    """The value a lookup stores: SQLite stores a NaN float as NULL."""
+    return None if type(value) is float and value != value else value
+
+
 def _placeholders(count: int) -> str:
     return ", ".join("?" * count)
 
 
+def _sct_not_null_error(row: tuple) -> sqlite3.IntegrityError | None:
+    """The NOT NULL error the old SignedCertificateTimestamps insert raised for (certificate_id, log_id, ...)."""
+    for column, value in zip(_SCT_NOT_NULL, row[1:]):
+        if value is None:
+            return sqlite3.IntegrityError(f"NOT NULL constraint failed: SignedCertificateTimestamps.{column}")
+    return None
+
+
 class CertificateDAO:
-    """Certificate data access: zgrab2 JSON inserts, batch iteration and updates."""
+    """Certificate data access: zgrab2 JSON inserts (single-row path) and counts."""
 
     def __init__(self, connection: sqlite3.Connection, certificate_type: DatabaseType):
         self._conn = connection
         self._cursor = connection.cursor()
         self.certificate_type = certificate_type
-        self._prepare_certificate_insert()
+        self.layout = storage_layout(certificate_type)
+        self.certificate_kept = self.layout.kept
+        self.certificate_dropped = self.layout.dropped
+        self.raw_codec: RawCodec | None = None
+        self._keys = "temp"
+        self._recent: str | None = None
+        self._create_key_tables()
+        self._build_statements()
 
-    def _prepare_certificate_insert(self) -> None:
-        """Insert only the 'Certificates' columns of the table, which has the final per-type layout.
+    @property
+    def connection(self) -> sqlite3.Connection:
+        return self._conn
 
-        A dropped column is not stored, but its value is still bound (by a SELECT) so a value that cannot be bound
-        invalidates the row exactly as when every column existed.
-        """
-        existing = {row[1] for row in self._conn.execute("PRAGMA table_info(Certificates)")} or set(CERTIFICATE_PARAM_COLUMNS)
-        self.certificate_kept = tuple(i for i, name in enumerate(CERTIFICATE_PARAM_COLUMNS) if name in existing)
-        self.certificate_dropped = tuple(i for i in range(len(CERTIFICATE_PARAM_COLUMNS)) if i not in self.certificate_kept)
-        columns = ', '.join(CERTIFICATE_PARAM_COLUMNS[i] for i in self.certificate_kept)
-        self._certificate_insert = (f"INSERT INTO Certificates ({columns}, ocsp_check) "
-                                    f"VALUES ({_placeholders(len(self.certificate_kept))}, 'No Request Done')")
-        self._bind_check = f"SELECT {_placeholders(len(CERTIFICATE_PARAM_COLUMNS))}" if self.certificate_dropped else None
+    def use_keys(self, keys_schema: str = "temp", recent_schema: str | None = None) -> None:
+        """Keep the deduplication keys in the tables of keys_schema (created if missing), with the most recent ones
+        in recent_schema when given (the ingestion merges them into keys_schema now and then)."""
+        self._keys = keys_schema
+        self._recent = recent_schema
+        self._create_key_tables()
+        self._build_statements()
+
+    def _create_key_tables(self) -> None:
+        for schema_name in dict.fromkeys(filter(None, (self._keys, self._recent))):
+            for table in KEY_TABLES:
+                self._conn.execute(f"CREATE TABLE IF NOT EXISTS {schema_name}.{table} "
+                                   "(digest BLOB PRIMARY KEY, id INTEGER NOT NULL) WITHOUT ROWID")
+
+    def _build_statements(self) -> None:
+        layout = self.layout
+        columns = [column for column, _ in layout.certificate_columns] + ["raw_id", "policy_set_id"]
+        self._certificate_insert = (f"INSERT INTO CertificateData ({', '.join(columns)}) "
+                                    f"VALUES ({_placeholders(len(columns))})")
+        columns = ["certificate_id", "issuer_id"] + [column for column, _ in layout.occurrence_columns]
+        self._occurrence_insert = f"INSERT INTO Occurrences ({', '.join(columns)}) VALUES ({_placeholders(len(columns))})"
+        if self._recent is None:
+            self._key_select = {table: f"SELECT id FROM {self._keys}.{table} WHERE digest = ?" for table in KEY_TABLES}
+        else:
+            self._key_select = {table: f"SELECT id FROM {self._recent}.{table} WHERE digest = ?1 UNION ALL "
+                                       f"SELECT id FROM {self._keys}.{table} WHERE digest = ?1 LIMIT 1"
+                                for table in KEY_TABLES}
+        self._key_insert = {table: f"INSERT INTO {self._recent or self._keys}.{table} (digest, id) VALUES (?, ?)"
+                            for table in KEY_TABLES}
+
+    def _codec(self) -> RawCodec:
+        if self.raw_codec is None:
+            self.raw_codec = RawCodec.for_connection(self._conn)
+        return self.raw_codec
 
     # ------------------------------------------------------------------ insertion
 
@@ -181,71 +329,161 @@ class CertificateDAO:
     def insert_error_row(self, json_row: dict) -> None:
         """Insert a scan error row (Leaf only)."""
         params = error_params(json_row)
-        self._cursor.execute(f"INSERT INTO Errors ({', '.join(ERROR_COLUMNS)}) VALUES ({_placeholders(6)})", params)
+        self._bind_check(params)
+        values = [self._lookup(kind, params[index]) if kind != INLINE else params[index] for _, kind, index in ERROR_STORED]
+        self._cursor.execute(f"INSERT INTO ErrorData ({', '.join(column for column, _, _ in ERROR_STORED)}) "
+                             f"VALUES ({_placeholders(len(ERROR_STORED))})", values)
         logging.debug("Error row inserted for domain: %s", params[0])
 
     def process_insert_certificate(self, json_row: dict, certificate: dict, chain: list[dict],
                                    certificates_emitted_up_to: int) -> None:
-        """Insert the certificate with issuer, subject, extensions, SCTs and policies; chain is the chain above it."""
+        """Insert an occurrence of the certificate with issuer, subject, extensions, SCTs and policies.
+
+        chain is the chain above it. The values are built and checked in the order of the old single-row inserts, so
+        a value that cannot be stored fails the row at the same point with the same error.
+        """
         parsed = certificate.get("parsed", {})
         # A chain certificate without raw invalidates the whole row (KeyError), as in previous versions
         raw = certificate.get("raw") if self.certificate_type is DatabaseType.LEAF else certificate["raw"]
         digital_certificate = Certificate(raw)
         extensions = parsed.get("extensions", {})
 
-        issuer_id = self._insert_issuer(parsed, chain)
-        subject_id = self._insert_subject(parsed, digital_certificate)
-        certificate_id = self._insert_certificate(json_row, certificate, parsed, chain, digital_certificate,
-                                                  issuer_id, subject_id, certificates_emitted_up_to)
-        extension_id = self._insert_extensions(certificate_id, extensions, digital_certificate)
-        self._insert_signed_certificate_timestamps(certificate_id, extensions)
-
+        issuer = issuer_params(parsed, chain)
+        self._bind_check(issuer)
+        subject = subject_params(parsed, digital_certificate)
+        self._bind_check(subject)
+        params = certificate_params(json_row, certificate, parsed, chain, digital_certificate, self.certificate_type,
+                                    0, 0, certificates_emitted_up_to)
+        self._bind_check(params)
+        logging.debug("Certificate inserted: %s", parsed.get("serial_number", ""))
+        extension = extension_params(extensions, digital_certificate)
+        self._bind_check((0, *extension))
+        scts = self._sct_rows(extensions)
         policies = policy_params(digital_certificate)
         if policies is not None:
-            self._cursor.executemany(f"""
-                INSERT INTO CertificatePolicies (extension_id, {', '.join(POLICY_COLUMNS)}) VALUES ({_placeholders(5)})
-            """, [(extension_id, *policy) for policy in policies])
+            for policy in policies:
+                self._bind_check((0, *policy))
+        self._store(params, subject, extension, scts, policies or (), issuer)
 
-    def _insert_issuer(self, parsed: dict, chain: list[dict]) -> int:
-        """Insert the issuer, with its raw certificate when found in the chain, and return its id."""
-        self._cursor.execute(f"INSERT INTO Issuers ({', '.join(ISSUER_COLUMNS)}) VALUES ({_placeholders(9)})",
-                             issuer_params(parsed, chain))
-        return self._cursor.lastrowid
+    def _bind_check(self, values: tuple) -> None:
+        """Bind the values as the old insert did, raising its error for a value that cannot be stored."""
+        self._cursor.execute(f"SELECT {_placeholders(len(values))}", values)
 
-    def _insert_subject(self, parsed: dict, digital_certificate: Certificate) -> int:
-        self._cursor.execute(f"INSERT INTO Subjects ({', '.join(SUBJECT_COLUMNS)}) VALUES ({_placeholders(5)})",
-                             subject_params(parsed, digital_certificate))
-        return self._cursor.lastrowid
-
-    def _insert_certificate(self, json_row: dict, certificate: dict, parsed: dict, chain: list[dict],
-                            digital_certificate: Certificate, issuer_id: int, subject_id: int,
-                            certificates_emitted_up_to: int) -> int:
-        params = certificate_params(json_row, certificate, parsed, chain, digital_certificate, self.certificate_type,
-                                    issuer_id, subject_id, certificates_emitted_up_to)
-        if self._bind_check is not None:
-            self._cursor.execute(self._bind_check, params)
-        self._cursor.execute(self._certificate_insert, [params[i] for i in self.certificate_kept])
-        logging.debug("Certificate inserted: %s", parsed.get("serial_number", ""))
-        return self._cursor.lastrowid
-
-    def _insert_extensions(self, certificate_id: int, extensions: dict, digital_certificate: Certificate) -> int:
-        self._cursor.execute(f"""
-            INSERT INTO Extensions (certificate_id, {', '.join(EXTENSION_COLUMNS)}, crl_revocation_status)
-            VALUES ({_placeholders(9)}, 'No Request Done')
-        """, (certificate_id, *extension_params(extensions, digital_certificate)))
-        return self._cursor.lastrowid
-
-    def _insert_signed_certificate_timestamps(self, certificate_id: int, extensions: dict) -> None:
-        """Insert the certificate SCTs, adding the logs missing from the list."""
+    def _sct_rows(self, extensions: dict) -> list[tuple]:
+        """(JSON log id, Logs id, timestamp, version, signature) of every SCT, checked as the old insert did."""
         rows = [
-            (certificate_id, self._log_row_id(sct.get("log_id", "")), sct.get("timestamp", ""), sct.get("version", ""),
-             sct.get("signature", ""))
-            for sct in extensions.get("signed_certificate_timestamps", [])
+            (log_id, self._log_row_id(log_id), sct.get("timestamp", ""), sct.get("version", ""), sct.get("signature", ""))
+            for sct in extensions.get("signed_certificate_timestamps", []) for log_id in (sct.get("log_id", ""),)
         ]
-        self._cursor.executemany("""
-            INSERT INTO SignedCertificateTimestamps (certificate_id, log_id, timestamp, version, signature)
-            VALUES (?, ?, ?, ?, ?)
-        """, rows)
+        for row in rows:
+            stored = (0, *row[1:])
+            self._bind_check(stored)
+            error = _sct_not_null_error(stored)
+            if error is not None:
+                raise error
+        return rows
+
+    def _store(self, params: tuple, subject: tuple, extension: tuple, scts: list[tuple], policies, issuer: tuple) -> None:
+        """Insert or reuse the deduplicated rows of the occurrence, then the occurrence.
+
+        Order (the ingestion engine assigns its ids in the same one): issuer raw, issuer, certificate (with its own
+        raw: a new certificate stores its raw in a new RawCertificates row, the issuer raws are deduplicated), SCTs,
+        occurrence.
+        """
+        layout = self.layout
+        raw = params[RAW_INDEX]
+        raw_digest = None if raw is None else raw_key(raw)
+        issuer_raw = issuer[-1]
+        issuer_raw_digest = None if issuer_raw is None else raw_key(issuer_raw)
+        issuer_raw_id = None if issuer_raw is None else self._raw_id(issuer_raw, issuer_raw_digest)
+        issuer_id = self._issuer_id(issuer[:-1], issuer_raw_digest, issuer_raw_id)
+
+        values = layout.certificate_values(params, subject, extension)
+        sct_values = tuple((row[0], *row[2:]) for row in scts)
+        key = certificate_key(values, sct_values, tuple(policies), raw_digest)
+        certificate_id = self._key_id("CertificateKeys", key)
+        if certificate_id is None:
+            raw_id = None
+            if raw is not None:
+                self._cursor.execute("INSERT INTO RawCertificates (der_zstd, raw) VALUES (?, ?)", self._codec().encode(raw))
+                raw_id = self._cursor.lastrowid
+            policy_set_id = None
+            if policies:
+                policy_keys = tuple(policy_key(policy) for policy in policies)
+                policy_set_id = self._policy_set_id(policy_set_key(policy_keys), policy_keys, policies)
+            stored = [value if kind == INLINE else self._lookup(kind, value)
+                      for (_, kind), value in zip(layout.certificate_columns, values)]
+            self._cursor.execute(self._certificate_insert, (*stored, raw_id, policy_set_id))
+            certificate_id = self._cursor.lastrowid
+            self._cursor.executemany("INSERT INTO SctData (certificate_id, position, log_id, timestamp, version, signature) "
+                                     "VALUES (?, ?, ?, ?, ?, ?)",
+                                     [(certificate_id, position, *row[1:]) for position, row in enumerate(scts)])
+            self._cursor.execute(self._key_insert["CertificateKeys"], (key, certificate_id))
+
+        occurrence = [value if kind != NUMERIC else self._lookup(kind, value)
+                      for (_, kind), value in zip(layout.occurrence_columns, layout.occurrence_values(params))]
+        self._cursor.execute(self._occurrence_insert, (certificate_id, issuer_id, *occurrence))
+
+    def _key_id(self, table: str, key: bytes) -> int | None:
+        row = self._cursor.execute(self._key_select[table], (key,)).fetchone()
+        return None if row is None else row[0]
+
+    def _raw_id(self, raw: object, key: bytes) -> int:
+        """Id of an issuer raw (deduplicated by RawKeys, which holds only issuer raws)."""
+        raw_id = self._key_id("RawKeys", key)
+        if raw_id is None:
+            self._cursor.execute("INSERT INTO RawCertificates (der_zstd, raw) VALUES (?, ?)", self._codec().encode(raw))
+            raw_id = self._cursor.lastrowid
+            self._cursor.execute(self._key_insert["RawKeys"], (key, raw_id))
+        return raw_id
+
+    def _issuer_id(self, values: tuple, raw_digest: bytes | None, raw_id: int | None) -> int:
+        key = issuer_key(values, raw_digest)
+        issuer_id = self._key_id("IssuerKeys", key)
+        if issuer_id is None:
+            # issuer_params() order -> IssuerData columns
+            named = dict(zip(ISSUER_COLUMNS, values))
+            columns = [name for name, _ in schema.ISSUER_COLUMNS]
+            self._cursor.execute(f"INSERT INTO IssuerData ({', '.join(columns)}, raw_id) "
+                                 f"VALUES ({_placeholders(len(columns) + 1)})", (*[named[name] for name in columns], raw_id))
+            issuer_id = self._cursor.lastrowid
+            self._cursor.execute(self._key_insert["IssuerKeys"], (key, issuer_id))
+        return issuer_id
+
+    def _policy_set_id(self, set_key: bytes, policy_keys: tuple[bytes, ...], policies) -> int:
+        set_id = self._key_id("PolicySetKeys", set_key)
+        if set_id is not None:
+            return set_id
+        policy_ids = []
+        for key, policy in zip(policy_keys, policies):
+            policy_id = self._key_id("PolicyKeys", key)
+            if policy_id is None:
+                self._cursor.execute(f"INSERT INTO PolicyData ({', '.join(POLICY_COLUMNS)}) VALUES ({_placeholders(4)})",
+                                     policy)
+                policy_id = self._cursor.lastrowid
+                self._cursor.execute(self._key_insert["PolicyKeys"], (key, policy_id))
+            policy_ids.append(policy_id)
+        self._cursor.execute("INSERT INTO PolicySets (policy_count) VALUES (?)", (len(policy_ids),))
+        set_id = self._cursor.lastrowid
+        self._cursor.executemany("INSERT INTO PolicySetMembers (policy_set_id, position, policy_id) VALUES (?, ?, ?)",
+                                 [(set_id, position, policy_id) for position, policy_id in enumerate(policy_ids)])
+        self._cursor.execute(self._key_insert["PolicySetKeys"], (set_key, set_id))
+        return set_id
+
+    def _lookup(self, kind: str, value: object) -> int | None:
+        """Id of the value in TextValues/NumericValues, inserted if missing; None for NULL."""
+        value = stored_lookup_value(value)
+        if value is None:
+            return None
+        table = LOOKUP_TABLES[kind]
+        select = f"SELECT value_id FROM {table} WHERE value = ?"
+        row = self._cursor.execute(select, (value,)).fetchone()
+        if row is not None:
+            return row[0]
+        self._cursor.execute(f"INSERT OR IGNORE INTO {table} (value) VALUES (?)", (value,))
+        if self._cursor.rowcount == 1:
+            return self._cursor.lastrowid
+        return self._cursor.execute(select, (value,)).fetchone()[0]
 
     def _log_row_id(self, log_id: str) -> int:
         """Row id of the SCT log; a log missing from the list is inserted under the 'unknown' operator."""
@@ -288,51 +526,12 @@ class CertificateDAO:
         ))
         return self._cursor.lastrowid
 
-    # ------------------------------------------------------------------ iteration and updates
+    # ------------------------------------------------------------------ counts
 
     def get_certificates_count(self) -> int:
-        """Return the number of certificates (0 on error)."""
+        """Return the number of certificate occurrences (0 on error)."""
         try:
-            return self._conn.execute("SELECT COUNT(certificate_id) FROM Certificates").fetchone()[0]
+            return self._conn.execute("SELECT COUNT(*) FROM Occurrences").fetchone()[0]
         except sqlite3.Error as e:
             logging.error(f"Error counting the certificates: {e}")
             return 0
-
-    def iter_leaf_domains(self, batch_size: int = 5000) -> Iterator[list[tuple[int, str]]]:
-        """Yield batches of (certificate_id, leaf_domain) for all certificates."""
-        return self._iter_batches("""
-            SELECT certificate_id, leaf_domain
-            FROM Certificates
-            WHERE certificate_id > ?
-            ORDER BY certificate_id
-            LIMIT ?
-        """, batch_size)
-
-    def iter_raw_certificates(self, batch_size: int = 5000) -> Iterator[list[tuple[int, str, str, str, str, str]]]:
-        """Yield batches of (certificate_id, leaf_domain, raw, common_name, organization, issuer_dn)."""
-        return self._iter_batches("""
-            SELECT c.certificate_id, c.leaf_domain, c.raw, i.common_name, i.organization, i.issuer_dn
-            FROM Certificates AS c INNER JOIN Issuers AS i ON c.issuer_id = i.issuer_id
-            WHERE c.certificate_id > ?
-            ORDER BY c.certificate_id
-            LIMIT ?
-        """, batch_size)
-
-    def update_signature_validity(self, values: list[tuple[str, int]]) -> None:
-        """Update signature_valid from (signature_valid, certificate_id) pairs."""
-        self._conn.executemany("UPDATE Certificates SET signature_valid = ? WHERE certificate_id = ?", values)
-
-    def _iter_batches(self, sql: str, batch_size: int) -> Iterator[list[tuple]]:
-        """Keyset pagination (certificate_id > last seen): OFFSET would rescan every previous row on millions of rows.
-
-        Each batch uses its own cursor and returns plain tuples.
-        """
-        last_certificate_id = 0
-        while True:
-            cursor = self._conn.cursor()
-            cursor.row_factory = None
-            rows = cursor.execute(sql, (last_certificate_id, batch_size)).fetchall()
-            if not rows:
-                return
-            yield rows
-            last_certificate_id = rows[-1][0]

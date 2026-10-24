@@ -58,11 +58,12 @@ _IDENTITY = f"{statistics_facts.IDENTITY} AS certificate_identity"
 _CERTIFICATES = "Certificates AS c JOIN Subjects AS s ON c.subject_id = s.subject_id"
 _EXTENSIONS = ("Extensions AS e JOIN Certificates AS c ON e.certificate_id = c.certificate_id "
                "JOIN Subjects AS s ON c.subject_id = s.subject_id")
-# Row sources of the DISTINCT subqueries, with the scan that reads them when the statistics are materialized
+# Row sources of the DISTINCT subqueries (views of the old tables), with the scan that reads them when the statistics
+# are materialized (statistics_facts: certificates, subjects and extensions are stored together, per certificate)
 _SOURCES = {
     "certificates": (_CERTIFICATES, "certificates"),
     "subjects": ("Subjects AS s JOIN Certificates AS c ON c.subject_id = s.subject_id", "certificates"),
-    "extensions": (_EXTENSIONS, "extensions"),
+    "extensions": (_EXTENSIONS, "certificates"),
     "policies": ("CertificatePolicies AS p JOIN Extensions AS e ON p.extension_id = e.extension_id "
                  "JOIN Certificates AS c ON e.certificate_id = c.certificate_id "
                  "JOIN Subjects AS s ON c.subject_id = s.subject_id", "policies"),
@@ -104,12 +105,12 @@ def _distinct_count_sql(spec: Distinct, materialized: bool = False) -> str:
             f"{f' ORDER BY {spec.order_by}' if spec.order_by else ''}")
 
 
-def _top_with_others_sql(column: str, source: str, where: str, count: str = "COUNT(*)") -> str:
-    """Top N values (N as query parameter) plus the sum of the rest as 'Others'."""
+def _top_with_others_sql(column: str, source: str, where: str, count: str = "COUNT(*)", ties: str = "") -> str:
+    """Top N values (N as query parameter) plus the sum of the rest as 'Others'; `ties`: order of equal counts."""
     return f"""
         WITH Counts AS (
             SELECT {column} AS label, {count} AS count FROM {source} WHERE {where}
-            GROUP BY {column} ORDER BY count DESC
+            GROUP BY {column} ORDER BY count DESC{f', {ties}' if ties else ''}
         ),
         TopCounts AS (SELECT label, count FROM Counts LIMIT ?),
         Others AS (
@@ -219,10 +220,15 @@ _VALIDITY_YEARS = Distinct(("validity_length/31536000 AS years",),
 _ISSUERS = "Certificates INNER JOIN Issuers ON Certificates.issuer_id = Issuers.issuer_id"
 _ORGANIZATION = "Issuers.organization"
 _ORGANIZATION_WHERE = "Issuers.organization IS NOT NULL AND TRIM(Issuers.organization) <> ''"
+# Equal counts in organization order: the order the charts always had (the old layout grouped the organizations through
+# an index on them; without one SQLite returns equal counts in another order)
+_ORGANIZATION_TIES = "label"
 _COUNTRY = "Issuers.country"
 _COUNTRY_WHERE = "TRIM(Issuers.country) <> '' AND TRIM(Issuers.country) <> '--'"
 _SCT_MONTH = "strftime('%Y-%m', datetime(timestamp, 'unixepoch'))"
-_ERRORS_BY_STATUS = "SELECT status, COUNT(*) AS count FROM Errors GROUP BY status"
+# Errors per status for the materialized rows: the Errors view grouped on the stored status reference
+_ERRORS_BY_STATUS = ("SELECT st.value AS status, e.count FROM (SELECT status, COUNT(*) AS count FROM ErrorData "
+                     "GROUP BY status) AS e LEFT JOIN TextValues AS st ON st.value_id = e.status")
 
 # Statistics needing each materialized row set besides _DISTINCT
 _PLAIN = {
@@ -346,24 +352,20 @@ class StatisticsDAO:
                       params: tuple = (), build: Callable[[list], dict] = _pairs) -> dict | None:
         """Run `sql` over temporary tables holding materialized rows; None when they are not materialized.
 
-        `tables`: (name, SELECT giving the column names and types, from the table the rows come from[, indexed
-        columns]) per row set. An index gives the query the plan of the original one where the order of equal rows
-        depends on it.
+        `tables`: (name, SELECT giving the column names and types, from the table the rows come from) per row set.
         """
         keys = (rows_key,) if isinstance(rows_key, str) else rows_key
         if self._facts is None or any(key not in self._facts.rows for key in keys):
             return None
         created = []
         try:
-            for (table, select, *index), key in zip(tables, keys):
+            for (table, select), key in zip(tables, keys):
                 self._conn.execute(f"DROP TABLE IF EXISTS temp.{table}")
                 self._conn.execute(f"CREATE TEMP TABLE {table} AS {select} LIMIT 0")
                 created.append(table)
                 width = len(self._conn.execute(f"PRAGMA temp.table_info({table})").fetchall())
                 self._conn.executemany(f"INSERT INTO temp.{table} VALUES ({', '.join('?' * width)})",
                                        self._facts.rows[key])
-                if index:
-                    self._conn.execute(f"CREATE INDEX temp.facts_index ON {table}({index[0]})")
         except sqlite3.Error as e:
             logging.debug("Materialized rows not usable (%s)", e)
             self._drop(created)
@@ -402,11 +404,11 @@ class StatisticsDAO:
     def get_issuer_certificate_count(self) -> dict:
         """Certificates per issuer organization (top issuers plus 'Others')."""
         params = (self._thresholds.top_issuers,)
-        # Indexed like Issuers(organization): equal counts keep the order of the plot index's plan
-        result = self._materialized("organizations", [("Issuers", _ISSUER_FACTS, f"organization, {_FACTS_COUNT}")],
-                                    _top_with_others_sql(_ORGANIZATION, "Issuers", _ORGANIZATION_WHERE,
-                                                         f"SUM({_FACTS_COUNT})"), params, _nonzero_pairs)
-        return self._query(_top_with_others_sql(_ORGANIZATION, _ISSUERS, _ORGANIZATION_WHERE), params,
+        result = self._materialized("organizations", [("Issuers", _ISSUER_FACTS)], _top_with_others_sql(
+            _ORGANIZATION, "Issuers", _ORGANIZATION_WHERE, f"SUM({_FACTS_COUNT})", _ORGANIZATION_TIES), params,
+            _nonzero_pairs)
+        return self._query(_top_with_others_sql(_ORGANIZATION, _ISSUERS, _ORGANIZATION_WHERE,
+                                                ties=_ORGANIZATION_TIES), params,
                            _nonzero_pairs) if result is None else result
 
     def get_issuer_distribution(self) -> dict:

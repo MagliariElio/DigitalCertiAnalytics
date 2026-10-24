@@ -19,11 +19,11 @@ import pytest
 from helpers import Pki, success_row
 
 from analysis import ingestion
+from analysis.input_file import open_source
 from dao.certificate_dao import CertificateDAO
 from db.database import Database, DatabaseType
 
 PROJECT_DIR = Path(__file__).resolve().parents[1]
-SCHEMA_PATH = PROJECT_DIR / "src" / "db" / "schema_db.sql"
 
 
 @pytest.fixture(scope="module")
@@ -81,7 +81,7 @@ def test_delete_without_analysis_skips_other_stages(project):
 
 def test_missing_database(project):
     result = run_cli(project, "--root_ocsp_analysis")
-    assert result.returncode == 0
+    assert result.returncode == 1, "a needed database is missing: the run cannot start"
     assert "The root database was not found" in (project / "src" / "app.log").read_text()
 
 
@@ -140,7 +140,7 @@ def _open_targets(directory):
     directory.mkdir()
     targets = []
     for db_type in DatabaseType:
-        database = Database(directory / f"{db_type.value}.db", SCHEMA_PATH, db_type)
+        database = Database(directory / f"{db_type.value}.db", db_type)
         database.connect(delete_database=True)
         dao = CertificateDAO(database.conn, db_type)
         with database.transaction():
@@ -150,7 +150,10 @@ def _open_targets(directory):
 
 
 def _dump(targets):
-    """Layout and rows of every table (sqlite_sequence included) of every database; closes the databases."""
+    """Layout and rows of every table (sqlite_sequence included) of every database; closes the databases.
+
+    The engine and the single-row path give the same ids to every row (certificates, issuers, raws, lookups...).
+    """
     dump = {}
     for database, _ in targets:
         tables = [row[0] for row in database.conn.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")]
@@ -249,12 +252,12 @@ def test_engine_fallbacks_store_the_same_rows(certificates_file, reference, tmp_
     process, copy_rows = ingestion._ChunkProcessor.process, ingestion._Destination.copy
     calls = {"process": 0, "copy": 0}
 
-    def failing_process(self, index, offset, length):
+    def failing_process(self, block):
         calls["process"] += 1
-        if index == 1:
+        if block.index == 1:
             raise RuntimeError("worker failure")
-        result = process(self, index, offset, length)
-        if index == 2:
+        result = process(self, block)
+        if block.index == 2:
             result.staging_path = str(tmp_path / "missing" / "chunk.db")
         return result
 
@@ -274,9 +277,13 @@ def test_engine_fallbacks_store_the_same_rows(certificates_file, reference, tmp_
     assert FALLBACK in caplog.text
 
 
+def _blocks(path, chunk_size):
+    return list(open_source(path).blocks(chunk_size, ""))
+
+
 def _lines_in_blocks(path, chunk_size, blocks):
-    return sum(path.read_bytes()[offset:offset + length].count(b"\n")
-               for offset, length in list(ingestion._chunks(path, chunk_size))[:blocks])
+    return sum(path.read_bytes()[block.offset:block.offset + block.length].count(b"\n")
+               for block in _blocks(path, chunk_size)[:blocks])
 
 
 def test_interrupt_keeps_the_stored_blocks_and_stops_the_workers(certificates_file, tmp_path, monkeypatch):
@@ -296,7 +303,7 @@ def test_interrupt_keeps_the_stored_blocks_and_stops_the_workers(certificates_fi
     # Databases closed by _run() also on interrupt: reopen the stored rows and compare them with the first three blocks
     targets = []
     for db_type in DatabaseType:
-        database = Database(tmp_path / "db" / f"{db_type.value}.db", SCHEMA_PATH, db_type)
+        database = Database(tmp_path / "db" / f"{db_type.value}.db", db_type)
         database.connect()
         targets.append((database, CertificateDAO(database.conn, db_type)))
     lines = _lines_in_blocks(certificates_file, 8192, 3)
@@ -369,13 +376,13 @@ def test_broken_pool_is_restarted_once(certificates_file, reference, tmp_path, m
         executors.append(start(self))
         return executors[-1]
 
-    def killing_apply(self, offset, length, result):
+    def killing_apply(self, block, result):
         # The first block received from each pool kills its worker, up to `kills` times
         stored.append((len(executors), isinstance(result, BaseException)))
         if len(killed) < kills and executors[-1] not in killed:
             _kill_a_worker(executors[-1])
             killed.append(executors[-1])
-        apply(self, offset, length, result)
+        apply(self, block, result)
 
     monkeypatch.setattr(ingestion._WorkerPool, "_start", recording_start)
     monkeypatch.setattr(ingestion._Ingestion, "apply", killing_apply)
@@ -410,11 +417,11 @@ def test_workers_that_cannot_restart_leave_the_rest_to_this_process(certificates
             raise _no_processes()
         start(self)
 
-    def killing_apply(self, offset, length, result):
+    def killing_apply(self, block, result):
         applied.append(isinstance(result, BaseException))
         if len(applied) == 1:
             _kill_a_worker(executors[0])
-        apply(self, offset, length, result)
+        apply(self, block, result)
 
     monkeypatch.setattr(ingestion, "ProcessPoolExecutor", failing_executor)
     monkeypatch.setattr(BaseProcess, "start", failing_start)
@@ -485,8 +492,7 @@ def test_lost_rows_count_from_the_last_commit_of_the_block(unknown_log_file, tmp
     monkeypatch.setattr(ingestion, "worker_count", lambda size: 0)
     lines = unknown_log_file.read_bytes().splitlines(keepends=True)
     starts = [sum(len(line) for line in lines[:index]) for index in range(len(lines))]
-    block_start = max(offset for offset, _ in ingestion._chunks(unknown_log_file, 12000)
-                      if offset <= starts[UNKNOWN_LOG_LINE])
+    block_start = max(block.offset for block in _blocks(unknown_log_file, 12000) if block.offset <= starts[UNKNOWN_LOG_LINE])
     block_lines = range(starts.index(block_start), UNKNOWN_LOG_LINE)
     lost = len([index for index in block_lines if index not in UNKNOWN_LOG_ERROR_LINES])
     # The block also has a line that stores nothing before the failing line
@@ -494,7 +500,7 @@ def test_lost_rows_count_from_the_last_commit_of_the_block(unknown_log_file, tmp
 
     dump = _engine(tmp_path / "db", unknown_log_file, prepare=_full_disk_on_log(7))
     assert f"the rows of {lost} uncommitted lines were lost" in caplog.text
-    stored = len(dump["leaf.Certificates"][1]) + len(dump["leaf.Errors"][1])
+    stored = len(dump["leaf.Occurrences"][1]) + len(dump["leaf.ErrorData"][1])
     assert stored == len(lines) - len(UNKNOWN_LOG_ERROR_LINES) - 1 - lost
 
 
@@ -533,3 +539,78 @@ def test_worker_count(monkeypatch):
     assert ingestion.worker_count(100) == 0
     assert ingestion.worker_count(250) == 3
     assert ingestion.worker_count(10_000) == 4
+    assert ingestion.worker_count(None) == 4, "a stream of unknown size"
+
+
+# ---------------------------------------------------------------- raw dictionary and deterministic ids
+
+@pytest.fixture(scope="module")
+def many_certificates_file(tmp_path_factory):
+    """More distinct certificates than the dictionary needs, with repeated leaves and odd lines."""
+    rows = Pki().rows(90)
+    lines = [json.dumps(row).encode() + b"\n" for row in rows]
+    lines[10:10] = lines[20:25] + [b"not json\n"] + [_variant(rows[0], lambda row: _server(row)["certificate"][
+        "parsed"]["extensions"].__setitem__("signed_certificate_timestamps", _scts(5)))]
+    path = tmp_path_factory.mktemp("many") / "certs.json"
+    path.write_bytes(b"".join(lines))
+    return path
+
+
+def _views(directory):
+    """Every row of the old tables (views), raws decoded, per database."""
+    rows = {}
+    for db_type in DatabaseType:
+        database = Database(directory / f"{db_type.value}.db", db_type)
+        database.connect()
+        try:
+            codec = database.raw_codec()
+            database.conn.create_function("dca_raw", 2, codec.decode, deterministic=True)
+            for table in ("Certificates", "Issuers", "Subjects", "Extensions", "SignedCertificateTimestamps",
+                          "CertificatePolicies") + (("Errors",) if db_type is DatabaseType.LEAF else ()):
+                sql = f"SELECT * FROM {table} ORDER BY 1"
+                if table in ("Certificates", "Issuers"):
+                    view = database.conn.execute("SELECT sql FROM sqlite_master WHERE name = ?", (table,)).fetchone()[0]
+                    sql = view.split(" AS SELECT ", 1)[1].rstrip(";").replace("COALESCE(r.raw, r.der_zstd)",
+                                                                              "dca_raw(r.der_zstd, r.raw)")
+                    sql = f"SELECT * FROM (SELECT {sql}) ORDER BY 1"
+                rows[f"{db_type.value}.{table}"] = [tuple(row) for row in database.conn.execute(sql)]
+        finally:
+            database.close()
+    return rows
+
+
+def test_dictionary_compresses_the_raws_and_keeps_the_views(many_certificates_file, tmp_path, monkeypatch):
+    """With a trained dictionary the stored raws differ from the single-row path, the views do not."""
+    _reference(tmp_path / "reference", many_certificates_file)
+    monkeypatch.setattr(ingestion, "CHUNK_SIZE", 50_000)
+    dump = _engine(tmp_path / "db", many_certificates_file)
+    assert len(dump["leaf.RawDictionaries"][1]) == 1
+    assert _views(tmp_path / "db") == _views(tmp_path / "reference")
+    # 90 distinct leaves and the variant with other SCTs; 5 repeated lines
+    assert len(dump["leaf.CertificateData"][1]) == 91 and len(dump["leaf.Occurrences"][1]) == 96
+
+
+@pytest.mark.parametrize("chunk_size, workers", [(50_000, 3), (1 << 30, None), (2048, 1)])
+def test_ids_do_not_depend_on_the_workers_and_blocks(many_certificates_file, tmp_path, monkeypatch, chunk_size, workers):
+    monkeypatch.setattr(ingestion, "MAX_WORKERS", 2)
+    monkeypatch.setattr(ingestion, "CHUNK_SIZE", 50_000)
+    expected = _engine(tmp_path / "expected", many_certificates_file)
+    monkeypatch.setattr(ingestion, "CHUNK_SIZE", chunk_size)
+    monkeypatch.setattr(ingestion, "MAX_WORKERS", workers)
+    assert _engine(tmp_path / "db", many_certificates_file) == expected
+
+
+def test_outdated_database_stops_its_stages(project):
+    old = project / "src" / "analysis" / "intermediate" / "intermediate_certificates.db"
+    old.parent.mkdir(parents=True, exist_ok=True)
+    old.unlink(missing_ok=True)
+    with sqlite3.connect(old) as conn:
+        conn.execute("CREATE TABLE Certificates (certificate_id INTEGER PRIMARY KEY)")
+    conn.close()
+    result = run_cli(project, "--intermediate_ocsp_analysis")
+    assert result.returncode == 1, "an outdated database: the run cannot start"
+    assert (f"The intermediate database '{old}' was created by an older version of DigitalCertiAnalytics: run the "
+            "analysis again with --intermediate_analysis to recreate it.") in (project / "src" / "app.log").read_text()
+    result = run_cli(project, "--intermediate_analysis")
+    assert result.returncode == 0, result.stderr
+    assert count(old, "Occurrences") == 8

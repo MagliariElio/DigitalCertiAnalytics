@@ -21,7 +21,10 @@ from cryptography.x509 import ocsp
 from cryptography.x509.oid import NameOID
 
 from bean.certificate import Certificate
-from db.database import CERTIFICATE_ID_INDEX_SQL, Database, DatabaseType
+from db.database import Database, DatabaseType
+from db.raw_codec import RawCodec
+from db.schema import NO_REQUEST_DONE, OCSP_CODES
+from utils import log_replay
 from utils.utils import progress_bar
 
 try:
@@ -47,8 +50,12 @@ HTTP_REQUEST_TIMEOUT = aiohttp.ClientTimeout(total=20)
 KEEPALIVE_TIMEOUT = 15
 DNS_CACHE_TTL = 300
 
-# Rows per DB page (the next page is fetched while the current one is checked), per CSV executemany and per backup fetchmany
+# Pending occurrences per DB page (the next page is fetched while the current one is checked), per CSV executemany
+# and per backup fetchmany
 OCSP_BATCH_SIZE = 10000
+# Occurrences of a (certificate, issuer) pair kept in memory while it is checked; those of bigger pairs (e.g. an
+# intermediate in millions of chains) are read again, a page at a time, when the result is written
+OCSP_HELD_OCCURRENCES = 100
 CSV_IMPORT_BATCH_SIZE = 50000
 BACKUP_FETCH_SIZE = 10000
 
@@ -76,44 +83,77 @@ PEM_CONTENT_TYPES = ("application/x-pem-file", "text/plain")
 PKCS7_CONTENT_TYPES = ("application/pkcs7-mime", "application/x-pkcs7-certificates")
 PEM_HEADER = b"-----BEGIN CERTIFICATE-----"
 
-MARK_NO_OCSP_URL = """
-    UPDATE Certificates
-    SET ocsp_check = 'No OCSP Url Found'
-    WHERE ocsp_check = 'No Request Done' AND
-        (authority_info_access LIKE '{}' OR NOT authority_info_access LIKE '%ocsp_urls%')
+# Occurrences of the certificates without an OCSP URL (the codes are those of OcspStatuses)
+MARK_NO_OCSP_URL = f"""
+    UPDATE Occurrences
+    SET ocsp_check = {OCSP_CODES["No OCSP Url Found"]}
+    WHERE ocsp_check = {NO_REQUEST_DONE} AND certificate_id IN (
+        SELECT c.certificate_id
+        FROM CertificateData AS c LEFT JOIN TextValues AS a ON a.value_id = c.authority_info_access
+        WHERE a.value LIKE '{{}}' OR NOT a.value LIKE '%ocsp_urls%'
+    )
 """
 
 # Non-root certificates only: a root is its own issuer
-MARK_NO_ISSUER_URL = """
-    UPDATE Certificates
-    SET ocsp_check = 'No Issuer Url Found'
-    WHERE ocsp_check = 'No Request Done'
-    AND NOT authority_info_access LIKE '{}'
-    AND NOT authority_info_access LIKE '%issuer_urls%'
-    AND issuer_id IN (SELECT issuer_id FROM Issuers WHERE raw IS NULL)
+MARK_NO_ISSUER_URL = f"""
+    UPDATE Occurrences
+    SET ocsp_check = {OCSP_CODES["No Issuer Url Found"]}
+    WHERE ocsp_check = {NO_REQUEST_DONE} AND certificate_id IN (
+        SELECT c.certificate_id
+        FROM CertificateData AS c LEFT JOIN TextValues AS a ON a.value_id = c.authority_info_access
+        WHERE NOT a.value LIKE '{{}}' AND NOT a.value LIKE '%issuer_urls%'
+    )
+    AND issuer_id IN (SELECT issuer_id FROM IssuerData WHERE raw_id IS NULL)
 """
 
-COUNT_PENDING = """
-    SELECT COUNT(c.certificate_id)
-    FROM Certificates AS c
-    INNER JOIN Issuers AS i ON c.issuer_id = i.issuer_id
-    WHERE c.ocsp_check = 'No Request Done'
+# The pending occurrences sorted by (certificate, issuer row): the occurrences of a pair are consecutive rows, and
+# the pair is checked once. Results go to the temp file, so the occurrences stay pending until the import
+DROP_PENDING = ("DROP TABLE IF EXISTS temp.OcspPairs", "DROP TABLE IF EXISTS temp.OcspPending")
+CREATE_PENDING = f"""
+    CREATE TEMP TABLE OcspPending AS
+    SELECT certificate_id, issuer_id, occurrence_id, leaf_domain
+    FROM Occurrences
+    WHERE ocsp_check = {NO_REQUEST_DONE}
+    ORDER BY certificate_id, issuer_id, occurrence_id
+"""
+# One row per pair, keyed by the OcspPending rowid of its first occurrence
+CREATE_PAIRS = ("CREATE TEMP TABLE OcspPairs (first_row INTEGER PRIMARY KEY, last_row INTEGER NOT NULL, "
+                "certificate_id INTEGER NOT NULL, issuer_id INTEGER NOT NULL)")
+INSERT_PAIRS = """
+    INSERT INTO OcspPairs (first_row, last_row, certificate_id, issuer_id)
+    SELECT MIN(rowid), MAX(rowid), certificate_id, issuer_id
+    FROM OcspPending
+    GROUP BY certificate_id, issuer_id
+"""
+COUNT_PENDING = "SELECT COUNT(*) FROM OcspPending"
+
+# Pairs whose first occurrence is in a range of OcspPending rows, with what the check needs (by primary key)
+SELECT_PAIRS = """
+    SELECT p.first_row, p.last_row, o.occurrence_id, a.value, i.common_name, ir.der_zstd, ir.raw, cr.der_zstd, cr.raw
+    FROM OcspPairs AS p
+    CROSS JOIN OcspPending AS o ON o.rowid = p.first_row
+    CROSS JOIN CertificateData AS c ON c.certificate_id = p.certificate_id
+    LEFT JOIN TextValues AS a ON a.value_id = c.authority_info_access
+    CROSS JOIN IssuerData AS i ON i.issuer_id = p.issuer_id
+    LEFT JOIN RawCertificates AS ir ON ir.raw_id = i.raw_id
+    LEFT JOIN RawCertificates AS cr ON cr.raw_id = c.raw_id
+    WHERE p.first_row > ? AND p.first_row <= ?
+    ORDER BY p.first_row
+"""
+SELECT_OCCURRENCES = """
+    SELECT occurrence_id, leaf_domain
+    FROM OcspPending
+    WHERE rowid > ? AND rowid <= ?
+    ORDER BY rowid
 """
 
-# Keyset pagination: results go to the temp file, so rows stay 'No Request Done' until the import
-SELECT_PENDING = """
-    SELECT c.certificate_id, c.authority_info_access, i.common_name, i.raw, c.raw, c.leaf_domain
-    FROM Certificates AS c
-    INNER JOIN Issuers AS i ON c.issuer_id = i.issuer_id
-    WHERE c.ocsp_check = 'No Request Done' AND c.certificate_id > ?
-    ORDER BY c.certificate_id
-    LIMIT ?
-"""
-
-SELECT_CHECKED = """
-    SELECT ocsp_check, certificate_id, leaf_domain
-    FROM Certificates
-    WHERE ocsp_check <> 'No Request Done'
+# One row per occurrence with a result, in occurrence order (the CSV format of every version)
+SELECT_CHECKED = f"""
+    SELECT s.name, o.occurrence_id, o.leaf_domain
+    FROM Occurrences AS o
+    CROSS JOIN OcspStatuses AS s ON s.code = o.ocsp_check
+    WHERE o.ocsp_check <> {NO_REQUEST_DONE}
+    ORDER BY o.occurrence_id
 """
 
 CREATE_TEMP_TABLE = ("CREATE TEMPORARY TABLE IF NOT EXISTS TempOCSP "
@@ -121,15 +161,20 @@ CREATE_TEMP_TABLE = ("CREATE TEMPORARY TABLE IF NOT EXISTS TempOCSP "
 CREATE_TEMP_INDEX = "CREATE INDEX IF NOT EXISTS idx_temp_ocsp ON TempOCSP(certificate_id, leaf_domain)"
 INSERT_TEMP = "INSERT INTO TempOCSP (certificate_id, ocsp_check, leaf_domain) VALUES (?, ?, ?)"
 
+# The CSV "Certificate Id" is the occurrence id. The first row of an occurrence wins; a status name that is not in
+# OcspStatuses gives NULL, which fails the import (NOT NULL) as the old CHECK constraint did
 UPDATE_FROM_TEMP = """
-    UPDATE Certificates
+    UPDATE Occurrences
     SET ocsp_check = (
-        SELECT ocsp_check FROM TempOCSP
-        WHERE Certificates.certificate_id = TempOCSP.certificate_id AND Certificates.leaf_domain = TempOCSP.leaf_domain
+        SELECT s.code FROM OcspStatuses AS s
+        WHERE s.name = (
+            SELECT t.ocsp_check FROM TempOCSP AS t
+            WHERE t.certificate_id = Occurrences.occurrence_id AND t.leaf_domain = Occurrences.leaf_domain
+        )
     )
-    WHERE EXISTS (
-        SELECT 1 FROM TempOCSP
-        WHERE Certificates.certificate_id = TempOCSP.certificate_id AND Certificates.leaf_domain = TempOCSP.leaf_domain
+    WHERE occurrence_id IN (SELECT certificate_id FROM TempOCSP) AND EXISTS (
+        SELECT 1 FROM TempOCSP AS t
+        WHERE t.certificate_id = Occurrences.occurrence_id AND t.leaf_domain = Occurrences.leaf_domain
     )
 """
 
@@ -270,6 +315,12 @@ async def _download_issuer(issuer_url: str, session: aiohttp.ClientSession) -> _
         return _Download(None, error=f"Error retrieving or parsing the certificate ({issuer_url}): {e}")
 
 
+async def _shared_download(issuer_url: str, session: aiohttp.ClientSession) -> _Download:
+    """The download a check starts for every check of the URL: its own records are not repeated for that check."""
+    with log_replay.repeated(1):
+        return await _download_issuer(issuer_url, session)
+
+
 def _parse_issuer(download: _Download, issuer_url: str, issuer_common_name: str) -> x509.Certificate | None:
     """Parse a downloaded issuer certificate, logging errors as for each download."""
     try:
@@ -289,7 +340,7 @@ class _IssuerDownloads:
     """Issuer certificates downloaded from the AIA URLs, once per URL.
 
     Only successful downloads are cached; concurrent requests for the same URL share one download.
-    Every row parses the payload and logs failures as if it had downloaded it.
+    Every check parses the payload and logs failures as if it had downloaded it.
     """
 
     def __init__(self, session: aiohttp.ClientSession):
@@ -300,8 +351,8 @@ class _IssuerDownloads:
         """The issuer certificate at issuer_url, None (already logged) on error."""
         future = self._downloads.get(issuer_url)
         if future is None:
-            future = self._downloads[issuer_url] = asyncio.ensure_future(_download_issuer(issuer_url, self._session))
-        # shield: a cancelled row must not cancel the download shared with other rows
+            future = self._downloads[issuer_url] = asyncio.ensure_future(_shared_download(issuer_url, self._session))
+        # shield: a cancelled check must not cancel the download shared with other checks
         download = await asyncio.shield(future)
         if download.kind is None:
             if self._downloads.get(issuer_url) is future:
@@ -368,50 +419,79 @@ async def _query_ocsp_urls(certificate: x509.Certificate, issuer: x509.Certifica
     return IMPOSSIBLE_RETRIEVE
 
 
-class _OcspChecker:
-    """OCSP status of database rows through one HTTP session and shared issuer downloads."""
+class _Pair(NamedTuple):
+    """Pending occurrences of one (certificate, issuer row) pair: one OCSP check for all of them."""
+    first_row: int                  # OcspPending rowids of its occurrences: first_row..last_row
+    last_row: int
+    occurrence_id: int              # its first pending occurrence
+    authority_info_access: object
+    issuer_common_name: object
+    issuer_raw: tuple               # RawCertificates (der_zstd, raw) of the issuer row, (None, None) if NULL
+    raw: tuple                      # RawCertificates (der_zstd, raw) of the certificate
+    occurrences: list | None        # (occurrence_id, leaf_domain) rows; None: read again when the result is written
 
-    def __init__(self, session: aiohttp.ClientSession, certificate_type: DatabaseType):
+    @property
+    def count(self) -> int:
+        return self.last_row - self.first_row + 1
+
+
+class _OcspChecker:
+    """OCSP status of (certificate, issuer) pairs through one HTTP session and shared issuer downloads."""
+
+    def __init__(self, session: aiohttp.ClientSession, certificate_type: DatabaseType, codec: RawCodec):
         self._session = session
         self._is_root = certificate_type == DatabaseType.ROOT
+        self._codec = codec
         self.issuer_downloads = _IssuerDownloads(session)
 
-    async def status(self, row: tuple) -> str:
-        """Return the OCSP status of a certificate from its database row."""
-        _, authority_info_access, issuer_common_name, issuer_raw, raw, _ = row
-        aia = json.loads(authority_info_access)
+    def _load(self, stored: tuple) -> x509.Certificate | None:
+        """Parse a stored raw certificate as Certificate.load() parses the original text; None if missing or invalid."""
+        der_zstd, raw = stored
+        if der_zstd is None:
+            # NULL or a value kept as it was (e.g. wrapped or invalid base64)
+            return Certificate.load(raw)
+        try:
+            return x509.load_der_x509_certificate(self._codec.der(der_zstd, raw))
+        except Exception as e:
+            logging.error(f"Invalid certificate, parsing error: {e}")
+            return None
+
+    async def status(self, pair: _Pair) -> str:
+        """Return the OCSP status of the pair's certificate."""
+        aia = json.loads(pair.authority_info_access)
         issuer_url = next(iter(aia.get("issuer_urls", [])), None)
         ocsp_urls = aia.get("ocsp_urls", [])
 
         # A root is its own issuer
-        issuer = Certificate.load(raw if self._is_root else issuer_raw)
+        issuer = self._load(pair.raw if self._is_root else pair.issuer_raw)
 
         if issuer_url is None and issuer is None:
             return "No Issuer Url Found"
         if len(ocsp_urls) == 0:
             return "No OCSP Url Found"
 
-        certificate = issuer if self._is_root else Certificate.load(raw)
+        certificate = issuer if self._is_root else self._load(pair.raw)
         if certificate is None:
             logging.error("Cannot send the OCSP request: the certificate is missing")
             return IMPOSSIBLE_RETRIEVE
 
-        # Missing issuer certificate: downloaded once per URL for all rows, URLs and algorithms
+        # Missing issuer certificate: downloaded once per URL for all checks, URLs and algorithms
         if issuer is None:
-            issuer = await self.issuer_downloads.get(issuer_url, issuer_common_name)
+            issuer = await self.issuer_downloads.get(issuer_url, pair.issuer_common_name)
             if issuer is None:
                 return IMPOSSIBLE_RETRIEVE
 
         return await _query_ocsp_urls(certificate, issuer, ocsp_urls, self._session)
 
-    async def check(self, row: tuple) -> tuple[str, int, str]:
-        """Return the CSV row (status, certificate_id, leaf_domain) for a certificate."""
-        try:
-            status = await self.status(row)
-        except Exception as e:
-            logging.debug(f"Error during the OCSP check of certificate ID {row[0]}: {e}")
-            status = IMPOSSIBLE_RETRIEVE
-        return status, row[0], row[-1]
+    async def check(self, pair: _Pair) -> str:
+        """Return the OCSP status of the pair; its problems are logged once per occurrence, as when each occurrence
+        was checked on its own."""
+        with log_replay.repeated(pair.count):
+            try:
+                return await self.status(pair)
+            except Exception as e:
+                logging.debug(f"Error during the OCSP check of certificate ID {pair.occurrence_id}: {e}")
+                return IMPOSSIBLE_RETRIEVE
 
 
 # ---------------------------------------------------------------- database and CSV files
@@ -478,7 +558,6 @@ async def _import_csv(db: aiosqlite.Connection, path: str, is_backup: bool) -> N
 
         async with _bulk_update_mode(db):
             try:
-                await db.execute(CERTIFICATE_ID_INDEX_SQL)
                 await db.execute(CREATE_TEMP_TABLE)
                 # One database round-trip per batch
                 for batch in _batched(_valid_rows(reader, path), CSV_IMPORT_BATCH_SIZE):
@@ -515,27 +594,86 @@ async def _save_backup(db: aiosqlite.Connection, backup_file: str) -> None:
         raise
 
 
-async def _fetch_pending(db: aiosqlite.Connection, last_certificate_id: int) -> list[tuple]:
-    async with db.execute(SELECT_PENDING, (last_certificate_id, OCSP_BATCH_SIZE)) as cursor:
-        return await cursor.fetchall()
+async def _fetch_page(db: aiosqlite.Connection, after_row: int) -> tuple[list[_Pair], int]:
+    """The pairs whose first occurrence is in the next OCSP_BATCH_SIZE pending rows, and the row the next page
+    starts after."""
+    last = after_row + OCSP_BATCH_SIZE
+    async with db.execute(SELECT_PAIRS, (after_row, last)) as cursor:
+        found = await cursor.fetchall()
+    if not found:
+        return [], after_row
+
+    # Small pairs ending in the page (only the last pair can go on after it) hold their occurrences
+    def is_held(first_row: int, last_row: int) -> bool:
+        return last_row <= last and last_row - first_row < OCSP_HELD_OCCURRENCES
+
+    held_until = max((row[1] for row in found if is_held(row[0], row[1])), default=after_row)
+    occurrences = []
+    if held_until > after_row:
+        async with db.execute(SELECT_OCCURRENCES, (after_row, held_until)) as cursor:
+            occurrences = await cursor.fetchall()
+
+    pairs = []
+    for first_row, last_row, occurrence_id, aia, common_name, issuer_zstd, issuer_raw, zstd, raw in found:
+        rows = None
+        if is_held(first_row, last_row):
+            rows = occurrences[first_row - after_row - 1:last_row - after_row]
+        pairs.append(_Pair(first_row, last_row, occurrence_id, aia, common_name, (issuer_zstd, issuer_raw), (zstd, raw),
+                           rows))
+    return pairs, max(last, found[-1][1])
 
 
-async def _pending_rows(db: aiosqlite.Connection) -> AsyncIterator[tuple]:
-    """Yield the pending rows page by page, fetching the next page while the current one is checked."""
-    next_page = asyncio.ensure_future(_fetch_pending(db, 0))
+async def _pending_pairs(db: aiosqlite.Connection) -> AsyncIterator[_Pair]:
+    """Yield the pending pairs page by page, fetching the next page while the current one is checked."""
+    next_page = asyncio.ensure_future(_fetch_page(db, 0))
     try:
-        while rows := await next_page:
-            next_page = asyncio.ensure_future(_fetch_pending(db, rows[-1][0]))
-            for row in rows:
-                yield row
+        while True:
+            pairs, after_row = await next_page
+            if not pairs:
+                return
+            next_page = asyncio.ensure_future(_fetch_page(db, after_row))
+            for pair in pairs:
+                yield pair
     finally:
         next_page.cancel()
         await asyncio.gather(next_page, return_exceptions=True)
 
 
-async def _count_pending(db: aiosqlite.Connection) -> int:
+def _occurrences_reader(db: aiosqlite.Connection):
+    """Function yielding the (occurrence_id, leaf_domain) rows of a pair, a page at a time."""
+    async def occurrences(pair: _Pair) -> AsyncIterator[list[tuple]]:
+        if pair.occurrences is not None:
+            yield pair.occurrences
+            return
+        after_row = pair.first_row - 1
+        while after_row < pair.last_row:
+            last = min(after_row + OCSP_BATCH_SIZE, pair.last_row)
+            async with db.execute(SELECT_OCCURRENCES, (after_row, last)) as cursor:
+                yield await cursor.fetchall()
+            after_row = last
+    return occurrences
+
+
+async def _held_occurrences(pair: _Pair) -> AsyncIterator[list[tuple]]:
+    """The occurrences a pair holds (pairs built without a database)."""
+    yield pair.occurrences
+
+
+async def _prepare_pending(db: aiosqlite.Connection) -> int:
+    """Sort the pending occurrences into OcspPending and their pairs into OcspPairs; return the occurrences."""
+    await _drop_pending(db)
+    await db.execute(CREATE_PENDING)
+    await db.execute(CREATE_PAIRS)
+    await db.execute(INSERT_PAIRS)
+    await db.commit()
     async with db.execute(COUNT_PENDING) as cursor:
         return (await cursor.fetchone())[0]
+
+
+async def _drop_pending(db: aiosqlite.Connection) -> None:
+    for statement in DROP_PENDING:
+        await db.execute(statement)
+    await db.commit()
 
 
 async def _mark_unverifiable(db: aiosqlite.Connection, certificate_type: DatabaseType) -> None:
@@ -549,15 +687,16 @@ async def _mark_unverifiable(db: aiosqlite.Connection, certificate_type: Databas
 
 # ---------------------------------------------------------------- OCSP analysis
 
-async def _check_pending_certificates(db: aiosqlite.Connection, certificate_type: DatabaseType, writer, pbar) -> None:
-    """Check pending certificates (a bounded number at once), writing each result when ready."""
+async def _check_pending_certificates(db: aiosqlite.Connection, certificate_type: DatabaseType, codec: RawCodec,
+                                      writer, pbar) -> None:
+    """Check the pending pairs (a bounded number at once), writing each result when ready."""
     with _open_files_limit() as open_files:
         concurrency, max_idle = _connection_limits(open_files)
         logging.debug(f"Concurrent OCSP checks: {concurrency}, idle connections kept: {max_idle}.")
         async with _create_session(concurrency, max_idle) as session:
-            checker = _OcspChecker(session, certificate_type)
+            checker = _OcspChecker(session, certificate_type, codec)
             try:
-                await _run_checks(_pending_rows(db), checker, concurrency, writer, pbar)
+                await _run_checks(_pending_pairs(db), checker, concurrency, writer, pbar, _occurrences_reader(db))
             finally:
                 await checker.issuer_downloads.aclose()
 
@@ -565,8 +704,8 @@ async def _check_pending_certificates(db: aiosqlite.Connection, certificate_type
 class _CheckTasks:
     """Checks in flight, at most `concurrency`, each writing its result; the first failure is kept and re-raised."""
 
-    def __init__(self, checker: _OcspChecker, concurrency: int, writer, pbar):
-        self._checker, self._writer, self._pbar = checker, writer, pbar
+    def __init__(self, checker: _OcspChecker, concurrency: int, writer, pbar, occurrences):
+        self._checker, self._writer, self._pbar, self._occurrences = checker, writer, pbar, occurrences
         self._slots = asyncio.Semaphore(concurrency)
         self._tasks: set[asyncio.Task] = set()
         self._failures: list[BaseException] = []
@@ -575,20 +714,23 @@ class _CheckTasks:
         if self._failures:
             raise self._failures[0]
 
-    async def start(self, row: tuple) -> None:
-        """Start checking the row once a slot is free; raise the first failure instead."""
+    async def start(self, pair: _Pair) -> None:
+        """Start checking the pair once a slot is free; raise the first failure instead."""
         # Bounds in-flight checks without waiting for the whole page
         await self._slots.acquire()
         self._raise_failure()
-        task = asyncio.create_task(self._check_and_write(row))
+        task = asyncio.create_task(self._check_and_write(pair))
         self._tasks.add(task)
         task.add_done_callback(self._on_done)
 
-    async def _check_and_write(self, row: tuple) -> None:
+    async def _check_and_write(self, pair: _Pair) -> None:
         try:
-            # Written immediately so an interruption doesn't lose completed checks
-            self._writer.writerow(await self._checker.check(row))
-            self._pbar.update(1)
+            status = await self._checker.check(pair)
+            # One CSV row per occurrence, written immediately so an interruption doesn't lose completed checks
+            async with aclosing(self._occurrences(pair)) as pages:
+                async for rows in pages:
+                    self._writer.writerows([(status, occurrence_id, leaf_domain) for occurrence_id, leaf_domain in rows])
+                    self._pbar.update(len(rows))
         except Exception as e:
             # Recorded before the slot is released, so the dispatcher stops at once
             self._failures.append(e)
@@ -613,33 +755,35 @@ class _CheckTasks:
         await asyncio.gather(*self._tasks, return_exceptions=True)
 
 
-async def _run_checks(rows: AsyncIterator[tuple], checker: _OcspChecker, concurrency: int, writer, pbar) -> None:
-    """Check the rows with at most `concurrency` checks in flight; the first failure stops everything."""
-    tasks = _CheckTasks(checker, concurrency, writer, pbar)
+async def _run_checks(pairs: AsyncIterator[_Pair], checker: _OcspChecker, concurrency: int, writer, pbar,
+                      occurrences=_held_occurrences) -> None:
+    """Check the pairs with at most `concurrency` checks in flight; the first failure stops everything."""
+    tasks = _CheckTasks(checker, concurrency, writer, pbar, occurrences)
     try:
-        async with aclosing(rows):
-            async for row in rows:
-                await tasks.start(row)
+        async with aclosing(pairs):
+            async for pair in pairs:
+                await tasks.start(pair)
         await tasks.wait()
     finally:
         # On error or interruption, cancel the checks still running
         await tasks.cancel()
 
 
-async def _check_certificates(db: aiosqlite.Connection, certificate_type: DatabaseType, writer) -> None:
-    """Check the OCSP status of 'No Request Done' certificates, writing results to the temp file."""
+async def _check_certificates(db: aiosqlite.Connection, certificate_type: DatabaseType, codec: RawCodec,
+                              writer) -> None:
+    """Check the OCSP status of the 'No Request Done' occurrences, writing results to the temp file."""
     logging.info(f"Starting the OCSP check of '{certificate_type.name}' certificates (batch size: {OCSP_BATCH_SIZE}).")
     try:
         await _mark_unverifiable(db, certificate_type)
 
         logging.info("Counting the certificates to check...")
-        total = await _count_pending(db)
+        total = await _prepare_pending(db)
         if total == 0:
             logging.info("No certificates to check in the database.")
-            return
-
-        with progress_bar(total, " 🕵️‍♂️  [blue bold]Processing Certificates[/blue bold]", "blue") as pbar:
-            await _check_pending_certificates(db, certificate_type, writer, pbar)
+        else:
+            with progress_bar(total, " 🕵️‍♂️  [blue bold]Processing Certificates[/blue bold]", "blue") as pbar:
+                await _check_pending_certificates(db, certificate_type, codec, writer, pbar)
+        await _drop_pending(db)
     except Exception as e:
         # Results already in the temp file are still imported by the caller
         logging.error(f"Error during the OCSP status check: {e}")
@@ -650,22 +794,22 @@ async def run_ocsp_analysis(database: Database, output_dir: str | os.PathLike) -
     temp_file = os.path.abspath(os.path.join(output_dir, OCSP_TEMP_FILE))
     backup_file = os.path.abspath(os.path.join(output_dir, OCSP_BACKUP_FILE))
     try:
-        # Secondary indexes only slow down the updates
-        database.drop_secondary_indexes()
+        codec = database.raw_codec()
+        # A (certificate, issuer) pair is checked once for all its occurrences: its problems are logged for each
+        with log_replay.replaying():
+            async with _connect(database.db_path) as db:
+                # Backup of completed runs first, then the results of an interrupted run
+                if os.path.exists(backup_file):
+                    await _import_csv(db, backup_file, is_backup=True)
+                if os.path.exists(temp_file) and os.path.getsize(temp_file) > 0:
+                    await _import_csv(db, temp_file, is_backup=False)
 
-        async with _connect(database.db_path) as db:
-            # Backup of completed runs first, then the results of an interrupted run
-            if os.path.exists(backup_file):
-                await _import_csv(db, backup_file, is_backup=True)
-            if os.path.exists(temp_file) and os.path.getsize(temp_file) > 0:
+                with open(temp_file, mode="a", newline="", encoding="utf-8") as temp_csv:
+                    await _check_certificates(db, database.db_type, codec, csv.writer(temp_csv))
                 await _import_csv(db, temp_file, is_backup=False)
 
-            with open(temp_file, mode="a", newline="", encoding="utf-8") as temp_csv:
-                await _check_certificates(db, database.db_type, csv.writer(temp_csv))
-            await _import_csv(db, temp_file, is_backup=False)
-
-            await _save_backup(db, backup_file)
-            logging.info(f"OCSP status backup saved: 'file://{backup_file}'")
+                await _save_backup(db, backup_file)
+                logging.info(f"OCSP status backup saved: 'file://{backup_file}'")
         logging.info("OCSP analysis of the certificates completed.")
     except asyncio.CancelledError:
         logging.info("OCSP check cancelled.")

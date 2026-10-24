@@ -1,13 +1,28 @@
-"""Statistics facts: every table is read once, in parallel row ranges, and reduced to per-row integer identities and
-value codes; the counts of the statistics are then computed from them with exact deduplication by certificate
-identity.
+"""Statistics facts: the base tables of the database are read once, in parallel row ranges, and reduced to integer
+identities, value codes and occurrence weights; the counts of the statistics are then computed from them with exact
+deduplication by certificate identity.
 
-The DISTINCT subqueries of StatisticsDAO count certificates by IDENTITY, COALESCE(NULLIF(subject_key_id, ''), raw).
-The scans compute that expression in SQL and key it by SQLite type plus a 128-bit BLAKE2b digest of its bytes (numbers
-by value), so two identities are merged exactly when SQLite's DISTINCT would merge them, barring a digest collision
-(probability about n^2 / 2^129, 1e-25 for 6.5M certificates). The keys become dense integers; identities occurring on
-one row are counted directly, the others are deduplicated per (identity, value). The value tuples keep their SQLite
-types, so StatisticsDAO runs the final GROUP BY / ORDER BY of each statistic on them unchanged.
+Every distinct certificate is stored once (CertificateData) and every place where it was seen once (Occurrences); the
+tables the statistics' queries read are views over them (db.schema). The facts are the results of those queries:
+* the DISTINCT subqueries of StatisticsDAO count certificates by IDENTITY. Their values are stored per certificate,
+  so they are counted over the CertificateData rows that appear in the Certificates view (at least one occurrence),
+  except the values stored per occurrence (OCSP status, signature validity), counted over the occurrences;
+* the other statistics count rows of the views (OCSP statuses, issuer organizations and countries, SCT months and
+  operators, SCTs per certificate): every certificate row weighs as many rows as it has occurrences.
+
+The identity of a certificate, COALESCE(NULLIF(subject_key_id, ''), raw), is keyed by SQLite type plus a 128-bit
+BLAKE2b digest of its bytes (numbers by value); the raw is the original text (decoded from RawCertificates), so two
+identities are merged exactly as the DISTINCT of the old tables merged them, barring a digest collision (probability
+about n^2 / 2^129, 1e-25 for 6.5M certificates). The views show the raw as stored (compressed DER): their DISTINCT
+differs only if a Subject Key Identifier equals the base64 text of another certificate. The keys become dense
+integers; identities occurring on one row are counted directly, the others are deduplicated per (identity, value).
+The value tuples keep their SQLite types, so StatisticsDAO runs the final GROUP BY / ORDER BY of each statistic on
+them unchanged.
+
+The statistics' expressions are evaluated on relations that have the columns of the views, with the same names,
+values and affinities: `c` (per certificate: the Certificates, Subjects and Extensions columns stored per certificate;
+per occurrence: ocsp_check and signature_valid), `Issuers`, `t` (SignedCertificateTimestamps), `p`
+(CertificatePolicies) and `l` (Logs). An expression that does not fit one of them is left to its query.
 """
 from __future__ import annotations
 
@@ -21,20 +36,27 @@ from typing import NamedTuple
 
 import numpy as np
 
+from db import schema
+from db.raw_codec import RawCodec
+
 # Admin: Anuar Elio Magliari
 # Politecnico di Torino
 
-# Certificate identity of the DISTINCT subqueries (StatisticsDAO uses this expression)
-IDENTITY = "COALESCE(NULLIF(s.subject_key_id, ''), c.raw)"
+# Certificate identity of the DISTINCT subqueries of StatisticsDAO on the views, COALESCE(NULLIF(s.subject_key_id,
+# ''), c.raw): the raw is read only for the certificates without a Subject Key Identifier (the views would otherwise
+# look up the raw certificate of every row)
+IDENTITY = ("COALESCE(NULLIF(s.subject_key_id, ''), (SELECT identity_row.raw FROM Certificates AS identity_row "
+            "WHERE identity_row.certificate_id = c.certificate_id))")
 NULL_IDENTITY = -1      # IDENTITY IS NULL: the row takes part in DISTINCT, COUNT ignores it
-EXCLUDED = -2           # not in the inner join (certificate without subject, row without certificate)
-NO_KEY = -(2 ** 63)     # join key matching no row (NULL, text or real)
+EXCLUDED = -2           # not in the inner join (e.g. a certificate without occurrences)
+NO_POLICIES = -1        # policy set key of a certificate without policies
 
 # Scan connections: small page cache (KiB; each page is read once, the operating system caches the file) and no
 # memory map (sequential scans of large rows are about twice as fast with read() as with page faults)
 _SCAN_CACHE_KIB = 4096
-# Estimated seconds per row of each scan, to split the tables into tasks of similar duration
-_ROW_COST = {"certificates": 2.5e-6, "extensions": 1.5e-6, "policies": 0.7e-6, "sct": 0.9e-6, "issuers": 0.9e-6}
+# Estimated seconds per key of each scan (SCTs: per certificate id, about 3 SCTs each), to split the tables into tasks
+# of similar duration
+_ROW_COST = {"occurrences": 0.4e-6, "certificates": 3e-6, "issuers": 0.9e-6, "sct": 2.7e-6, "policies": 1e-6}
 _TASK_SECONDS = 0.5
 # Expressions read as one value tuple (one dictionary lookup per row); a statistic never spans two groups
 _GROUP_SIZE = 8
@@ -43,44 +65,26 @@ _CHUNK = 1 << 21
 _DIGEST_CHUNK = 1 << 20
 # Largest identities x values bitmap of a deduplication (bytes)
 _BITMAP_CELLS = 1 << 26
-
-# Certificates scan: type and content of the identity ('excluded' without subject; numbers by value)
-_IDENTITY_COLUMNS = (f"CASE WHEN s.subject_id IS NULL THEN 'excluded' ELSE typeof({IDENTITY}) END, "
-                     f"CASE WHEN typeof({IDENTITY}) IN ('integer', 'real') THEN {IDENTITY} "
-                     f"ELSE CAST({IDENTITY} AS BLOB) END")
-_IDENTITY_COUNT = 2
 _DIGEST_SIZE = 16
-# Per kind: SELECT with the key columns first ({columns} = value expressions), table, number of key columns
-# (the first one is the table's own rowid for the kinds in _OWN_ID)
-_OWN_ID = ("certificates", "extensions", "issuers")
-_SCANS = {
-    "certificates": (
-        f"SELECT c.certificate_id, 0, CASE WHEN typeof(c.issuer_id) = 'integer' THEN c.issuer_id ELSE {NO_KEY} END, "
-        f"{_IDENTITY_COLUMNS}{{columns}} "
-        "FROM Certificates AS c LEFT JOIN Subjects AS s ON c.subject_id = s.subject_id "
-        "WHERE c.certificate_id BETWEEN ? AND ?", "Certificates", 3),
-    "extensions": (
-        f"SELECT e.extension_id, CASE WHEN typeof(e.certificate_id) = 'integer' THEN e.certificate_id ELSE {NO_KEY} END"
-        "{columns} FROM Extensions AS e WHERE e.extension_id BETWEEN ? AND ?", "Extensions", 2),
-    "policies": (
-        f"SELECT CASE WHEN typeof(p.extension_id) = 'integer' THEN p.extension_id ELSE {NO_KEY} END{{columns}} "
-        "FROM CertificatePolicies AS p WHERE p.policy_id BETWEEN ? AND ?", "CertificatePolicies", 1),
-    "sct": (
-        f"SELECT CASE WHEN typeof(t.certificate_id) = 'integer' THEN t.certificate_id ELSE {NO_KEY} END, "
-        f"COALESCE(l.id, {NO_KEY}){{columns}} FROM SignedCertificateTimestamps AS t LEFT JOIN Logs AS l "
-        "ON t.log_id = l.id WHERE t.id BETWEEN ? AND ?", "SignedCertificateTimestamps", 2),
-    "issuers": ("SELECT Issuers.issuer_id{columns} FROM Issuers WHERE Issuers.issuer_id BETWEEN ? AND ?", "Issuers", 1),
-}
-# Keys read in rowid ranges or joined as unique: they must be the rowid (INTEGER PRIMARY KEY). Databases of older
-# versions can have Certificates without it; their statistics are left to the queries.
-_ROWID_KEYS = (("Certificates", "certificate_id"), ("Subjects", "subject_id"), ("Extensions", "extension_id"),
-               ("CertificatePolicies", "policy_id"), ("SignedCertificateTimestamps", "id"), ("Issuers", "issuer_id"),
-               ("Logs", "id"), ("LogsOperators", "id"))
+
+# Identity of a CertificateData row: (kind, content). The kind is the SQLite type of the Subject Key Identifier, or
+# 'zstd' (content: the compressed DER, decoded to the original text) or the type of the raw kept verbatim; NULL when
+# there is no raw. Numbers by value, everything else as bytes. The raw is read only for certificates without a
+# Subject Key Identifier.
+_SKI = "NULLIF(c.subject_key_id, '')"
+_RAW = "FROM RawCertificates AS r WHERE r.raw_id = c.facts_raw_id"
+_IDENTITY_COLUMNS = (
+    f"CASE WHEN {_SKI} IS NOT NULL THEN typeof(c.subject_key_id) "
+    f"ELSE (SELECT CASE WHEN r.der_zstd IS NOT NULL THEN 'zstd' ELSE typeof(r.raw) END {_RAW}) END",
+    f"CASE WHEN {_SKI} IS NOT NULL THEN (CASE WHEN typeof(c.subject_key_id) IN ('integer', 'real') "
+    "THEN c.subject_key_id ELSE CAST(c.subject_key_id AS BLOB) END) "
+    "ELSE (SELECT CASE WHEN r.der_zstd IS NOT NULL THEN r.der_zstd WHEN typeof(r.raw) IN ('integer', 'real') "
+    f"THEN r.raw ELSE CAST(r.raw AS BLOB) END {_RAW}) END")
 
 
 class Unique(NamedTuple):
     """Distinct certificates per value of `columns` among the rows of a scan matching `where`."""
-    scan: str                       # 'certificates', 'extensions', 'policies' or 'sct' (columns over Logs AS l)
+    scan: str                       # 'certificates' (relation c), 'policies' (p) or 'sct' (columns over Logs AS l)
     columns: tuple[str, ...]        # value expressions; none: a single count
     where: str = ""
 
@@ -89,9 +93,9 @@ class Unique(NamedTuple):
 class Request:
     """What to materialize: Unique statistics by name and the row counts of the other statistics."""
     unique: dict[str, Unique] = field(default_factory=dict)
-    ocsp: str = ""                  # expression counted over all certificate rows
+    ocsp: str = ""                  # expression over c counted over all rows of the Certificates view
     issuers: tuple[str, str] = ("", "")     # organization (certificate rows joined to issuers), country (all issuers)
-    sct_month: str = ""             # expression counted over all SCT rows
+    sct_month: str = ""             # expression over t counted over all SCT rows
     sct_operator: str = ""          # expression over LogsOperators AS lo, for SCT rows with a log and an operator
     sct_per_certificate: bool = False
     errors_sql: str = ""            # Errors part, run as it is
@@ -99,9 +103,83 @@ class Request:
 
 @dataclass
 class Facts:
-    """Rows (values..., count) per statistic name ('certificates': the number of certificate rows); a statistic that
-    could not be materialized is missing."""
+    """Rows (values..., count) per statistic name ('certificates': the number of rows of the Certificates view); a
+    statistic that could not be materialized is missing."""
     rows: dict[str, list[tuple]] = field(default_factory=dict)
+
+
+# ---------------------------------------------------------------- relations
+
+def _table_columns(connection: sqlite3.Connection, table: str) -> set[str]:
+    return {row[1] for row in connection.execute(f"PRAGMA table_info({table})").fetchall()}
+
+
+def _certificate_relation(present: set[str]) -> str:
+    """Per CertificateData row: the view columns stored per certificate (names, values and affinities of the views;
+    db.schema), plus the keys. LEFT JOINs whose values an expression does not use are left out by SQLite."""
+    select = ["c.certificate_id AS facts_certificate_id", "c.policy_set_id AS facts_policy_set_id",
+              "c.raw_id AS facts_raw_id"]
+    joins = []
+    columns = [(name, kind, name) for name, _, kind in schema.CERTIFICATE_COLUMNS if kind in ("c", "tv", "nv")]
+    columns += [(name, kind, column) for name, _, kind, column in schema.SUBJECT_COLUMNS]
+    columns += [(name, kind, name) for name, _, kind in schema.EXTENSION_COLUMNS]
+    for index, (name, kind, column) in enumerate(columns):
+        if column not in present:
+            continue
+        if kind == "c":
+            select.append(f"c.{column} AS {name}")
+        else:
+            alias = f"lookup{index}"
+            select.append(f"{alias}.value AS {name}")
+            joins.append(f"LEFT JOIN {'TextValues' if kind == 'tv' else 'NumericValues'} AS {alias} "
+                         f"ON {alias}.value_id = c.{column}")
+    return (f"SELECT {', '.join(select)} FROM CertificateData AS c {' '.join(joins)} "
+            "WHERE c.certificate_id BETWEEN ? AND ?")
+
+
+def _code_relation(signature: bool) -> str:
+    """Every combination of the per-occurrence codes, with the view columns (ocsp_check, signature_valid)."""
+    if signature:
+        return ("SELECT os.code AS facts_ocsp_code, sv.code AS facts_signature_code, os.name AS ocsp_check, "
+                "sv.name AS signature_valid FROM OcspStatuses AS os CROSS JOIN SignatureValidities AS sv "
+                "ORDER BY os.code, sv.code")
+    return "SELECT os.code AS facts_ocsp_code, 0 AS facts_signature_code, os.name AS ocsp_check " \
+           "FROM OcspStatuses AS os ORDER BY os.code"
+
+
+_ISSUER_RELATION = ("SELECT issuer_id AS facts_issuer_id, "
+                    + ", ".join(column for column, _ in schema.ISSUER_COLUMNS)
+                    + " FROM IssuerData WHERE issuer_id BETWEEN ? AND ?")
+_SCT_RELATION = ("SELECT certificate_id AS facts_certificate_id, log_id AS facts_log_id, CAST(log_id AS TEXT) AS log_id, "
+                 "timestamp, version, signature FROM SctData WHERE certificate_id BETWEEN ? AND ?")
+_POLICY_RELATION = ("SELECT m.policy_set_id AS facts_policy_set_id, d.policy_identifier, d.cps, d.policy_qualifiers, "
+                    "d.is_cp_critical FROM PolicySetMembers AS m JOIN PolicyData AS d ON d.policy_id = m.policy_id "
+                    "WHERE m.policy_set_id BETWEEN ? AND ?")
+
+
+class _Kind(NamedTuple):
+    """A scan: SELECT with the key columns first ({columns} = value expressions; {relation} = the relation), the table
+    and column of its ranges, number of key columns (the first one is the table's own id when `own`)."""
+    sql: str
+    table: str
+    column: str
+    keys: int
+    own: bool
+
+
+_KINDS = {
+    "occurrences": _Kind("SELECT o.certificate_id, o.issuer_id, o.ocsp_check, {signature} FROM Occurrences AS o "
+                         "WHERE o.occurrence_id BETWEEN ? AND ?", "Occurrences", "occurrence_id", 4, False),
+    "certificates": _Kind(f"SELECT c.facts_certificate_id, IFNULL(c.facts_policy_set_id, {NO_POLICIES}), "
+                          f"{', '.join(_IDENTITY_COLUMNS)}{{columns}} FROM ({{relation}}) AS c",
+                          "CertificateData", "certificate_id", 2, True),
+    "issuers": _Kind(f"SELECT Issuers.facts_issuer_id{{columns}} FROM ({_ISSUER_RELATION}) AS Issuers",
+                     "IssuerData", "issuer_id", 1, True),
+    "sct": _Kind(f"SELECT t.facts_certificate_id, t.facts_log_id{{columns}} FROM ({_SCT_RELATION}) AS t",
+                 "SctData", "certificate_id", 2, False),
+    "policies": _Kind(f"SELECT p.facts_policy_set_id{{columns}} FROM ({_POLICY_RELATION}) AS p",
+                      "PolicySetMembers", "policy_set_id", 1, False),
+}
 
 
 # ---------------------------------------------------------------- worker side
@@ -125,31 +203,42 @@ def _pack(values: array, dense: bool = False) -> tuple:
     return (column.dtype.str, column.tobytes())
 
 
-def scan(path: str, kind: str, groups: list[list[str]], low: int, high: int) -> dict:
-    """Read the rows low..high of one table: packed key columns and the codes of the value tuples of each group."""
-    sql, _, keys = _SCANS[kind]
-    columns = "".join(f", {expression}" for group in groups for expression in group)
-    arrays = [array("q") for _ in range(keys)]
-    tables: list[dict[tuple, int]] = [{} for _ in groups]
-    codes = [array("i") for _ in groups]
-    bounds, start = [], keys + (_IDENTITY_COUNT if kind == "certificates" else 0)
-    for group in groups:
-        bounds.append((start, start + len(group)))
-        start += len(group)
+def scan(path: str, sql: str, keys: int, own: bool, identity: bool, sizes: list[int], low: int, high: int) -> dict:
+    """Read the rows low..high of one scan: packed key columns (plus the local identity numbers when `identity`) and
+    the codes of the value tuples of each group of `sizes` expressions."""
+    columns = keys + (1 if identity else 0)
+    arrays = [array("q") for _ in range(columns)]
+    tables: list[dict[tuple, int]] = [{} for _ in sizes]
+    codes = [array("i") for _ in sizes]
+    bounds, start = [], columns
+    for size in sizes:
+        bounds.append((start, start + size))
+        start += size
     identities: dict[bytes, int] = {}
     connection = _connect(path)
     try:
-        cursor = connection.execute(sql.format(columns=columns), (low, high))
-        _read(_identities(cursor, identities) if kind == "certificates" else cursor, arrays, tables, codes, bounds)
+        cursor = connection.execute(sql, (low, high))
+        if identity:
+            cursor = _identities(cursor, keys, identities, connection)
+        _read(cursor, columns, arrays, tables, codes, bounds)
     finally:
         connection.close()
-    return {"rows": len(arrays[0]), "keys": [_pack(a, dense=kind in _OWN_ID and i == 0) for i, a in enumerate(arrays)],
+    return {"rows": len(arrays[0]), "keys": [_pack(a, dense=own and i == 0) for i, a in enumerate(arrays)],
             "codes": [_pack(c) for c in codes], "values": [list(t) for t in tables], "identities": b"".join(identities)}
 
 
-def _read(cursor, arrays: list[array], tables: list[dict], codes: list[array], bounds: list[tuple[int, int]]) -> None:
-    keys = [(i, a.append) for i, a in enumerate(arrays)]
+def _read(cursor, columns: int, arrays: list[array], tables: list[dict], codes: list[array],
+          bounds: list[tuple[int, int]]) -> None:
+    keys = [(i, a.append) for i, a in enumerate(arrays[:columns])]
     groups = [(table, code.append, low, high) for table, code, (low, high) in zip(tables, codes, bounds)]
+    if not groups and columns == 4:     # the occurrences: integer keys only
+        append0, append1, append2, append3 = (a.append for a in arrays)
+        for row in cursor:
+            append0(row[0])
+            append1(row[1])
+            append2(row[2])
+            append3(row[3])
+        return
     for row in cursor:
         for i, append in keys:
             append(row[i])
@@ -172,21 +261,25 @@ def _identity_key(kind: str, value) -> bytes:
     return hashlib.blake2b(data, digest_size=_DIGEST_SIZE).digest()
 
 
-def _identities(cursor: sqlite3.Cursor, identities: dict[bytes, int]):
-    """Rows of the certificates scan with the identity as a local number (0, 1, ... in order of appearance; -1 NULL,
-    -2 excluded); `identities` gets the digest of each number."""
+def _identities(cursor: sqlite3.Cursor, keys: int, identities: dict[bytes, int], connection: sqlite3.Connection):
+    """Rows of the certificates scan with the identity as a local number (0, 1, ... in order of appearance; -1 NULL)
+    in place of its two columns after the keys; `identities` gets the digest of each number."""
+    codec = None
     for row in cursor:
-        kind = row[3]
-        if kind == "excluded":
-            number = EXCLUDED
-        elif kind == "null":
+        kind = row[keys]
+        if kind is None or kind == "null":
             number = NULL_IDENTITY
         else:
-            key = _identity_key(kind, row[4])
+            value = row[keys + 1]
+            if kind == "zstd":      # the original base64 text of the DER
+                if codec is None:
+                    codec = RawCodec.for_connection(connection)
+                kind, value = "text", codec.decode(value, None).encode("ascii")
+            key = _identity_key(kind, value)
             number = identities.get(key)
             if number is None:
                 number = identities[key] = len(identities)
-        yield (row[0], number, *row[2:])
+        yield (*row[:keys], number, *row[keys + 2:])
 
 
 def query(path: str, sql: str) -> list[tuple]:
@@ -204,12 +297,20 @@ def _flag(where: str) -> str:
 
 
 class _Scan:
-    """Expression groups read by one scan and, per statistic, its group, value positions and flag position."""
+    """SQL of one scan, its expression groups and, per statistic, its group, value positions and flag position."""
 
-    def __init__(self, kind: str) -> None:
+    def __init__(self, kind: str, relation: str = "", signature: bool = False) -> None:
         self.kind = kind
+        self.relation = relation
+        self.signature = signature
         self.groups: list[list[str]] = []
         self.positions: dict[str, tuple[int, list[int], int | None]] = {}
+
+    def sql(self, expressions: list[str] | None = None) -> str:
+        columns = "".join(f", {e}" for e in (expressions if expressions is not None else
+                                             [e for group in self.groups for e in group]))
+        return _KINDS[self.kind].sql.format(columns=columns, relation=self.relation,
+                                            signature="o.signature_valid" if self.signature else "0")
 
     def add(self, name: str, columns: tuple[str, ...], where: str) -> None:
         expressions = [*columns, *([_flag(where)] if where else [])]
@@ -223,14 +324,64 @@ class _Scan:
                                 group.index(expressions[-1]) if where else None)
 
 
-def _readable(connection: sqlite3.Connection, kind: str, expressions: list[str]) -> bool:
+def _readable(connection: sqlite3.Connection, scan_: _Scan, expressions: list[str]) -> bool:
     """Whether the scan can read the expressions (a column can be missing in a database type)."""
-    sql = _SCANS[kind][0].format(columns="".join(f", {e}" for e in expressions))
     try:
-        connection.execute(f"SELECT * FROM ({sql}) LIMIT 0", (0, -1)).fetchall()
+        connection.execute(f"SELECT * FROM ({scan_.sql(expressions)}) LIMIT 0", (0, -1)).fetchall()
         return True
     except sqlite3.Error:
         return False
+
+
+def _expressions(unique: Unique) -> list[str]:
+    return [*unique.columns, *([_flag(unique.where)] if unique.where else [])]
+
+
+class _Codes:
+    """Statistics over the per-occurrence codes: every combination of the codes (ocsp_check, signature_valid) with
+    the value tuple of each statistic, evaluated once on the code relation."""
+
+    def __init__(self, connection: sqlite3.Connection, signature: bool) -> None:
+        self.relation = _code_relation(signature)
+        self.ocsp = np.array([row[0] for row in connection.execute("SELECT code FROM OcspStatuses ORDER BY code")],
+                             dtype=np.int64)
+        self.signature = np.array([row[0] for row in connection.execute(
+            "SELECT code FROM SignatureValidities ORDER BY code")] if signature else [0], dtype=np.int64)
+        self.values: dict[str, list[tuple | None]] = {}     # per combination: value tuple, None if not matching
+
+    def add(self, connection: sqlite3.Connection, name: str, columns: tuple[str, ...], where: str = "") -> bool:
+        """Evaluate a statistic on every combination; False if its expressions do not fit the relation."""
+        try:
+            rows = connection.execute(f"SELECT {', '.join([*columns, _flag(where or '1')])} "
+                                      f"FROM ({self.relation}) AS c").fetchall()
+        except sqlite3.Error:
+            return False
+        if len(rows) != len(self.ocsp) * len(self.signature):
+            return False
+        self.values[name] = [tuple(row[:-1]) if row[-1] == 1 else None for row in rows]
+        return True
+
+    def combinations(self, ocsp: np.ndarray, signature: np.ndarray) -> np.ndarray:
+        """Combination of each occurrence's codes; -1 when a code is not in its table (not in the view)."""
+        ocsp_index, signature_index = _sorted_positions(self.ocsp, ocsp), _sorted_positions(self.signature, signature)
+        combined = ocsp_index.astype(np.int64) * len(self.signature) + signature_index
+        return np.where((ocsp_index >= 0) & (signature_index >= 0), combined, -1)
+
+    def statistic(self, name: str) -> tuple[np.ndarray, list[tuple]]:
+        """Per combination the code of the statistic's value tuple (-1 when not matching); the tuples."""
+        index: dict[tuple, int] = {}
+        lookup = np.array([-1 if value is None else index.setdefault(value, len(index)) for value in self.values[name]],
+                          dtype=np.int32)
+        return lookup, list(index)
+
+
+def _sorted_positions(sorted_ids: np.ndarray, keys: np.ndarray) -> np.ndarray:
+    """Position of each key in the sorted unique ids, -1 when absent."""
+    if not len(sorted_ids):
+        return np.full(len(keys), -1, dtype=np.int64)
+    sorted_ids, keys = sorted_ids.astype(np.int64), keys.astype(np.int64)
+    position = np.searchsorted(sorted_ids, keys).clip(0, len(sorted_ids) - 1)
+    return np.where(sorted_ids[position] == keys, position, -1)
 
 
 def _log_values(connection: sqlite3.Connection, unique: Unique) -> dict | None:
@@ -246,75 +397,72 @@ def _log_values(connection: sqlite3.Connection, unique: Unique) -> dict | None:
 @dataclass
 class _Plan:
     scans: dict[str, _Scan]
+    codes: _Codes
     unique: dict[str, Unique] = field(default_factory=dict)
+    occurrence_unique: list[str] = field(default_factory=list)  # Unique statistics over the per-occurrence codes
     logs: dict[str, dict] = field(default_factory=dict)         # SCT statistics: log id -> value tuple
     operators: dict | None = None                               # log id -> operator value
 
 
 def _plan_unique(connection: sqlite3.Connection, request: Request, plan: _Plan) -> None:
-    sct = _readable(connection, "sct", [])
     for name, unique in request.unique.items():
         if unique.scan == "sct":
-            values = _log_values(connection, unique) if sct else None
+            values = _log_values(connection, unique)
             if values is not None:
                 plan.logs[name] = values
                 plan.unique[name] = unique
-        elif _readable(connection, unique.scan, [*unique.columns, *([_flag(unique.where)] if unique.where else [])]):
+        elif unique.scan in plan.scans and _readable(connection, plan.scans[unique.scan], _expressions(unique)):
             plan.scans[unique.scan].add(name, unique.columns, unique.where)
             plan.unique[name] = unique
-    if request.sct_operator and sct:
+        elif unique.scan == "certificates" and plan.codes.add(connection, name, unique.columns, unique.where):
+            plan.occurrence_unique.append(name)
+            plan.unique[name] = unique
+    if request.sct_operator:
         try:
             plan.operators = dict(connection.execute(
                 f"SELECT l.id, {request.sct_operator} FROM Logs AS l JOIN LogsOperators AS lo "
                 "ON l.operator_id = lo.id").fetchall())
         except sqlite3.Error:
             pass
-    if request.sct_per_certificate and sct:
+    if request.sct_per_certificate:
         plan.unique["sct_per_certificate"] = Unique("sct", ())
 
 
 def _plan(connection: sqlite3.Connection, request: Request) -> _Plan:
     """Scans to run; statistics whose expressions cannot be read are left out (the caller runs their SQL)."""
-    plan = _Plan({kind: _Scan(kind) for kind in _SCANS})
+    signature = "signature_valid" in _table_columns(connection, "Occurrences")
+    present = _table_columns(connection, "CertificateData")
+    if not present:
+        raise ValueError("the database has no CertificateData table")
+    scans = {"occurrences": _Scan("occurrences", signature=signature),
+             "certificates": _Scan("certificates", _certificate_relation(present)),
+             "issuers": _Scan("issuers"), "sct": _Scan("sct"), "policies": _Scan("policies")}
+    plan = _Plan(scans, _Codes(connection, signature))
     _plan_unique(connection, request, plan)
-    added = (("ocsp", "certificates", (request.ocsp,)), ("issuers", "issuers", request.issuers),
-             ("sct_month", "sct", (request.sct_month,)))
+    if request.ocsp:
+        plan.codes.add(connection, "ocsp", (request.ocsp,))
+    added = (("issuers", "issuers", request.issuers), ("sct_month", "sct", (request.sct_month,)))
     for name, kind, columns in added:
-        if columns[0] and _readable(connection, kind, list(columns)):
+        if columns[0] and _readable(connection, plan.scans[kind], list(columns)):
             plan.scans[kind].add(name, columns, "")
     needed = {kind for kind, s in plan.scans.items() if s.positions} | {u.scan for u in plan.unique.values()}
     needed |= {"sct"} if plan.operators is not None else set()
-    needed |= {"certificates"} if needed else set()
-    needed |= {"extensions"} if "policies" in needed else set()
-    plan.scans = {kind: plan.scans[kind] for kind in _SCANS if kind in needed}
+    if needed or "ocsp" in plan.codes.values or request.errors_sql:     # 'certificates': rows of the view
+        needed |= {"occurrences", "certificates"}
+    plan.scans = {kind: plan.scans[kind] for kind in _KINDS if kind in needed}
     return plan
 
 
-def _check_keys(connection: sqlite3.Connection) -> None:
-    """Raise if a table that exists has another key than its rowid (see _ROWID_KEYS), or a key equal to NO_KEY."""
-    for table, column in _ROWID_KEYS:
-        columns = connection.execute(f"PRAGMA table_info({table})").fetchall()
-        if not columns:
-            continue
-        keys = [row for row in columns if row[5]]
-        # An INTEGER PRIMARY KEY DESC is not an alias of the rowid: SQLite gives it an index of origin 'pk'
-        if (not (len(keys) == 1 and keys[0][1] == column and str(keys[0][2]).upper() == "INTEGER")
-                or any(row[3] == "pk" for row in connection.execute(f"PRAGMA index_list({table})"))):
-            raise ValueError(f"{table}.{column} is not the rowid of the table")
-        # NO_KEY is the smallest integer, so only the smallest key can be equal to it
-        if connection.execute(f"SELECT MIN(rowid) FROM {table}").fetchone()[0] == NO_KEY:
-            raise ValueError(f"{table}.{column} has a row whose key is {NO_KEY}")
-
-
 def _ranges(connection: sqlite3.Connection, kind: str, workers: int) -> list[tuple[int, int]]:
-    table = _SCANS[kind][1]
-    # Two subqueries: SQLite reads MIN or MAX of the rowid from the b-tree ends only when it is alone
-    low, high = connection.execute(f"SELECT (SELECT MIN(rowid) FROM {table}), (SELECT MAX(rowid) FROM {table})").fetchone()
+    spec = _KINDS[kind]
+    # Two subqueries: SQLite reads MIN or MAX of the key from the b-tree ends only when it is alone
+    low, high = connection.execute(f"SELECT (SELECT MIN({spec.column}) FROM {spec.table}), "
+                                   f"(SELECT MAX({spec.column}) FROM {spec.table})").fetchone()
     if low is None:
         return []
-    rows = high - low + 1
-    tasks = max(1, min(4 * workers, round(rows * _ROW_COST[kind] / _TASK_SECONDS)))
-    step = -(-rows // tasks)
+    keys = high - low + 1
+    tasks = max(1, min(4 * workers, round(keys * _ROW_COST[kind] / _TASK_SECONDS)))
+    step = -(-keys // tasks)
     return [(start, min(start + step - 1, high)) for start in range(low, high + 1, step)]
 
 
@@ -346,7 +494,6 @@ def collect(path: str, request: Request, executor: Executor | None = None, worke
     """
     connection = _connect(path)
     try:
-        _check_keys(connection)
         plan = _plan(connection, request)
         ranges = {kind: _ranges(connection, kind, workers) for kind in plan.scans}
     finally:
@@ -358,7 +505,13 @@ def collect(path: str, request: Request, executor: Executor | None = None, worke
     tasks = sorted(((kind, task) for kind, items in ranges.items() for task in items),
                    key=lambda item: -(item[1][1] - item[1][0]) * _ROW_COST[item[0]])
     errors = submit(query, path, request.errors_sql) if request.errors_sql else None
-    futures = {(kind, task): submit(scan, path, kind, plan.scans[kind].groups, *task) for kind, task in tasks}
+    futures = {}
+    for kind, task in tasks:
+        scan_ = plan.scans[kind]
+        spec = _KINDS[kind]
+        futures[(kind, task)] = submit(scan, path, scan_.sql(), spec.keys, spec.own,
+                                       kind == "certificates", [len(g) for g in scan_.groups],
+                                       *task)
 
     def rows(kind: str) -> _Rows:
         return _Rows([futures.pop((kind, task)).result() for task in ranges[kind]], plan.scans[kind])
@@ -385,17 +538,16 @@ def _gather(plan: _Plan, errors, rows) -> Facts:
 
 def _aggregate(facts: Facts, plan: _Plan, rows) -> None:
     certificates = _Certificates(rows("certificates"))
-    facts.rows["certificates"] = [(certificates.rows.count,)]
-    certificates.add_facts(facts, plan)
+    occurrences = _Occurrences(rows("occurrences"), certificates, plan.codes)
+    facts.rows["certificates"] = [(occurrences.count,)]
+    certificates.add_facts(facts, plan, occurrences.weights > 0)
+    occurrences.add_facts(facts, plan, certificates)
     if "issuers" in plan.scans:
-        _issuer_facts(facts, rows("issuers"), certificates)
-    if "extensions" in plan.scans:
-        extensions = _Joined(rows("extensions"), certificates)
-        extensions.add_facts(facts, plan)
-        if "policies" in plan.scans:
-            _Joined(rows("policies"), certificates, extensions).add_facts(facts, plan)
+        _issuer_facts(facts, rows("issuers"), occurrences)
+    if "policies" in plan.scans:
+        _policy_facts(facts, rows("policies"), certificates, occurrences.weights > 0, plan)
     if "sct" in plan.scans:
-        _sct_facts(facts, rows("sct"), certificates, plan)
+        _sct_facts(facts, rows("sct"), certificates, occurrences, plan)
 
 
 # ---------------------------------------------------------------- aggregation
@@ -450,16 +602,17 @@ class _Index:
 
 
 class _Rows:
-    """Rows of one scan in rowid order: key columns and value codes renumbered over all its tasks."""
+    """Rows of one scan in key order: key columns and value codes renumbered over all its tasks."""
 
     def __init__(self, results: list[dict], scan_: _Scan) -> None:
         self.scan = scan_
         self.count = sum(result["rows"] for result in results)
-        own = scan_.kind in _OWN_ID
+        own = _KINDS[scan_.kind].own
         self.index = _Index.of([(result["keys"][0], result["rows"]) for result in results]) if own else None
+        columns = len(results[0]["keys"]) if results else _KINDS[scan_.kind].keys
         self.keys = [None if own and i == 0 else
                      _narrow(np.concatenate([_unpack(r["keys"][i], r["rows"]) for r in results]))
-                     if results else np.zeros(0, np.int64) for i in range(_SCANS[scan_.kind][2])]
+                     if results else np.zeros(0, np.int64) for i in range(columns)]
         self.values: list[list[tuple]] = []
         self.codes: list[np.ndarray] = []
         for g in range(len(scan_.groups)):
@@ -485,11 +638,18 @@ class _Rows:
         codes = self.codes[group]
         return lookup[codes], valid[codes], list(index)
 
-    def counts(self, name: str) -> list[tuple]:
-        """Rows per value tuple (no deduplication)."""
+    def counts(self, name: str, weights: np.ndarray, rows: np.ndarray | None = None) -> list[tuple]:
+        """Weighted rows per value tuple (no deduplication), only `rows` (a mask) when given."""
         codes, _, values = self.statistic(name)
-        counts = np.bincount(codes, minlength=len(values))
-        return [(*value, int(counts[code])) for code, value in enumerate(values) if counts[code]]
+        if rows is not None:
+            codes, weights = codes[rows], weights[rows]
+        return _weighted(codes, weights, values)
+
+
+def _weighted(codes: np.ndarray, weights: np.ndarray, values: list[tuple]) -> list[tuple]:
+    """(values..., sum of the weights) per value tuple with a positive sum, in tuple order."""
+    counts = np.bincount(codes, weights=weights, minlength=len(values)) if len(codes) else np.zeros(len(values))
+    return [(*value, int(round(counts[code]))) for code, value in enumerate(values) if counts[code]]
 
 
 class _Repeated:
@@ -521,47 +681,94 @@ def _distinct_pairs(ids: np.ndarray, codes: np.ndarray, size: int, count: int) -
     return counts
 
 
-def _unique_rows(identities: np.ndarray, repeated: _Repeated, codes: np.ndarray, valid: np.ndarray,
-                 values: list[tuple], always: bool = False) -> list[tuple]:
-    """(values..., distinct non-NULL identities) per value tuple; tuples seen only with a NULL identity count 0."""
+def _unique_rows(identities: np.ndarray, count: int, codes: np.ndarray, valid: np.ndarray, values: list[tuple],
+                 always: bool = False) -> list[tuple]:
+    """(values..., distinct non-NULL identities) per value tuple over the rows with `valid` (identities: dense numbers
+    below `count`, NULL_IDENTITY or EXCLUDED); tuples seen only with a NULL identity count 0."""
+    valid = valid & (identities != EXCLUDED)
+    identities, codes = identities[valid], codes[valid]
     size = len(values)
     present = np.zeros(size, dtype=bool)
-    present[codes[valid & (identities == NULL_IDENTITY)]] = True
-    counted = valid & (identities >= 0)
-    counts = np.bincount(codes[counted & ~repeated.mask], minlength=size).astype(np.int64)
-    several = counted & repeated.mask
-    if several.any():
-        counts += _distinct_pairs(identities[several], codes[several], size, repeated.count)
+    present[codes[identities == NULL_IDENTITY]] = True
+    counted = identities >= 0
+    identities, codes = identities[counted], codes[counted]
+    repeated = _Repeated(identities, count).mask
+    counts = np.bincount(codes[~repeated], minlength=size).astype(np.int64)
+    if repeated.any():
+        counts += _distinct_pairs(identities[repeated], codes[repeated], size, count)
     rows = [(*value, int(counts[code])) for code, value in enumerate(values) if counts[code] or present[code]]
     return rows if rows or not always else [(0,)]
 
 
 class _Certificates:
-    """Certificate rows in certificate_id order with their identity numbered 0..n-1 (or NULL_IDENTITY, EXCLUDED)."""
+    """CertificateData rows in certificate_id order with their identity numbered 0..n-1 (or NULL_IDENTITY)."""
 
     def __init__(self, rows: _Rows) -> None:
         self.rows = rows
-        identities = rows.keys[1].astype(np.int64)
+        self.policy_sets = rows.keys[1]
+        identities = rows.keys[2].astype(np.int64) if len(rows.keys) > 2 else np.full(rows.count, NULL_IDENTITY)
         self.count = _number_identities(identities, rows.identities)
         rows.identities = []
         self.identities = _narrow(identities)
-        self.repeated = _Repeated(self.identities, self.count)
 
-    def add_facts(self, facts: Facts, plan: _Plan) -> None:
+    def add_facts(self, facts: Facts, plan: _Plan, members: np.ndarray) -> None:
+        """Unique statistics of the values stored per certificate, over the certificates with occurrences."""
         for name in self.rows.scan.positions:
-            if name == "ocsp":
-                facts.rows["ocsp"] = self.rows.counts(name)
-            else:
-                codes, valid, values = self.rows.statistic(name)
-                facts.rows[name] = _unique_rows(self.identities, self.repeated, codes, valid, values,
-                                                always=not plan.unique[name].columns)
+            codes, valid, values = self.rows.statistic(name)
+            facts.rows[name] = _unique_rows(self.identities, self.count, codes, valid & members, values,
+                                            always=not plan.unique[name].columns)
 
-    def identities_of(self, certificate_ids: np.ndarray) -> np.ndarray:
-        """Identity of the certificate of each key; EXCLUDED when there is no such certificate."""
-        if not len(self.identities):
-            return np.full(len(certificate_ids), EXCLUDED, dtype=self.identities.dtype)
-        position = self.rows.index.positions(certificate_ids)
-        return np.where(position >= 0, self.identities[position], EXCLUDED).astype(self.identities.dtype)
+    def identities_of(self, positions: np.ndarray, members: np.ndarray) -> np.ndarray:
+        """Identity of the certificate at each position; EXCLUDED without a certificate or occurrences."""
+        found = positions >= 0
+        result = np.full(len(positions), EXCLUDED, dtype=np.int64)
+        result[found] = np.where(members[positions[found]], self.identities[positions[found]], EXCLUDED)
+        return _narrow(result)
+
+
+class _Occurrences:
+    """Occurrences joined to their certificate: the rows of the Certificates view and the weights of the certificate
+    rows (their rows in the view)."""
+
+    def __init__(self, rows: _Rows, certificates: _Certificates, codes: _Codes) -> None:
+        self.rows = rows
+        self.codes = codes
+        self.certificate_ids = rows.keys[0]
+        self.issuer_ids = rows.keys[1]
+        self.certificate = certificates.rows.index.positions(self.certificate_ids)
+        self.combinations = codes.combinations(rows.keys[2], rows.keys[3])
+        self.view = (self.certificate >= 0) & (self.combinations >= 0)
+        self.count = int(self.view.sum())
+        self.weights = np.bincount(self.certificate[self.view], minlength=certificates.rows.count)
+        self.positions = self.certificate[self.view]
+
+    def add_facts(self, facts: Facts, plan: _Plan, certificates: _Certificates) -> None:
+        """OCSP rows and the Unique statistics of the values stored per occurrence."""
+        combinations = self.combinations[self.view]
+        if "ocsp" in self.codes.values:
+            lookup, values = self.codes.statistic("ocsp")
+            codes = lookup[combinations]
+            facts.rows["ocsp"] = _weighted(codes[codes >= 0], np.ones(int((codes >= 0).sum())), values)
+        if plan.occurrence_unique:
+            identities = certificates.identities[self.positions]
+            for name in plan.occurrence_unique:
+                lookup, values = self.codes.statistic(name)
+                codes = lookup[combinations]
+                facts.rows[name] = _unique_rows(identities, certificates.count, np.maximum(codes, 0), codes >= 0,
+                                                values, always=not plan.unique[name].columns)
+
+    def certificate_counts(self, certificate_ids: np.ndarray, positions: np.ndarray) -> np.ndarray:
+        """Occurrences (all, in the view or not) of each certificate id (`positions`: its CertificateData row)."""
+        known = self.certificate >= 0
+        every = np.bincount(self.certificate[known], minlength=len(self.weights))
+        result = np.zeros(len(certificate_ids), dtype=np.int64)
+        found = positions >= 0
+        result[found] = every[positions[found]]
+        if not found.all() and not known.all():     # ids without a certificate row on both sides
+            missing, counts = np.unique(self.certificate_ids[~known], return_counts=True)
+            position = _sorted_positions(missing, certificate_ids[~found])
+            result[~found] = np.where(position >= 0, counts[position], 0)
+        return result
 
 
 def _number_identities(identities: np.ndarray, tasks: list[tuple[bytes, int]]) -> int:
@@ -588,89 +795,82 @@ def _number_identities(identities: np.ndarray, tasks: list[tuple[bytes, int]]) -
     return count
 
 
-class _Joined:
-    """Rows of a table joined to the certificates: extensions by certificate_id, policies through extensions."""
-
-    def __init__(self, rows: _Rows, certificates: _Certificates, extensions: _Joined | None = None) -> None:
-        self.rows = rows
-        if extensions is None:
-            self.identities = certificates.identities_of(rows.keys[1])
-        elif not len(extensions.identities):
-            self.identities = np.full(rows.count, EXCLUDED, dtype=extensions.identities.dtype)
-        else:
-            position = extensions.rows.index.positions(rows.keys[0])
-            self.identities = np.where(position >= 0, extensions.identities[position], EXCLUDED).astype(
-                extensions.identities.dtype)
-        self.repeated = _Repeated(self.identities, certificates.count)
-
-    def add_facts(self, facts: Facts, plan: _Plan) -> None:
-        for name in self.rows.scan.positions:
-            codes, valid, values = self.rows.statistic(name)
-            facts.rows[name] = _unique_rows(self.identities, self.repeated, codes, valid, values,
-                                            always=not plan.unique[name].columns)
-
-
-def _issuer_facts(facts: Facts, issuers: _Rows, certificates: _Certificates) -> None:
-    """Organizations over the certificate rows joined to their issuer, countries over all issuer rows."""
+def _issuer_facts(facts: Facts, issuers: _Rows, occurrences: _Occurrences) -> None:
+    """Organizations over the rows of the Certificates view joined to their issuer, countries over all rows of the
+    Issuers view (every occurrence with its issuer row)."""
     codes, _, values = issuers.statistic("issuers")
-    position = issuers.index.positions(certificates.rows.keys[2])
-    joined = np.bincount(codes[position[position >= 0]], minlength=len(values))
-    every = np.bincount(codes, minlength=len(values))
+    position = issuers.index.positions(occurrences.issuer_ids)
+    found = position >= 0
+    joined = np.bincount(codes[position[found & occurrences.view]], minlength=len(values))
+    every = np.bincount(codes[position[found]], minlength=len(values))
     organizations: dict = {}
     countries: dict = {}
     for code, (organization, country) in enumerate(values):
         if joined[code]:
             organizations[organization] = organizations.get(organization, 0) + int(joined[code])
-        countries[country] = countries.get(country, 0) + int(every[code])
+        if every[code]:
+            countries[country] = countries.get(country, 0) + int(every[code])
     facts.rows["organizations"] = list(organizations.items())
     facts.rows["countries"] = list(countries.items())
 
 
-def _sct_facts(facts: Facts, sct: _Rows, certificates: _Certificates, plan: _Plan) -> None:
-    """Unique statistics over the logs, per-month and per-operator SCT counts, SCTs per certificate."""
+def _policy_facts(facts: Facts, policies: _Rows, certificates: _Certificates, members: np.ndarray,
+                  plan: _Plan) -> None:
+    """Unique statistics over the policies of the certificates with occurrences (the members of their policy set)."""
+    order = np.argsort(policies.keys[0], kind="stable")
+    set_ids = policies.keys[0][order]
+    sets, first, sizes = np.unique(set_ids, return_index=True, return_counts=True)
+    position = _sorted_positions(sets, certificates.policy_sets)
+    selected = np.flatnonzero((position >= 0) & members)
+    counts = sizes[position[selected]]
+    identities = np.repeat(certificates.identities[selected], counts)
+    # Member rows of every selected certificate: the start of its set plus 0, 1, ... within it
+    starts = np.repeat(first[position[selected]] - (np.cumsum(counts) - counts), counts)
+    member = order[starts + np.arange(len(identities))]
+    for name in policies.scan.positions:
+        codes, valid, values = policies.statistic(name)
+        facts.rows[name] = _unique_rows(identities, certificates.count, codes[member], valid[member], values,
+                                        always=not plan.unique[name].columns)
+
+
+def _sct_facts(facts: Facts, sct: _Rows, certificates: _Certificates, occurrences: _Occurrences,
+               plan: _Plan) -> None:
+    """Unique statistics over the logs, per-month and per-operator SCT counts (rows of the SCT view: every SCT of a
+    certificate once per occurrence), SCTs per row of the Certificates view."""
     certificate_ids, log_ids = sct.keys
+    position = certificates.rows.index.positions(certificate_ids)
+    weights = occurrences.certificate_counts(certificate_ids, position)
     if "sct_month" in sct.scan.positions:
-        facts.rows["sct_month"] = sct.counts("sct_month")
+        facts.rows["sct_month"] = sct.counts("sct_month", weights)
     logs, log_codes = _log_codes(log_ids)
     if plan.operators is not None:
-        per_log = np.bincount(log_codes, minlength=len(logs) + 1)
+        per_log = np.bincount(log_codes, weights=weights, minlength=len(logs) + 1) if len(log_codes) else \
+            np.zeros(len(logs) + 1)
         operators: dict = {}
         for code, log in enumerate(logs.tolist()):
             if log in plan.operators and per_log[code]:
-                operators[plan.operators[log]] = operators.get(plan.operators[log], 0) + int(per_log[code])
+                operators[plan.operators[log]] = operators.get(plan.operators[log], 0) + int(round(per_log[code]))
         facts.rows["sct_operators"] = list(operators.items())
     if "sct_per_certificate" in plan.unique:
-        position = certificates.rows.index.positions(certificate_ids)
         per_certificate = np.bincount(position[position >= 0], minlength=certificates.rows.count)
-        facts.rows["sct_per_certificate"] = [(count, int(n)) for count, n in enumerate(np.bincount(per_certificate))
-                                             if n]
+        histogram = np.bincount(per_certificate, weights=occurrences.weights) if len(per_certificate) else []
+        facts.rows["sct_per_certificate"] = [(count, int(round(n))) for count, n in enumerate(histogram) if n]
     if plan.logs:
-        _log_facts(facts, plan, certificates.identities_of(certificate_ids), certificates.count, logs, log_codes)
+        identities = certificates.identities_of(position, occurrences.weights > 0)
+        _log_facts(facts, plan, identities, certificates.count, logs, log_codes)
 
 
 def _log_codes(log_ids: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    """Sorted distinct log ids and, per SCT row, the index of its log (len(logs) without a log)."""
-    known = log_ids != NO_KEY
-    if not known.any():
-        return np.zeros(0, np.int64), np.zeros(len(log_ids), np.int32)
-    low, high = int(log_ids[known].min()), int(log_ids[known].max())
-    if high - low > 4 * len(log_ids) + 1024:        # sparse ids: by sorting
-        logs = np.unique(log_ids[known])
-        codes = np.searchsorted(logs, log_ids).astype(np.int32)
-        codes[~known] = len(logs)
-        return logs, codes
-    offsets = np.where(known, log_ids - low, high - low + 1)
-    present = np.bincount(offsets, minlength=high - low + 2)[:-1] > 0
-    logs = np.flatnonzero(present) + low
-    lookup = np.full(high - low + 2, len(logs), dtype=np.int32)
-    lookup[logs - low] = np.arange(len(logs), dtype=np.int32)
-    return logs, lookup[offsets]
+    """Sorted distinct log ids and, per SCT row, the index of its log."""
+    if not len(log_ids):
+        return np.zeros(0, np.int64), np.zeros(0, np.int32)
+    logs, codes = np.unique(log_ids.astype(np.int64), return_inverse=True)
+    return logs, codes.reshape(-1).astype(np.int32)
 
 
 def _log_facts(facts: Facts, plan: _Plan, identities: np.ndarray, count: int, logs: np.ndarray,
                log_codes: np.ndarray) -> None:
     """Unique statistics whose values come from the log of each SCT."""
-    repeated = _Repeated(identities, count)
     for name, values_by_log in plan.logs.items():
         index: dict[tuple, int] = {}
         lookup = np.full(len(logs) + 1, -1, dtype=np.int32)
@@ -679,5 +879,5 @@ def _log_facts(facts: Facts, plan: _Plan, identities: np.ndarray, count: int, lo
             if value is not None:
                 lookup[code] = index.setdefault(value, len(index))
         codes = lookup[log_codes]
-        facts.rows[name] = _unique_rows(identities, repeated, np.maximum(codes, 0), codes >= 0, list(index),
+        facts.rows[name] = _unique_rows(identities, count, np.maximum(codes, 0), codes >= 0, list(index),
                                         always=not plan.unique[name].columns)

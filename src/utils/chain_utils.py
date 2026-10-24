@@ -22,6 +22,8 @@ from cryptography import x509
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric import ec, ed448, ed25519, padding, rsa
 
+from db.schema import SIGNATURE_CODES
+from utils import log_replay
 from utils.utils import progress_bar
 
 if TYPE_CHECKING:
@@ -49,8 +51,18 @@ SSLYZE_BATCH_SIZE = 100
 SSLYZE_CONCURRENT_HOSTS = 10
 SSLYZE_BATCH_TIMEOUT = 3 * SSLYZE_TIMEOUT
 
-# Results saved per transaction, so an interrupted run keeps almost all of its work
+# Occurrences whose results are saved per transaction, so an interrupted run keeps almost all of its work
 CHAIN_VALIDATION_SAVE_EVERY = 100
+
+# Rows of the sorted (leaf_domain, occurrence_id) work table read at a time
+CHAIN_WORK_PAGE_SIZE = 10000
+
+# Every occurrence sorted by domain: the occurrences of a domain are consecutive rows, and the domain is scanned once
+DROP_CHAIN_WORK = "DROP TABLE IF EXISTS temp.ChainWork"
+CREATE_CHAIN_WORK = ("CREATE TEMP TABLE ChainWork AS SELECT leaf_domain, occurrence_id FROM Occurrences "
+                     "ORDER BY leaf_domain, occurrence_id")
+SELECT_CHAIN_WORK = "SELECT rowid, leaf_domain, occurrence_id FROM ChainWork WHERE rowid > ? ORDER BY rowid LIMIT ?"
+UPDATE_SIGNATURE_VALIDITY = "UPDATE Occurrences SET signature_valid = ? WHERE occurrence_id = ?"
 
 # Plain host names, reported unchanged by sslyze; anything else (ports, IPs in braces, IDNs, a leading '-')
 # is checked by its own invocation as before
@@ -313,18 +325,22 @@ def _index_sslyze_output(output: dict) -> tuple[dict[str, dict], set[str]]:
     return scanned, invalid
 
 
-def _map_batch_results(items: list[tuple[int, str]], scanned: dict[str, dict],
-                       invalid: set[str]) -> tuple[list[tuple[str, int]], list[tuple[int, str]]]:
+# A work item is a distinct domain with the ids of its occurrences: (occurrence ids, hostname). Its result is
+# (result, occurrence ids), and what is logged for the domain is logged once per occurrence (log_replay)
+
+def _map_batch_results(items: list[tuple[tuple[int, ...], str]], scanned: dict[str, dict], invalid: set[str]
+                       ) -> tuple[list[tuple[str, tuple[int, ...]]], list[tuple[tuple[int, ...], str]]]:
     results, missing = [], []
-    for certificate_id, hostname in items:
+    for ids, hostname in items:
         key = hostname.lower()
         if key in scanned:
-            results.append((_host_validation_result(scanned[key], hostname), certificate_id))
+            with log_replay.repeated(len(ids)):
+                results.append((_host_validation_result(scanned[key], hostname), ids))
         elif key in invalid:
             # Like a single-host output with no scan result
-            results.append(("Error", certificate_id))
+            results.append(("Error", ids))
         else:
-            missing.append((certificate_id, hostname))
+            missing.append((ids, hostname))
     if missing:
         logging.info(f"Hosts missing from the sslyze output ({len(missing)}): checking them one at a time.")
     return results, missing
@@ -334,11 +350,11 @@ def _batch_timeout(hosts: int) -> float:
     return min(SSLYZE_BATCH_TIMEOUT, SSLYZE_TIMEOUT * math.ceil(hosts / SSLYZE_CONCURRENT_HOSTS))
 
 
-def _scan_batch(items: list[tuple[int, str]],
-                processes: _SslyzeProcesses) -> tuple[list[tuple[str, int]], list[tuple[int, str]]]:
+def _scan_batch(items: list[tuple[tuple[int, ...], str]], processes: _SslyzeProcesses
+                ) -> tuple[list[tuple[str, tuple[int, ...]]], list[tuple[tuple[int, ...], str]]]:
     """Scan plain host names with one sslyze invocation.
 
-    Returns the (result, certificate_id) pairs and the items to check one by one: the hosts missing from the output
+    Returns the (result, occurrence ids) pairs and the items to check one by one: the hosts missing from the output
     and, if the invocation fails, the whole batch.
     """
     hosts: dict[str, str] = {}
@@ -364,40 +380,71 @@ def _scan_batch(items: list[tuple[int, str]],
     return [], list(items)
 
 
-def _scan(items: list[tuple[int, str]],
-          processes: _SslyzeProcesses) -> tuple[list[tuple[str, int]], list[tuple[int, str]]]:
+def _scan(items: list[tuple[tuple[int, ...], str]], processes: _SslyzeProcesses
+          ) -> tuple[list[tuple[str, tuple[int, ...]]], list[tuple[tuple[int, ...], str]]]:
     """Scan a work item: (results, items to check one by one)."""
     if len(items) == 1:
-        certificate_id, hostname = items[0]
-        result = check_certificate_chain(hostname, processes)
-        return ([] if result is None else [(result, certificate_id)]), []
+        ids, hostname = items[0]
+        with log_replay.repeated(len(ids)):
+            result = check_certificate_chain(hostname, processes)
+        return ([] if result is None else [(result, ids)]), []
 
-    plain = [item for item in items if isinstance(item[1], str) and _PLAIN_HOSTNAME.fullmatch(item[1])]
+    plain, others = [], []
+    for item in items:
+        (plain if isinstance(item[1], str) and _PLAIN_HOSTNAME.fullmatch(item[1]) else others).append(item)
     if len({hostname.lower() for _, hostname in plain}) < 2:
         return [], list(items)
     results, single = _scan_batch(plain, processes)
-    plain_ids = {certificate_id for certificate_id, _ in plain}
-    return results, single + [item for item in items if item[0] not in plain_ids]
+    return results, single + others
 
 
-def _leaf_domains(dao: CertificateDAO) -> Iterator[tuple[int, str]]:
-    for batch in dao.iter_leaf_domains():
-        yield from batch
+def _occurrences(items: list[tuple[tuple[int, ...], str]]) -> int:
+    return sum(len(ids) for ids, _ in items)
 
 
-def _save_results(dao: CertificateDAO, database: Database, results: list[tuple[str, int]]) -> None:
+def _leaf_domains(dao: CertificateDAO) -> Iterator[tuple[tuple[int, ...], str]]:
+    """Yield each distinct leaf domain with the ids of its occurrences, in domain order."""
+    conn = dao.connection
+    conn.execute(DROP_CHAIN_WORK)
+    conn.execute(CREATE_CHAIN_WORK)
+    if conn.in_transaction:
+        conn.commit()
+    try:
+        after_row, domain, ids = 0, None, []
+        while True:
+            cursor = conn.cursor()
+            cursor.row_factory = None
+            rows = cursor.execute(SELECT_CHAIN_WORK, (after_row, CHAIN_WORK_PAGE_SIZE)).fetchall()
+            if not rows:
+                break
+            for _, leaf_domain, occurrence_id in rows:
+                if ids and leaf_domain != domain:
+                    yield tuple(ids), domain
+                    ids = []
+                domain = leaf_domain
+                ids.append(occurrence_id)
+            after_row = rows[-1][0]
+        if ids:
+            yield tuple(ids), domain
+    finally:
+        conn.execute(DROP_CHAIN_WORK)
+
+
+def _save_results(dao: CertificateDAO, database: Database, results: list[tuple[str, tuple[int, ...]]]) -> None:
     if results:
         with database.transaction():
-            dao.update_signature_validity(results)
+            dao.connection.executemany(UPDATE_SIGNATURE_VALIDITY, ((SIGNATURE_CODES[result], occurrence_id)
+                                                                   for result, ids in results for occurrence_id in ids))
         results.clear()
 
 
 class _Scans:
     """Work queue of the validation: batches of new domains, then the single hosts to re-check first."""
 
-    def __init__(self, dao: CertificateDAO, executor: ThreadPoolExecutor, processes: _SslyzeProcesses) -> None:
-        self.domains = _leaf_domains(dao)
-        self.single: deque[tuple[int, str]] = deque()
+    def __init__(self, domains: Iterator[tuple[tuple[int, ...], str]], executor: ThreadPoolExecutor,
+                 processes: _SslyzeProcesses) -> None:
+        self.domains = domains
+        self.single: deque[tuple[tuple[int, ...], str]] = deque()
         self.pending: dict[Future, int] = {}
         self.executor = executor
         self.processes = processes
@@ -408,11 +455,12 @@ class _Scans:
             items = [self.single.popleft()] if self.single else list(islice(self.domains, SSLYZE_BATCH_SIZE))
             if not items:
                 return
-            self.pending[self.executor.submit(_scan, items, self.processes)] = len(items)
+            self.pending[self.executor.submit(_scan, items, self.processes)] = _occurrences(items)
 
 
 def _scan_domains(dao: CertificateDAO, database: Database, scans: _Scans, pbar) -> None:
-    results: list[tuple[str, int]] = []
+    results: list[tuple[str, tuple[int, ...]]] = []
+    unsaved = 0     # occurrences of the results
     try:
         scans.submit()
         while scans.pending:
@@ -421,10 +469,12 @@ def _scan_domains(dao: CertificateDAO, database: Database, scans: _Scans, pbar) 
                 size = scans.pending.pop(future)
                 scan_results, single = future.result()
                 results.extend(scan_results)
+                unsaved += sum(len(ids) for _, ids in scan_results)
                 scans.single.extend(single)
-                pbar.update(size - len(single))
-            if len(results) >= CHAIN_VALIDATION_SAVE_EVERY:
+                pbar.update(size - _occurrences(single))
+            if unsaved >= CHAIN_VALIDATION_SAVE_EVERY:
                 _save_results(dao, database, results)
+                unsaved = 0
             scans.submit()
     finally:
         # Also on interruption, keep the results already collected
@@ -445,9 +495,15 @@ def validate_leaf_certificate_chains(dao: CertificateDAO, database: Database) ->
     executor = ThreadPoolExecutor(max_workers=CHAIN_VALIDATION_WORKERS)
     processes = _SslyzeProcesses(sslyze)
     try:
-        with progress_bar(dao.get_certificates_count(), " 🔍  [magenta bold]Processing Certificates[/magenta bold]",
-                          "magenta") as pbar:
-            _scan_domains(dao, database, _Scans(dao, executor, processes), pbar)
+        # Each domain is scanned once for all its occurrences: what is logged for it is logged for each one
+        with log_replay.replaying(), progress_bar(dao.get_certificates_count(),
+                                                  " 🔍  [magenta bold]Processing Certificates[/magenta bold]",
+                                                  "magenta") as pbar:
+            domains = _leaf_domains(dao)
+            try:
+                _scan_domains(dao, database, _Scans(domains, executor, processes), pbar)
+            finally:
+                domains.close()
     except KeyboardInterrupt:
         logging.info("Interrupt signal (SIGINT) received: shutting down...")
         raise

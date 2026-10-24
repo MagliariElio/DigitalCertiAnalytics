@@ -4,6 +4,7 @@
 #   ./dca --help                show all the options (also when started without options)
 #   ./dca --leaf_analysis       analyse the leaf certificates of res/certs_polito.json
 #   ./dca --plot_all_results    create the charts
+#   ./dca --compress_input      compress res/certs_polito.json (about 5 times smaller, read directly)
 #
 # Install the project first with install.sh.
 

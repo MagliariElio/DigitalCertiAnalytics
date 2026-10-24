@@ -3,6 +3,7 @@ rem Starts DigitalCertiAnalytics with the project's own Python, from any folder.
 rem   dca.bat --help                show all the options (also when started without options)
 rem   dca.bat --leaf_analysis       analyse the leaf certificates of res\certs_polito.json
 rem   dca.bat --plot_all_results    create the charts
+rem   dca.bat --compress_input      compress res\certs_polito.json (about 5 times smaller, read directly)
 rem Double-clicked, it shows the options, asks which ones to run and keeps the window open.
 rem Install the project first with install.bat. This file must stay ASCII with CRLF line endings.
 setlocal
@@ -40,6 +41,7 @@ exit /b %ERRORLEVEL%
 "%DCA_PYTHON%" -m analysis.main --help
 echo.
 echo Type the options to run, for example:  --leaf_analysis --plot_leaf_results
+echo To save disk space, --compress_input makes res\certs_polito.json about 5 times smaller.
 :ask
 set "DCA_OPTIONS="
 set /p "DCA_OPTIONS=Options (or just press Enter to close): "

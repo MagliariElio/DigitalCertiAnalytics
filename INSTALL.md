@@ -6,16 +6,19 @@ the files named below.
 
 **At a glance**
 
-- The installer does everything by itself: it downloads Python, the Python packages, ZLint and a MongoDB database
-  server, and checks every download against its official checksum.
+- The installer does everything by itself: it downloads Python, the Python packages and ZLint, and checks every
+  download against its official checksum.
 - **No administrator rights are needed.** Nothing is installed anywhere else on the computer: everything stays inside
   one folder, the *project folder*. To uninstall, delete that folder. (Only on macOS, if you double-click
   `install.command`, macOS may ask for your password once to allow it: see [Way B](#way-b-download-the-zip-file).)
 - **Time:** about 1 minute on a fast connection, and up to 15 minutes on a slow connection or an older computer.
-- **Download:** about 270 MB (on Windows somewhat less, because only the part of MongoDB that is needed is downloaded).
-- **Disk space:** about 600 MB after the installation. About 1.2 GB must be free while it runs, because ZLint is built
-  from its source code and the temporary files are deleted afterwards. The scan file you analyse can be much bigger (up
-  to 80 GB), and the databases created from it need space too.
+- **Download:** about 100 MB when the project's ready-made ZLint is available, otherwise about 220 MB, because ZLint
+  is then built from its source code.
+- **Disk space:** about 170 MB after the installation, about 250 MB on Linux, where several Python packages carry their
+  own compiled libraries (and about 25 MB more after the first run, for Python's bytecode cache). While it runs, about 250 MB must be free, or about 1.2 GB when ZLint is built from its source code
+  (the temporary files are deleted afterwards). The scan file you analyse can be much bigger (up to 80 GB, or about
+  16 GB once compressed: see [step 6](#6-add-the-scan-file)), and the databases created from it need space too
+  (under 10 GB for 10 million lines).
 - **Running it again is safe.** It skips what is already installed and repairs what is broken, so "run the installer
   again" is the answer to most problems.
 
@@ -42,7 +45,7 @@ the files named below.
 - **Windows** 10 or 11 (64-bit; a computer with an ARM processor needs Windows 11), **macOS** 11 (Big Sur) or newer, or
   a 64-bit **Linux** system such as Ubuntu, Debian, Fedora, Linux Mint, Rocky Linux or openSUSE. Alpine Linux and the
   other Linux systems based on *musl* are not supported.
-- About 2 GB of free disk space for the installation, plus space for your scan file and its results.
+- About 1.5 GB of free disk space for the installation, plus space for your scan file and its results.
 
 **Choose a good place for the project folder:**
 
@@ -184,21 +187,22 @@ belong to you.
 ### What you will see
 
 The installer prints one section per part (`==> uv`, `==> Python 3.12 and the Python packages`, `==> ZLint`,
-`==> MongoDB server`, `==> Certificate Transparency log list`) and ends with a summary like this one:
+`==> Certificate Transparency log list`, `==> Disk space used by the installation`) and ends with a summary like this
+one:
 
 ```text
 ==> Summary
   [ OK ] Python           Python 3.12.15 in .venv
-  [ OK ] Python packages  10 packages of requirements.txt installed
+  [ OK ] Python packages  9 packages of requirements.txt installed
   [ OK ] sslyze           /Users/you/DigitalCertiAnalytics/.venv/bin/sslyze
   [ OK ] ZLint            v3.6.5-0.20241104164204-989baefda32f (.tools/zlint)
-  [ OK ] MongoDB          8.0.34 (.tools/mongodb, started by the program when needed)
   [ OK ] CT log list      res/log_list.json (165 logs)
   [ OK ] Launcher         /Users/you/DigitalCertiAnalytics/dca
   [INFO] Scan file        res/certs_polito.json is not there yet
                           What to do: Put the ZGrab2 output there before running the *_analysis options (see INSTALL.md, step 6 "Add the scan file").
-  [WARN] Disk space       78 GB free
-                          What to do: A large scan (up to 80 GB) and its SQLite databases need much more space: ...
+  [WARN] Disk space       18 GB free
+                          What to do: A large scan and its SQLite databases need more space (about 30 GB for an 80 GB scan compressed with --compress_input): ...
+  [INFO] Installation     .tools 52 MB, .venv 106 MB (to uninstall, delete the project folder)
 
 DigitalCertiAnalytics is installed.
 ```
@@ -206,10 +210,16 @@ DigitalCertiAnalytics is installed.
 - **`[ OK ]`** (green): this part works.
 - **`[INFO]`**: for your information. *Scan file* is `INFO` until you add your scan file (see
   [step 6](#6-add-the-scan-file)).
-- **`[WARN]`** (yellow): it works, but read the *What to do* line. *Disk space* is `WARN` when less than 100 GB are free;
+- **`[WARN]`** (yellow): it works, but read the *What to do* line. *Disk space* is `WARN` when less than 30 GB are free;
   that matters only for very large scans.
 - **`[FAIL]`** (red): this part does not work yet. The *What to do* line says how to fix it; then run the installer
   again. See also [Troubleshooting](#9-troubleshooting).
+
+In the section *Disk space used by the installation*, the installer removes what the program does not need (uv and its
+downloads, the parts of Python that the program never uses, and the MongoDB server of older versions). If an older
+version left its MongoDB data in the folder `data/mongodb`, the installer shows its size and asks *"Delete ... now?
+[y/N]"*: those are ZLint results that the program no longer reads (it keeps them in its databases now); answer `y` to
+free the space, or press **Enter** to keep them.
 
 A copy of everything the installer printed is saved in the file `.tools/install.log` inside the project folder, which
 is useful if you ask someone for help.
@@ -245,8 +255,8 @@ the message). If a line says `[FAIL]`, it ends with
 
 ## 6. Add the scan file
 
-The program analyses the output of a ZGrab2 scan (see [the README](README.md#tool-used-zgrab2)). It always reads it
-from this file inside the project folder:
+The program analyses the output of a ZGrab2 scan (see [the README](README.md#tool-used-zgrab2)). It reads it from
+this file inside the project folder:
 
 ```text
 res/certs_polito.json
@@ -260,6 +270,24 @@ res/certs_polito.json
 The file can be very large (up to 80 GB), so make sure the disk has enough free space for it and for the databases
 created from it. Run the check of [step 5](#5-check-that-everything-works) again: the *Scan file* line now says
 `[ OK ]` with the size of the file.
+
+**To save disk space**, compress the file once (it then takes about a fifth of the space, and the program reads it just
+as fast):
+
+| System        | Command                          |
+|---------------|----------------------------------|
+| Windows       | `dca.bat --compress_input`       |
+| macOS, Linux  | `./dca --compress_input`         |
+
+It writes `res/certs_polito.json.zst`, checks it against the original, and then asks whether to delete the original
+file: type `y` and press **Enter** to delete it, or just **Enter** to keep it (you can delete it yourself later). It
+needs free space for the compressed file, about a third of the original; an 80 GB file takes a few minutes. In the
+windows of `dca.command` and `dca.bat` you can type `--compress_input` as an option too.
+
+A file you have already compressed yourself also works, if it has one of these names: `certs_polito.json.zst`,
+`certs_polito.json.gz`, `certs_polito.json.xz` or `certs_polito.json.bz2`. Files made with `xz` or `bzip2` are read much
+more slowly: convert them with `--compress_input` once. If both the plain and a compressed file are there, the plain
+`certs_polito.json` is used.
 
 *Advanced (macOS, Linux):* to avoid copying a very large file, you can put a link to it instead:
 `ln -s "/path/to/your/scan.json" res/certs_polito.json`.
@@ -305,8 +333,11 @@ Good to know:
 
 - Start with `--leaf_analysis` (or `--intermediate_analysis`, `--root_analysis`): it reads the scan file and creates the
   database that the other options work on.
-- `--leaf_zlint_check` and `--intermediate_zlint_check` store their results in MongoDB. The program starts the MongoDB
-  server included in the project by itself and stops it at the end. You do not need to do anything.
+- `--leaf_zlint_check` and `--intermediate_zlint_check` store their results in the database of the certificate type,
+  next to the other results. You do not need to do anything.
+- Databases created by an older version of the program must be created again: the program says so (*"... was created
+  by an older version of DigitalCertiAnalytics: run the analysis again with --leaf_analysis to recreate it."*). Run
+  that analysis again; the new databases are many times smaller.
 - `--leaf_ocsp_analysis`, `--intermediate_ocsp_analysis`, `--root_ocsp_analysis` and `--leaf_chain_validation` contact
   servers on the internet.
 - **The results** are in the folder `src/analysis` inside the project folder: one folder per certificate type
@@ -315,8 +346,7 @@ Good to know:
 - **To stop the program**, press **Ctrl + C** and wait until it has stopped. What is already saved stays saved, and an
   interrupted OCSP analysis continues where it stopped the next time. On Windows, the window then asks *"Terminate
   batch job (Y/N)?"*: type `Y` and press **Enter** (either answer is fine). Prefer Ctrl + C to closing the window. (On
-  macOS and Linux, closing the window while ZLint runs works like Ctrl + C: the results are saved and the MongoDB server
-  is stopped.)
+  macOS and Linux, closing the window while ZLint runs works like Ctrl + C: the results computed so far are saved.)
 - If you type an option wrongly in the window of `dca.command` or `dca.bat` (for example without the two dashes), the
   window says so and asks again.
 - A full analysis of a large scan can take many hours. Keep the computer plugged in, and set it not to go to sleep. On
@@ -332,8 +362,10 @@ Good to know:
 ### Update to the newest version
 
 - **If you installed with the one-line command** (sections 2B, 3A and 4): run the same line again. It downloads the
-  newest version into the same folder and **keeps your data**: the scan file `res/certs_polito.json`, the databases and
-  charts in `src/analysis`, and the MongoDB data in `data`. Then it updates the installation.
+  newest version into the same folder and **keeps your data**: the scan file `res/certs_polito.json` (also
+  compressed), the databases and charts in `src/analysis`, and the old MongoDB data in `data` if there is any. Then it
+  updates the installation. Databases made by an older version must then be created again (see
+  [step 7](#7-run-the-program)).
 - **If you installed from a ZIP file:** open a terminal **in the project folder** (see
   [step 5](#5-check-that-everything-works); on Windows open **PowerShell** there, for example by typing `powershell`
   instead of `cmd` in the address bar), then run the one-line command of your system
@@ -347,7 +379,7 @@ Run the installer again, the same way you installed it (double-click `install.ba
 `sh install.sh` in the project folder). It checks every part, skips what works and reinstalls what is broken or
 missing.
 
-To reinstall ZLint and MongoDB even though they look fine, add `--force`:
+To reinstall ZLint even though it looks fine, add `--force`:
 
 | System        | Command                     |
 |---------------|-----------------------------|
@@ -360,22 +392,23 @@ previous list is kept as `res/log_list.json.old`. For a completely clean reinsta
 and `.venv` inside the project folder and run the installer again. Your results and data are not in those folders.
 (On macOS, folders whose name starts with a dot are hidden: press **Cmd + Shift + .** in Finder to show them.)
 
-Other installer options: `--skip mongodb` (do not install the MongoDB server, for example because you already run your
-own) and `--only zlint,mongodb,log_list` (install only those parts).
+Other installer options: `--only zlint,log_list` (install only those parts) and `--skip zlint` (leave ZLint out, for
+example because `DCA_ZLINT_PATH` names your own). The `mongodb` name of older versions is still accepted and ignored.
 
 ### Move the project folder
 
 You can move or rename the project folder, but the installation remembers where it was. After moving it, `dca` says
 *"DigitalCertiAnalytics is not installed yet, or the project folder was moved."*: run the installer again in the new
-place. It takes only a few seconds, because nothing is downloaded again.
+place. It takes less than a minute: uv and the Python packages are downloaded again (about 60 MB), Python and ZLint
+are not.
 
 ### Uninstall
 
 1. Make sure the program is not running: let it finish, or press **Ctrl + C** in its window and wait until it has
    stopped (the window of `dca.command` or `dca.bat` then says *"Press Enter to close this window"* or *"Press any key
    to continue"*). Then close the window.
-2. Copy anything you want to keep to another place: your scan file `res/certs_polito.json`, the results in
-   `src/analysis`, and the ZLint results in `data`.
+2. Copy anything you want to keep to another place: your scan file `res/certs_polito.json` (or
+   `res/certs_polito.json.zst`) and the results in `src/analysis` (the ZLint results are in its databases).
 3. Delete the project folder.
 
 That is all: nothing was installed anywhere else, and no settings of the computer were changed. On Windows, if a file
@@ -405,12 +438,15 @@ message itself. Here are the most common ones.
 - If the network blocks some websites, ask your IT department to allow these addresses: `github.com`,
   `objects.githubusercontent.com`, `release-assets.githubusercontent.com`, `raw.githubusercontent.com`,
   `codeload.github.com`, `releases.astral.sh`, `pypi.org`, `files.pythonhosted.org`, `go.dev`, `dl.google.com`,
-  `proxy.golang.org`, `sum.golang.org`, `fastdl.mongodb.org`, `www.gstatic.com`.
+  `proxy.golang.org`, `sum.golang.org`, `www.gstatic.com`.
 
 ### ZLint: "Building ZLint failed"
 
-ZLint is built from its source code, which Go downloads from `proxy.golang.org`. If that fails (usually a network that
-blocks it), the installer installs the official ready-made ZLint 3.6.4 instead, and the summary shows:
+The installer first downloads the ready-made ZLint that the project publishes on GitHub (7 MB), and uses it only if it
+is exactly the pinned build (same SHA-256). When it is not available (the message says *"The ready-made ZLint cannot be
+used (it is not published yet): it is built from its source code instead."*), ZLint is built from its source code,
+which Go downloads from `proxy.golang.org`. If that fails too (usually a network that blocks it), the installer
+installs the official ready-made ZLint 3.6.4 instead, and the summary shows:
 
 ```text
   [WARN] ZLint  prebuilt ZLint 3.6.4 (the analysis uses v3.6.5-0.20241104164204-989baefda32f)
@@ -427,38 +463,9 @@ The ready-made ZLint is an Intel program. On a Mac with Apple Silicon it needs A
 the message says so and gives the command that installs it, `softwareupdate --install-rosetta --agree-to-license`
 (it asks for your password). Then run the installer again.
 
-### MongoDB "cannot be installed on this computer"
-
-```text
-    [WARN] The MongoDB server cannot be installed on this computer: this processor has no AVX instructions,
-           which MongoDB 5.0 and newer need (Intel 2011 or newer).
-```
-
-This is a warning, not an error: **everything else works**. Only the ZLint checks (`--leaf_zlint_check`,
-`--intermediate_zlint_check`) need MongoDB. The reason is in the message:
-
-- **The processor is too old**: no AVX instructions (some Intel Celeron, Pentium and Atom processors, very old PCs and
-  some virtual machines), or an ARM processor older than ARMv8.2 (for example a Raspberry Pi 4; a Raspberry Pi 5
-  works).
-- **The system has no MongoDB version**: for example NixOS.
-- **A system library is missing** (*"the system library libcurl.so.4 is missing"*): the message gives the command that
-  installs it, for example `sudo apt install libcurl4 openssl` (Ubuntu 24.04 and newer: `sudo apt install libcurl4t64
-  openssl`) or `sudo dnf install libcurl openssl xz-libs`. This needs your administrator password. Then run the
-  installer again.
-- **Windows: "The Microsoft Visual C++ runtime that MongoDB needs is not installed."** Download and run
-  <https://aka.ms/vs/17/release/vc_redist.x64.exe> (it asks once for administrator permission; on a computer managed by
-  an IT department, ask them), then run `install.bat` again.
-
-To run the ZLint checks anyway, install MongoDB yourself (<https://www.mongodb.com/docs/manual/administration/install-community/>)
-and keep it running on this computer (`localhost`, port 27017): the program finds and uses it by itself, and
-`./install.sh --check` (or `install.bat --check`) then shows `[ OK ]`. Or run the ZLint checks on another computer.
-
-Linux distributions without an official MongoDB version (for example Fedora, Arch Linux or Manjaro) get the closest
-compatible version, which the installer tests before keeping it.
-
 ### Not enough disk space
 
-*"Not enough free disk space for building ZLint: 1.0 GB are needed, only 0.4 GB are free on the disk of ..."*
+*"Not enough free disk space for building ZLint: 1.3 GB are needed, only 0.4 GB are free on the disk of ..."*
 
 Free some disk space (empty the Trash or Recycle Bin, delete large files you do not need), or move the project folder
 to a disk with more free space, then run the installer again. Remember that the scan file and its databases need much
@@ -471,7 +478,7 @@ programs ..."*
 
 - The project folder may be on a USB stick, a network drive or a disk that does not allow running programs. Move it to
   your home folder and run the installer again.
-- An antivirus may have blocked or deleted a downloaded program (ZLint and MongoDB are sometimes flagged by mistake).
+- An antivirus may have blocked or deleted a downloaded program (ZLint is sometimes flagged by mistake).
   Allow the project folder in the antivirus (this may need your IT department), then run the installer again.
 - An antivirus that scans every file can make the installation and the analysis much slower. That is normal.
 
@@ -504,27 +511,21 @@ programs ..."*
 
 - *"DigitalCertiAnalytics is not installed yet, or the project folder was moved."* Run the installer (again) in the
   project folder.
-- *"The file '.../res/certs_polito.json' does not exist or has a different name"*: put the scan file in place (see
-  [step 6](#6-add-the-scan-file)).
+- *"The file '.../res/certs_polito.json' does not exist or has a different name (accepted names: ..."*: put the scan
+  file in place (see [step 6](#6-add-the-scan-file)).
 - *"ZLint is not installed, so the certificates cannot be checked with ZLint."* or *"sslyze is not installed..."*: run
   the installer again.
-- *"Port 27017 of this computer is used by another program, which is not a MongoDB server ..."*: another program uses
-  the port that MongoDB needs. Close that program (or restart the computer) and run the analysis again.
-- *"Another MongoDB server ... is using the data folder ... but does not answer"*: wait a minute and try again; if it
-  keeps happening, restart the computer.
-- *"The bundled MongoDB server is left running because another program is connected to it"*: another analysis, or a
-  tool such as MongoDB Compass, is still using it. The last analysis that uses it stops it; or close that program.
-- *"The MongoDB server included with the project stopped right after starting ..."* or *"did not become ready ..."*:
-  the reason is at the end of the file `data/mongodb.log`. Restarting the computer or running the installer again
-  usually fixes it.
+- *"The leaf database '...' was created by an older version of DigitalCertiAnalytics ..."*: run the analysis it names
+  (for example `--leaf_analysis`) to create the database again.
+- *"Not enough free disk space to compress ..."*: free some space (the compressed file needs about a third of the
+  original), or compress the file on another disk with enough space.
 
 ### Asking for help
 
 Please include:
 
 - the output of `install.bat --check` (Windows) or `./install.sh --check` (macOS, Linux);
-- the file `.tools/install.log` (the last installation) and, for problems while the program runs, `src/app.log`
-  and `data/mongodb.log`.
+- the file `.tools/install.log` (the last installation) and, for problems while the program runs, `src/app.log`.
 
 ---
 
@@ -532,7 +533,7 @@ Please include:
 
 The installer is the recommended way, also for developers. It uses
 [uv](https://docs.astral.sh/uv/) 0.12.24 to install Python 3.12 and the packages, and `scripts/install_tools.py` for
-ZLint, MongoDB and the CT log list. If you prefer to set things up yourself:
+ZLint and the CT log list. If you prefer to set things up yourself:
 
 ### Python and the packages
 
@@ -562,19 +563,6 @@ python -m analysis.main --help
 `dca` and `dca.bat` do the same with the `.venv` of the project folder, so they also work for a `.venv` you created
 yourself.
 
-### Your own MongoDB server
-
-Install MongoDB Community Server (<https://www.mongodb.com/docs/manual/administration/install-community/>) and run it
-as a service on `localhost:27017`, for example on Linux:
-
-```bash
-sudo systemctl enable --now mongod
-```
-
-The program uses any MongoDB server that answers on `mongodb://localhost:27017/` and never stops it. The bundled server
-is started only when nothing answers there and `.tools/mongodb` exists. To leave the bundled server out, install with
-`--skip mongodb`.
-
 ### Your own ZLint
 
 The analysis uses ZLint at commit `989baefda32f5d50969ceafacc6d54215e28cc7b` (Go pseudo-version
@@ -585,8 +573,10 @@ go install -trimpath -ldflags="-s -w -X main.version=v3.6.5-0.20241104164204-989
     github.com/zmap/zlint/v3/cmd/zlint@989baefda32f5d50969ceafacc6d54215e28cc7b
 ```
 
-This is the command the installer runs (with every Go folder inside `.tools/cache/go`, deleted afterwards). The program
-looks for ZLint in this order:
+This is the command the installer runs when the ready-made program is not available (with every Go folder inside
+`.tools/cache/go`, deleted afterwards). With Go 1.27.2 it gives exactly the programs that the workflow
+`.github/workflows/zlint-binaries.yml` publishes in the release `zlint-v3.6.5-0.20241104164204-989baefda32f` (their
+SHA-256 are in `ZLINT_BUILD_SHA256` in `scripts/install_tools.py`). The program looks for ZLint in this order:
 
 1. the file named by the environment variable `DCA_ZLINT_PATH`;
 2. `.tools/zlint/zlint` (`zlint.exe` on Windows), where the installer puts it;
@@ -603,7 +593,7 @@ it as `python -m sslyze`.
 
 ### Tests
 
-The tests need no network, MongoDB, ZLint or sslyze, which they simulate with small shell scripts. They run on macOS
+The tests need no network, ZLint or sslyze, which they simulate with small shell scripts. They run on macOS
 and Linux; on Windows, run them in WSL (the GitHub Action runs them on Linux and macOS). From the project folder, with
 the environment active:
 
@@ -613,8 +603,10 @@ pytest
 flake8 --extend-exclude .tools,data
 ```
 
-With the installer's `.venv`, which has no `pip`, install the two tools with the installer's uv instead (macOS, Linux;
-if the installer used a `uv` already on your computer, `.tools/uv` does not exist: use `uv` instead):
+With the installer's `.venv`, which has no `pip`, install the two tools with the installer's uv instead. The installer
+removes its uv at the end unless you run it with `DCA_KEEP_UV=1` (`DCA_KEEP_UV=1 sh install.sh`; Windows Command
+Prompt: `set DCA_KEEP_UV=1`, then `install.bat`). If the installer used a `uv` already on your computer, `.tools/uv`
+does not exist: use `uv` instead. On macOS and Linux:
 
 ```bash
 UV_CACHE_DIR=.tools/cache/uv .tools/uv/uv pip install --python .venv/bin/python pytest flake8
@@ -629,5 +621,6 @@ On Windows (Command Prompt), flake8 works too: `set UV_CACHE_DIR=.tools\cache\uv
 `--extend-exclude .tools,data` keeps flake8 out of the installed tools, which contain the Python standard library.
 
 The GitHub Action `.github/workflows/install.yml` runs the installer on Linux, macOS (Apple Silicon and Intel) and
-Windows on every push and pull request, then `--check`, the tests (Linux and macOS), flake8 and a short analysis of a
-generated scan file.
+Windows on every push and pull request, then `--check`, a check of the installation size (for example on macOS
+arm64 `.tools` at most 80 MiB and `.venv` at most 130 MiB), the tests (Linux and macOS), flake8 and a short analysis of a generated scan file (also
+compressed, and with ZLint).

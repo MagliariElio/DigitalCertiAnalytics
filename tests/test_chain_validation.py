@@ -101,23 +101,51 @@ def test_chain_validation(sslyze, open_database):
         ("site0.example.test", "Valid"), ("site1.example.test", "Not Valid"), ("site2.example.test", "Valid"),
         ("site3.example.test", "Valid"), ("site4.example.test", "Valid"), ("unknown.example.test", "Error"),
         ("down.example.test", "Error")]
-    assert sslyze.invocations() == [domains]
+    # The domains in their sort order
+    assert sslyze.invocations() == [sorted(domains)]
 
 
 def test_batches_and_duplicate_hosts_in_any_case(sslyze, open_database, monkeypatch):
     monkeypatch.setattr(chain_utils, "SSLYZE_BATCH_SIZE", 3)
-    domains = ["site0.example.test", "Site1.Example.Test", "site1.example.test", "site2.example.test",
-               "site3.example.test", "-option.example.test", "host.example.test:8443"]
+    domains = ["site0.example.test", "site1.Example.Test", "site1.example.test", "site2.example.test",
+               "site3.example.test", "-option.example.test", "host.example.test:8443", "site2.example.test"]
     database, dao = _database_with(open_database, domains)
 
     validate_leaf_certificate_chains(dao, database)
 
     assert [validity for _, validity in _validity(database)] == [
-        "Valid", "Not Valid", "Not Valid", "Valid", "Valid", "Valid", "Valid"]
-    # Each host once per batch; names sslyze would not report unchanged are checked alone as before
+        "Valid", "Not Valid", "Not Valid", "Valid", "Valid", "Valid", "Valid", "Valid"]
+    # Batches of 3 distinct domains in sort order, each host once per batch; names sslyze would not report unchanged
+    # are checked alone as before, and so is a batch with a single plain host
     assert sorted(sslyze.invocations()) == sorted([
-        ["site0.example.test", "Site1.Example.Test"], ["site2.example.test", "site3.example.test"],
-        ["-option.example.test"], ["host.example.test:8443"]])
+        ["-option.example.test"], ["host.example.test:8443"], ["site0.example.test"],
+        ["site1.Example.Test", "site2.example.test"], ["site3.example.test"]])
+
+
+def test_each_domain_is_scanned_once_and_logged_per_occurrence(sslyze, open_database, monkeypatch, caplog):
+    """The occurrences of a domain (also across pages of the work table) share one scan; what is logged for the
+    domain is logged once per occurrence, as when every occurrence was scanned."""
+    monkeypatch.setattr(chain_utils, "CHAIN_WORK_PAGE_SIZE", 2)
+    domains = ["down.example.test", "site0.example.test", "down.example.test", "down.example.test"]
+    database, dao = _database_with(open_database, domains)
+
+    assert list(chain_utils._leaf_domains(dao)) == [((1, 3, 4), "down.example.test"), ((2,), "site0.example.test")]
+    assert database.conn.execute("SELECT name FROM sqlite_temp_master WHERE name = 'ChainWork'").fetchall() == []
+    validate_leaf_certificate_chains(dao, database)
+
+    assert _validity(database) == [("down.example.test", "Error"), ("site0.example.test", "Valid"),
+                                   ("down.example.test", "Error"), ("down.example.test", "Error")]
+    assert sslyze.invocations() == [["down.example.test", "site0.example.test"]]
+    message = "Error checking the certificate chain for hostname down.example.test: 'NoneType' object has no attribute 'get'"
+    assert caplog.messages.count(message) == 3
+
+    # Alone: the single-host check is logged per occurrence too
+    caplog.clear()
+    database.conn.execute("DELETE FROM Occurrences WHERE occurrence_id = 2")
+    database.conn.commit()
+    validate_leaf_certificate_chains(dao, database)
+    assert sslyze.invocations()[1:] == [["down.example.test"]]
+    assert caplog.messages.count(message) == 3
 
 
 def test_failed_batch_falls_back_to_single_hosts(sslyze, open_database, caplog):
@@ -127,7 +155,7 @@ def test_failed_batch_falls_back_to_single_hosts(sslyze, open_database, caplog):
     validate_leaf_certificate_chains(dao, database)
 
     assert [validity for _, validity in _validity(database)] == ["Valid", "Valid", "Not Valid", "Error"]
-    assert sslyze.invocations()[0] == domains
+    assert sslyze.invocations()[0] == sorted(domains)
     assert sorted(sslyze.invocations()[1:]) == sorted([domain] for domain in domains)
     assert "sslyze scan of 4 hosts failed (exit code 1)" in caplog.text
     # The no-connectivity host is logged as when it was scanned alone
@@ -164,11 +192,11 @@ def test_batch_timeout_counts_each_host_once(sslyze, monkeypatch):
 
     monkeypatch.setattr(chain_utils._SslyzeProcesses, "run", record_timeout)
     hosts = [f"site{i}.example.test" for i in range(10)]
-    items = list(enumerate(hosts + [host.upper() for host in hosts]))
+    items = [((i,), host) for i, host in enumerate(hosts + [host.upper() for host in hosts])]
     processes = chain_utils._SslyzeProcesses()
 
     assert len(chain_utils._scan_batch(items, processes)[0]) == 20
-    assert len(chain_utils._scan_batch(items + [(20, "site10.example.test")], processes)[0]) == 21
+    assert len(chain_utils._scan_batch(items + [((20,), "site10.example.test")], processes)[0]) == 21
     assert timeouts == [300, 600]
     assert [len(invocation) for invocation in sslyze.invocations()] == [10, 11]
 
@@ -195,7 +223,7 @@ def test_crashed_batch_falls_back_to_single_hosts(sslyze, open_database, caplog)
 
 def test_interrupted_batch_stores_nothing(sslyze, open_database):
     database, dao = _database_with(open_database, ["interrupted.example.test", "site1.example.test"])
-    database.conn.execute("UPDATE Certificates SET signature_valid = 'Unsupported Key Type'")
+    database.conn.execute("UPDATE Occurrences SET signature_valid = 3")     # 'Unsupported Key Type'
     database.conn.commit()
 
     validate_leaf_certificate_chains(dao, database)
@@ -209,7 +237,7 @@ def test_interrupt_saves_results_and_kills_running_scans(sslyze, open_database, 
     monkeypatch.setattr(chain_utils, "CHAIN_VALIDATION_WORKERS", 2)
     domains = ["site0.example.test", "site1.example.test", "hang0.example.test", "hang1.example.test"]
     database, dao = _database_with(open_database, domains)
-    database.conn.execute("UPDATE Certificates SET signature_valid = 'Unsupported Key Type'")
+    database.conn.execute("UPDATE Occurrences SET signature_valid = 3")     # 'Unsupported Key Type'
     database.conn.commit()
 
     real_wait = chain_utils.wait

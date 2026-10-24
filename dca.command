@@ -12,6 +12,7 @@ status=$?
 if [ "$status" -eq 0 ]; then
     echo
     echo "Type the options to run, for example:  --leaf_analysis --plot_leaf_results"
+    echo "To save disk space, --compress_input makes res/certs_polito.json about 5 times smaller."
     while :; do
         printf 'Options (or just press Enter to close): '
         read -r options || exit 0

@@ -1,7 +1,7 @@
 # Runs the installer from the checkout on Linux, macOS (Apple Silicon and Intel) and Windows, exactly as a user
 # would, then checks the installation, runs the tests (Linux and macOS) and flake8 with the installed .venv Python,
-# and makes a short analysis of a generated scan file with the dca launcher (leaf analysis, charts, and ZLint with the
-# bundled MongoDB).
+# checks the size of the installation, and makes a short analysis of a generated scan file with the dca launcher (leaf
+# analysis, charts, the scan file compressed with --compress_input, and ZLint with its results in the SQLite database).
 name: Installer
 
 on:
@@ -25,19 +25,29 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # tools_mib, venv_mib: the size limits of the installation check (several Linux wheels, numpy above all,
+          # carry their own compiled libraries, so the Linux .venv is the largest)
           - name: Linux x86_64
             os: ubuntu-latest
             venv_python: .venv/bin/python
+            tools_mib: 90
+            venv_mib: 210
           - name: macOS arm64
             os: macos-latest
             venv_python: .venv/bin/python
+            tools_mib: 80
+            venv_mib: 130
           # macos-13 has been retired; macos-15-intel is GitHub's x86_64 macOS runner
           - name: macOS x86_64
             os: macos-15-intel
             venv_python: .venv/bin/python
+            tools_mib: 80
+            venv_mib: 140
           - name: Windows x86_64
             os: windows-latest
             venv_python: .venv/Scripts/python.exe
+            tools_mib: 100
+            venv_mib: 150
     env:
       DCA_NO_PAUSE: "1"          # install.bat must not wait for a key press
       PYTHONUTF8: "1"
@@ -78,21 +88,51 @@ jobs:
           sh install.sh | tee rerun.log
           grep -q "already installed" rerun.log
 
+      # A regression guard (about 55 MiB in .tools and 110 MiB in .venv on macOS arm64): MongoDB, the uv cache, uv
+      # itself and the unused parts of Python must not come back
+      - name: Check the size of the installation
+        env:
+          TOOLS_MIB: ${{ matrix.tools_mib }}
+          VENV_MIB: ${{ matrix.venv_mib }}
+        run: |
+          "$VENV_PYTHON" - <<'EOF'
+          import os
+          import sys
+          from pathlib import Path
+
+          sys.path.insert(0, "scripts")
+          import install_tools
+
+          limits = {".tools": int(os.environ["TOOLS_MIB"]), ".venv": int(os.environ["VENV_MIB"])}
+          failed = False
+          for name, limit in limits.items():
+              size = install_tools.tree_size(Path(name)) / install_tools.MB
+              print(f"{name}: {size:.1f} MiB (limit {limit} MiB)")
+              failed = failed or size > limit
+          for leftover in (".tools/mongodb", ".tools/cache/uv", ".tools/cache/go", ".tools/uv"):
+              if Path(leftover).exists():
+                  print(f"{leftover} should have been removed")
+                  failed = True
+          sys.exit(1 if failed else 0)
+          EOF
+
       # --- Tests and lint with the installed .venv Python -------------------------------------------------------------
+
+      # The installer removes its own uv at the end, so the tests get one from the uv project
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.12.24"
+          enable-cache: false
 
       - name: Install pytest and flake8 into .venv
         env:
-          UV_CACHE_DIR: .tools/cache/uv
           UV_NO_CONFIG: "1"
           UV_PYTHON_DOWNLOADS: never
-        run: |
-          uv=.tools/uv/uv
-          [ -x "$uv" ] || uv=.tools/uv/uv.exe
-          [ -x "$uv" ] || uv=$(command -v uv)
-          "$uv" pip install --python "$VENV_PYTHON" --exclude-newer 2026-10-01T00:00:00Z pytest flake8
+        run: uv pip install --python "$VENV_PYTHON" --exclude-newer 2026-10-01T00:00:00Z pytest flake8
 
-      # The tests use small shell scripts with a shebang as stand-ins for sslyze, ZLint and mongod, and POSIX signals
-      # and process groups, so they run on Linux and macOS only
+      # The tests use small shell scripts with a shebang as stand-ins for sslyze and ZLint, and POSIX signals and
+      # process groups, so they run on Linux and macOS only
       - name: Tests (pytest)
         if: runner.os != 'Windows'
         run: '"$VENV_PYTHON" -m pytest'
@@ -151,39 +191,68 @@ jobs:
           assert charts, "no charts were drawn"
           EOF
 
-      - name: ZLint with the bundled MongoDB (dca)
+      # Without a terminal --compress_input keeps the original file: it is deleted here, so the compressed one is read
+      - name: Compress the scan file and analyse it again (dca)
+        if: runner.os != 'Windows'
+        run: |
+          ./dca --compress_input
+          rm res/certs_polito.json
+          ./dca --delete_leaf_db --leaf_analysis
+
+      - name: Compress the scan file and analyse it again (dca.bat)
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: |
+          call dca.bat --compress_input || exit /b 1
+          del res\certs_polito.json || exit /b 1
+          call dca.bat --delete_leaf_db --leaf_analysis
+
+      - name: Check the compressed scan file and the new database
+        run: |
+          "$VENV_PYTHON" - <<'EOF'
+          import sqlite3
+          from pathlib import Path
+
+          scan = Path("res/certs_polito.json.zst")
+          assert scan.is_file() and not Path("res/certs_polito.json").exists()
+          with sqlite3.connect("src/analysis/leaf/leaf_certificates.db") as db:
+              count = db.execute("SELECT COUNT(*) FROM Certificates").fetchone()[0]
+          print(f"{scan}: {scan.stat().st_size} bytes, {count} certificates in the database")
+          assert count == 20, count
+          EOF
+
+      - name: ZLint, with the results in the SQLite database (dca)
         if: runner.os != 'Windows'
         run: ./dca --leaf_zlint_check
 
-      - name: ZLint with the bundled MongoDB (dca.bat)
+      - name: ZLint, with the results in the SQLite database (dca.bat)
         if: runner.os == 'Windows'
         shell: cmd
         run: dca.bat --leaf_zlint_check
 
-      - name: Read the ZLint results back from MongoDB
+      - name: Read the ZLint results back from the SQLite database
         run: |
           mkdir -p zlint-results
           cd zlint-results
           python=../$VENV_PYTHON
-          "$python" ../src/analysis/zlint_analysis/reading_zlint_results.py
+          "$python" ../src/analysis/zlint_analysis/reading_zlint_results.py leaf
           head -n 5 certificates_result_summary.csv
           test "$(wc -l < certificates_result_summary.csv)" -gt 1
 
-      - name: Check that the bundled MongoDB server was stopped
+      - name: Check that no ZLint program is left running
         if: runner.os != 'Windows'
         run: |
-          if pgrep -fl ".tools/mongodb/bin/mongod"; then
-            echo "The bundled MongoDB server is still running"
+          if pgrep -fl "zlint"; then
+            echo "A ZLint program is still running"
             exit 1
           fi
 
-      - name: Check that the bundled MongoDB server was stopped (Windows)
+      - name: Check that no ZLint program is left running (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $running = Get-Process mongod -ErrorAction SilentlyContinue |
-              Where-Object { $_.Path -like '*\.tools\mongodb\bin\mongod.exe' }
-          if ($running) { Write-Error 'The bundled MongoDB server is still running'; exit 1 }
+          $running = Get-Process zlint -ErrorAction SilentlyContinue
+          if ($running) { Write-Error 'A ZLint program is still running'; exit 1 }
 
       # --- The one-line installation (curl | bash, irm | iex) into a new folder -------------------------------------
       # The project archive is made from this checkout, so the code under test is installed, not the main branch.
@@ -195,9 +264,9 @@ jobs:
           cd "$RUNNER_TEMP"
           cat "$GITHUB_WORKSPACE/install.sh" |
             DCA_INSTALL_DIR="$RUNNER_TEMP/one-line/DigitalCertiAnalytics" \
-            DCA_ARCHIVE_URL="file://$RUNNER_TEMP/project.tar.gz" bash -s -- --skip zlint,mongodb
+            DCA_ARCHIVE_URL="file://$RUNNER_TEMP/project.tar.gz" bash -s -- --skip zlint
           "$RUNNER_TEMP/one-line/DigitalCertiAnalytics/dca" --help > /dev/null
-          "$RUNNER_TEMP/one-line/DigitalCertiAnalytics/install.sh" --check --skip zlint,mongodb
+          "$RUNNER_TEMP/one-line/DigitalCertiAnalytics/install.sh" --check --skip zlint
 
       - name: One-line installation into a new folder (irm | iex)
         if: runner.os == 'Windows'
@@ -226,6 +295,5 @@ jobs:
             .tools/install.log
             .tools/manifest.json
             src/app.log
-            data/mongodb.log
           if-no-files-found: ignore
           retention-days: 14

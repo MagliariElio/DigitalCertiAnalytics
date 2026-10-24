@@ -1,17 +1,17 @@
-"""Tests for StatisticsDAO (new queries, the read-only connections used by the render processes) and for the plot
-indexes of Database.prepare_for_plots."""
+"""Tests for StatisticsDAO (new queries, the read-only connections used by the render processes) and for the
+corrections of Database.prepare_for_plots."""
 import json
 import logging
 import sqlite3
 from pathlib import Path
 
 import pytest
+from test_statistics_facts import V2Database
 
 from dao import statistics_dao
 from dao.statistics_dao import READER_PRAGMAS, StatisticsDAO, temp_store
 from db.database import Database, DatabaseType
 
-SCHEMA_PATH = Path(__file__).resolve().parents[1] / "src" / "db" / "schema_db.sql"
 DAY = 86400
 
 # (organization, country, subject key id, validity in days or None, signature algorithm, key usage)
@@ -30,26 +30,14 @@ CERTIFICATES = [
 
 
 def create_database(path, certificates=CERTIFICATES):
-    """Schema plus one issuer, subject, certificate and extension row per certificate."""
-    connection = sqlite3.connect(path)
-    connection.executescript(SCHEMA_PATH.read_text())
-    with connection:
-        for index, (organization, country, ski, days, algorithm, key_usage) in enumerate(certificates, start=1):
-            connection.execute("INSERT INTO Issuers (issuer_id, organization, country) VALUES (?, ?, ?)",
-                               (index, organization, country))
-            connection.execute("INSERT INTO Subjects (subject_id, subject_key_id, subject_alt_name_is_critical) "
-                               "VALUES (?, ?, 'Not Critical')", (index, ski))
-            connection.execute(
-                "INSERT INTO Certificates (certificate_id, issuer_id, subject_id, version, signature_algorithm, "
-                "key_algorithm, key_length, validity_end, validity_length, authority_info_access_is_critical, "
-                "self_signed, raw) VALUES (?, ?, ?, 3, ?, 'RSA', 2048, '2025-01-01 00:00:00', ?, 'Not Critical', 0, ?)",
-                (index, index, index, algorithm, None if days is None else days * DAY, f"raw{index}"))
-            connection.execute(
-                "INSERT INTO Extensions (certificate_id, key_usage, key_usage_is_critical, extended_key_usage, "
-                "extended_key_usage_is_critical, basic_constraints, crl_distr_point_is_critical) "
-                "VALUES (?, ?, 'Critical', '{\"server_auth\": true}', 'Not Critical', '{\"is_ca\": false}', 'Not Found')",
-                (index, json.dumps(key_usage)))
-    return connection
+    """Leaf schema (also read as intermediate and root) with one certificate, issuer and occurrence per entry; the
+    open connection."""
+    db = V2Database(path)
+    for index, (organization, country, ski, days, algorithm, key_usage) in enumerate(certificates, start=1):
+        db.add(organization=organization, country=country, ski=ski, raw=f"raw{index}", signature_algorithm=algorithm,
+               validity_end="2025-01-01 00:00:00", validity_length=None if days is None else days * DAY,
+               key_usage=json.dumps(key_usage))
+    return db.finish()
 
 
 @pytest.fixture
@@ -102,7 +90,7 @@ def test_shared_database_file_and_reader_give_the_same_statistics(database, tmp_
         assert reader._conn.execute("PRAGMA temp_store").fetchone()[0] == 2      # small file: in memory
         assert reader._conn.execute("PRAGMA cache_size").fetchone()[0] == -65536
         with pytest.raises(sqlite3.OperationalError):
-            reader._conn.execute("DELETE FROM Certificates")
+            reader._conn.execute("DELETE FROM Occurrences")
     assert len(READER_PRAGMAS) == 2
 
 
@@ -139,7 +127,7 @@ def test_no_shared_file_for_memory_databases_and_uncommitted_changes(database):
     assert StatisticsDAO(memory, DatabaseType.LEAF).shared_database_file() is None
     memory.close()
     database.execute("BEGIN")
-    database.execute("DELETE FROM Errors")
+    database.execute("DELETE FROM ErrorData")
     assert StatisticsDAO(database, DatabaseType.LEAF).shared_database_file() is None
     database.rollback()
 
@@ -156,28 +144,25 @@ def test_no_shared_file_when_it_cannot_be_opened_read_only(tmp_path, caplog):
         connection.close()
 
 
-def test_prepare_for_plots_builds_only_the_plot_indexes(tmp_path):
-    database = Database(tmp_path / "leaf.db", SCHEMA_PATH, DatabaseType.LEAF)
+def test_prepare_for_plots_only_corrects_the_issuers(tmp_path):
+    database = Database(tmp_path / "leaf.db", DatabaseType.LEAF)
     database.connect()
 
     def indexes():
         return {row[0] for row in database.conn.execute("SELECT name FROM sqlite_master WHERE type = 'index'")}
 
     try:
-        # An index of an earlier version is kept
-        database.conn.execute("CREATE INDEX idx_certificates_version ON Certificates(version)")
-        database.conn.execute("INSERT INTO Issuers (issuer_id, organization) VALUES (1, 'DigiCert, Inc.')")
+        database.conn.execute("INSERT INTO IssuerData (issuer_id, organization) VALUES (1, 'DigiCert, Inc.')")
+        database.conn.execute("INSERT INTO IssuerData (issuer_id, organization) VALUES (2, 'DigiCert Inc')")
         database.conn.commit()
         database.conn.execute("PRAGMA cache_size = -1234")
-        database.conn.execute("PRAGMA threads = 1")
         before = indexes()
         database.prepare_for_plots()
-        assert indexes() - before == {"idx_certificates_issuer_id", "idx_issuers_organization"}
-        assert "idx_certificates_version" in indexes()
+        # The statistics need no index: the charts read each table once
+        assert indexes() == before
         assert database.conn.execute("PRAGMA cache_size").fetchone()[0] == -1234
-        assert database.conn.execute("PRAGMA threads").fetchone()[0] == 1
-        assert database.conn.execute("SELECT organization FROM Issuers").fetchone()[0] == "DigiCert Inc"
-        database.prepare_for_plots()        # nothing to add the second time
-        assert indexes() - before == {"idx_certificates_issuer_id", "idx_issuers_organization"}
+        assert [row[0] for row in database.conn.execute("SELECT organization FROM IssuerData ORDER BY issuer_id")] == [
+            "DigiCert Inc", "DigiCert Inc"]
+        assert database.conn.execute("SELECT organization FROM Issuers").fetchall() == []    # no occurrences
     finally:
         database.close()

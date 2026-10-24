@@ -35,6 +35,16 @@ def test_normal_run_exits_normally(monkeypatch):
     assert main.main() is None
 
 
+def test_a_run_that_cannot_start_exits_with_its_status(monkeypatch):
+    async def failed():
+        return 1
+
+    monkeypatch.setattr(main, "certificates_analysis_main", failed)
+    with pytest.raises(SystemExit) as exit_info:
+        main.main()
+    assert exit_info.value.code == 1
+
+
 def test_cancelled_analysis_exits_with_code_130(monkeypatch):
     async def cancelled():
         raise asyncio.CancelledError

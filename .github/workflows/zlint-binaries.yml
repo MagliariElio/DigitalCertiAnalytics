@@ -1,0 +1,143 @@
+# Builds ZLint (the commit pinned in scripts/install_tools.py) for the six platforms of ZLINT_BUILD_SHA256 and
+# publishes the programs as the assets zlint-<os>-<arch>[.exe] of the GitHub release ZLINT_RELEASE_TAG. The installer
+# downloads its platform's program from there instead of building ZLint itself, which saves every user a 170 MB
+# download and about 1.2 GB of temporary files.
+#
+# Go builds are reproducible: the build is exactly the one of install_tools.build_zlint (same Go, flags and
+# environment), cross-compiled, and the job fails unless every program has the pinned SHA-256. The installer accepts a
+# downloaded program only with that SHA-256 too, so the trust anchor is the same as for a local build.
+#
+# Run it by hand once (Actions > ZLint binaries > Run workflow), and again after changing ZLINT_COMMIT or GO_VERSION.
+name: ZLint binaries
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "zlint-*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: zlint-binaries
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build and publish ZLint
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      contents: write          # To create the release and upload its assets
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Check out the project
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Read the pinned versions from install_tools.py
+        id: pins
+        run: |
+          python3 - <<'EOF' >> "$GITHUB_OUTPUT"
+          import sys
+
+          sys.path.insert(0, "scripts")
+          import install_tools as it
+
+          name, sha256 = it.GO_ARCHIVES[("linux", "x86_64")]
+          print(f"tag={it.ZLINT_RELEASE_TAG}")
+          print(f"zlint_version={it.ZLINT_VERSION}")
+          print(f"go_version={it.GO_VERSION}")
+          print(f"go_archive={name}")
+          print(f"go_sha256={sha256}")
+          EOF
+          cat "$GITHUB_OUTPUT"
+
+      - name: Install Go ${{ steps.pins.outputs.go_version }} (the official archive, checked with its SHA-256)
+        env:
+          GO_ARCHIVE: ${{ steps.pins.outputs.go_archive }}
+          GO_SHA256: ${{ steps.pins.outputs.go_sha256 }}
+        run: |
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/$GO_ARCHIVE" "https://dl.google.com/go/$GO_ARCHIVE"
+          echo "$GO_SHA256  $RUNNER_TEMP/$GO_ARCHIVE" | sha256sum -c -
+          tar -C "$RUNNER_TEMP" -xzf "$RUNNER_TEMP/$GO_ARCHIVE"
+          "$RUNNER_TEMP/go/bin/go" version
+
+      - name: Build ZLint for every platform and check the SHA-256 of each program
+        env:
+          GO: ${{ runner.temp }}/go/bin/go
+          WORK: ${{ runner.temp }}/zlint-build
+        run: |
+          python3 - <<'EOF'
+          import hashlib
+          import os
+          import shutil
+          import subprocess
+          import sys
+          from pathlib import Path
+
+          sys.path.insert(0, "scripts")
+          import install_tools as it
+
+          GOOS = {"macos": "darwin", "linux": "linux", "windows": "windows"}
+          GOARCH = {"x86_64": "amd64", "arm64": "arm64"}
+          go, work, dist = os.environ["GO"], Path(os.environ["WORK"]), Path("dist")
+          dist.mkdir(exist_ok=True)
+          # The environment of install_tools.go_environment, without GOBIN (go install refuses it when
+          # cross-compiling): the programs go to $GOPATH/bin[/<goos>_<goarch>]
+          base = {key: value for key, value in os.environ.items() if not key.upper().startswith("GO")}
+          base.update({"GOROOT": str(Path(go).parent.parent), "GOPATH": str(work / "path"),
+                       "GOMODCACHE": str(work / "path" / "pkg" / "mod"), "GOCACHE": str(work / "build"),
+                       "GOENV": "off", "GOTOOLCHAIN": "local", "GOFLAGS": "-modcacherw", "GOWORK": "off",
+                       "CGO_ENABLED": "0", "GOAMD64": "v1", "GOARM64": "v8.0", "GOTELEMETRY": "off"})
+          host = subprocess.run([go, "env", "GOOS", "GOARCH"], capture_output=True, text=True, env=base,
+                                check=True).stdout.split()
+          failed = []
+          for (system, arch), expected in sorted(it.ZLINT_BUILD_SHA256.items()):
+              goos, goarch = GOOS[system], GOARCH[arch]
+              env = dict(base, GOOS=goos, GOARCH=goarch)
+              subprocess.run([go, "install", "-trimpath", f"-ldflags=-s -w -X main.version={it.ZLINT_VERSION}",
+                              f"{it.ZLINT_PACKAGE}@{it.ZLINT_COMMIT}"], env=env, check=True)
+              exe = ".exe" if system == "windows" else ""
+              folder = work / "path" / "bin"
+              if [goos, goarch] != host:
+                  folder = folder / f"{goos}_{goarch}"
+              asset = dist / f"zlint-{system}-{arch}{exe}"
+              shutil.copyfile(folder / f"zlint{exe}", asset)
+              digest = hashlib.sha256(asset.read_bytes()).hexdigest()
+              state = "ok" if digest == expected else f"DIFFERENT (pinned {expected})"
+              print(f"{asset.name}: {asset.stat().st_size} bytes, sha256 {digest} {state}")
+              if digest != expected:
+                  failed.append(asset.name)
+          if failed:
+              sys.exit(f"Not the pinned reproducible build: {', '.join(failed)}. Nothing is published.")
+          EOF
+          ls -l dist
+
+      - name: Check that the Linux program runs and reports the pinned version
+        env:
+          ZLINT_VERSION: ${{ steps.pins.outputs.zlint_version }}
+        run: |
+          chmod +x dist/zlint-linux-x86_64
+          dist/zlint-linux-x86_64 -version | tee version.txt
+          grep -q "ZLint version $ZLINT_VERSION" version.txt
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.pins.outputs.tag }}
+          ZLINT_VERSION: ${{ steps.pins.outputs.zlint_version }}
+          GO_VERSION: ${{ steps.pins.outputs.go_version }}
+        run: |
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+              --title "ZLint $ZLINT_VERSION for DigitalCertiAnalytics" \
+              --notes "ZLint $ZLINT_VERSION built with Go $GO_VERSION by the workflow zlint-binaries.yml (reproducible build: each program has the SHA-256 pinned in scripts/install_tools.py, which the installer checks). The installer downloads these programs; nobody needs to download them by hand."
+          fi

@@ -25,6 +25,21 @@ class Certificate:
         self._extensions: dict[x509.ObjectIdentifier, x509.Extension] | None = None
         self._self_signature: str | None = None
 
+    @classmethod
+    def from_der(cls, der: bytes, raw: str | None = None) -> Certificate:
+        """Certificate from DER bytes (e.g. RawCodec.der()), without the base64 round trip; raw is the original
+        text when known. A DER that cannot be parsed logs the same error as load()."""
+        certificate = cls.__new__(cls)
+        certificate.raw = raw
+        try:
+            certificate.cert = x509.load_der_x509_certificate(der)
+        except Exception as e:
+            logging.error(f"Invalid certificate, parsing error: {e}")
+            certificate.cert = None
+        certificate._extensions = None
+        certificate._self_signature = None
+        return certificate
+
     @staticmethod
     def to_pem(raw: str | None) -> str | None:
         """Wrap a raw certificate in PEM headers."""

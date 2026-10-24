@@ -7,19 +7,20 @@
 # (-ExecutionPolicy Bypass holds for that command only. The short form "irm ... | iex" works where PowerShell already
 # allows scripts.)
 #
-# Everything is installed inside the project folder (.tools, .venv, data): nothing is changed elsewhere on the
+# Everything is installed inside the project folder (.tools, .venv): nothing is changed elsewhere on the
 # computer. To uninstall, delete the folder. Running it again is safe: it repairs what is broken and skips what is
 # already installed.
 #
 # Options (install.bat passes them on):
 #   --check            only show the status of every component
-#   --skip mongodb     do not install the bundled MongoDB server (e.g. when you already run one on localhost:27017)
-#   --only zlint       install only these components (zlint, mongodb, log_list)
-#   --force            reinstall ZLint and MongoDB even if they are already installed (the CT log list is kept)
+#   --only zlint       install only these components (zlint, log_list)
+#   --skip zlint       leave out these components (e.g. when DCA_ZLINT_PATH names your own ZLint)
+#   --force            reinstall ZLint even if it is already installed (the CT log list is kept)
 #
 # Advanced environment variables:
 #   DCA_INSTALL_DIR    where "irm | iex" puts the project (default: %USERPROFILE%\DigitalCertiAnalytics)
 #   DCA_ARCHIVE_URL    the project archive "irm | iex" downloads (default: the main branch on GitHub)
+#   DCA_KEEP_UV=1      keep uv in .tools\uv after the installation (for developers who install more packages)
 #
 # This file must stay pure ASCII: Windows PowerShell 5.1 reads files without a BOM in the local code page.
 # Under "irm | iex" there is no script file and "exit" would close the window, so everything is in functions.
@@ -176,12 +177,12 @@ function Test-DcaLocation([string]$Project) {
     }
     if ($Project -match '[^\x20-\x7E]') {
         Write-DcaWarn 'The project path contains letters outside the English alphabet.' `
-            'If MongoDB or another tool fails, move the project to a simple path such as C:\DCA.'
+            'If a tool fails, move the project to a simple path such as C:\DCA.'
     }
     try {
         $free = (New-Object System.IO.DriveInfo ([System.IO.Path]::GetPathRoot($Project))).AvailableFreeSpace
         if ($free -lt 2GB) {
-            Write-DcaWarn ("Only {0:N1} GB of disk space are free: the installation needs about 1.5 GB." -f ($free / 1GB)) `
+            Write-DcaWarn ("Only {0:N1} GB of disk space are free: the installation needs about 0.5 GB (1.5 GB while ZLint is built from its source code)." -f ($free / 1GB)) `
                 'Free some disk space if the installation fails.'
         }
     } catch { }
@@ -244,6 +245,7 @@ function Set-DcaEnvironment([string]$Project) {
     $values = @{
         'UV_PYTHON_INSTALL_DIR' = (Join-Path $Project '.tools\python')
         'UV_CACHE_DIR' = (Join-Path $Project '.tools\cache\uv')
+        'PYTHONPYCACHEPREFIX' = (Join-Path $Project '.tools\cache\pycache')
         'UV_PYTHON_INSTALL_BIN' = '0'
         'UV_PYTHON_INSTALL_REGISTRY' = '0'
         'UV_NO_CONFIG' = '1'
@@ -309,6 +311,18 @@ function Install-DcaPython([string]$Project, [string]$Uv, [string]$PythonRequest
         Stop-Dca 'Could not install the Python packages.' 'If the messages above are about the network, check your internet connection (behind a proxy, set HTTPS_PROXY), then run the installer again.'
     }
     Write-DcaOk 'Python packages installed'
+    # The downloaded packages are no longer needed: the .venv has its own copy of every file (about 150 MB)
+    $cleaned = $false
+    try { & $Uv cache clean --quiet 2>$null | Out-Null; $cleaned = ($LASTEXITCODE -eq 0) } catch { $cleaned = $false }
+    if (-not $cleaned) { Remove-Item -LiteralPath $env:UV_CACHE_DIR -Recurse -Force -ErrorAction SilentlyContinue }
+}
+
+# uv is needed only while installing: the bundled one is removed (it is downloaded again, checked, when the installer
+# runs again), unless DCA_KEEP_UV=1. A uv found on the computer is left alone.
+function Remove-DcaBundledUv([string]$Project, [string]$Uv) {
+    $bundled = Join-Path $Project '.tools\uv\uv.exe'
+    if ($Uv -ne $bundled -or $env:DCA_KEEP_UV -eq '1') { return }
+    Remove-Item -LiteralPath (Join-Path $Project '.tools\uv') -Recurse -Force -ErrorAction SilentlyContinue
 }
 
 # Runs the installation and sets $script:DcaExitCode. It is not called for a value, so that the programs it runs
@@ -324,7 +338,7 @@ function Invoke-DcaInstall([string[]]$Arguments, [string]$ScriptDir) {
     } catch { }
     if (-not $Arguments) { $Arguments = @() }
     if ($Arguments -contains '--help' -or $Arguments -contains '-h') {
-        Write-Host 'Usage: install.bat [--check] [--skip mongodb] [--only zlint,mongodb,log_list] [--force]'
+        Write-Host 'Usage: install.bat [--check] [--only zlint,log_list] [--skip zlint] [--force]'
         $script:DcaExitCode = 0
         return
     }
@@ -336,7 +350,7 @@ function Invoke-DcaInstall([string[]]$Arguments, [string]$ScriptDir) {
         $build = [Environment]::OSVersion.Version.Build
         $pythonRequest = '3.12'
         if ($arch -eq 'aarch64') {
-            # Some Python packages (nassl) and MongoDB have no ARM build: the x64 ones run emulated on Windows 11
+            # Some Python packages (sslyze's nassl) have no ARM build: the x64 ones run emulated on Windows 11
             if ($build -lt 22000) { Stop-Dca 'Windows 10 on ARM cannot run the programs this project needs.' 'Windows 11 is needed on ARM computers.' }
             $pythonRequest = 'cpython-3.12-windows-x86_64-none'
         }
@@ -374,8 +388,11 @@ function Invoke-DcaInstall([string[]]$Arguments, [string]$ScriptDir) {
         $saved = Set-DcaEnvironment $project
         Install-DcaPython $project $uv $pythonRequest $ExcludeNewer
         $env:DCA_UV_VERSION = "$((& $uv --version) | Select-Object -First 1)"
+        # Tells install_tools.py that .tools\uv is removed afterwards, so that the size it shows leaves it out
+        if ($uv -eq (Join-Path $project '.tools\uv\uv.exe') -and $env:DCA_KEEP_UV -ne '1') { $env:DCA_UV_TEMPORARY = '1' }
         & $python $tools @Arguments
         $script:DcaExitCode = $LASTEXITCODE
+        if ($script:DcaExitCode -eq 0) { Remove-DcaBundledUv $project $uv }
     } catch {
         Write-Host ''
         Write-Host '    [FAIL] ' -ForegroundColor Red -NoNewline
@@ -388,6 +405,7 @@ function Invoke-DcaInstall([string[]]$Arguments, [string]$ScriptDir) {
         }
         Restore-DcaEnvironment $saved
         Remove-Item Env:DCA_UV_VERSION -ErrorAction SilentlyContinue
+        Remove-Item Env:DCA_UV_TEMPORARY -ErrorAction SilentlyContinue
     }
 }
 

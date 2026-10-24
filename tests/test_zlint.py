@@ -1,8 +1,8 @@
-"""ZLint analysis tests with a fake zlint executable and a fake MongoDB."""
+"""ZLint analysis tests with a fake zlint executable; the results go to the SQLite tables of db.zlint_store."""
 import contextlib
-import copy
 import os
 import signal
+import sqlite3
 import stat
 import subprocess
 import sys
@@ -14,14 +14,19 @@ from pathlib import Path
 import pytest
 from helpers import Pki
 
+from db import zlint_store
 from db.database import DatabaseType
-from utils import zlint_utils
+from utils import process_utils, zlint_utils
 
 # Like zlint: lints stdin or each file argument, one JSON line per input in order, and exits at the first input it
-# cannot parse. Every start is logged with its number of files. Markers in the input: BAD fails, SLOW hangs.
+# cannot parse. Every start is logged with its number of files (not `-version`). Markers in the input: BAD fails,
+# SLOW hangs.
 FAKE_ZLINT = """#!{python}
 import json, sys, time
 files = sys.argv[1:]
+if files == ["-version"]:
+    print("ZLint version fake")
+    sys.exit(0)
 with open({log!r}, "a") as log:
     log.write(f"{{len(files)}}\\n")
 for data in ([open(path).read() for path in files] if files else [sys.stdin.read()]):
@@ -36,38 +41,7 @@ for data in ([open(path).read() for path in files] if files else [sys.stdin.read
 """
 
 LINTS = {"e_lint_a": {"result": "pass"}, "w_lint_b": {"result": "warn"}, "n_lint_c": {"result": "pass"}}
-
-
-class FakeCollection:
-    def __init__(self):
-        self.documents = []
-        self.inserts = []
-
-    def insert_one(self, document):
-        self.documents.append(document)
-
-    def insert_many(self, documents):
-        self.inserts.append([document["certificate_id"] for document in documents])
-        self.documents.extend(documents)
-
-
-class FakeMongo:
-    instances = []
-
-    def __init__(self, db_type):
-        self.db_type = db_type
-        self.collections = {}
-        self.closed = False
-        FakeMongo.instances.append(self)
-
-    def connect(self):
-        pass
-
-    def get_collection(self, name):
-        return self.collections.setdefault(name, FakeCollection())
-
-    def close(self):
-        self.closed = True
+NULL_RAW_ERROR = "Unexpected error during processing: 'NoneType' object has no attribute 'encode'"
 
 
 class FakeZlint:
@@ -89,139 +63,202 @@ class FakeZlint:
 def fake_zlint(tmp_path, monkeypatch):
     zlint = FakeZlint(tmp_path)
     monkeypatch.setattr(zlint_utils, "ZLINT_PATH", zlint.path)
-    monkeypatch.setattr(zlint_utils, "MongoDbDatabase", FakeMongo)
-    FakeMongo.instances.clear()
     return zlint
 
 
-def _insert_rows(open_database, count):
-    database, dao = open_database(DatabaseType.LEAF)
+def _insert_rows(open_database, count, db_type=DatabaseType.LEAF, repeat=1):
+    """A database of `count` Pki rows (each success row inserted `repeat` times in a row)."""
+    database, dao = open_database(db_type)
     for row in Pki().rows(count):
         if row["data"]["tls"]["status"] == "success":
             server = row["data"]["tls"]["result"]["handshake_log"]["server_certificates"]
-            with database.transaction():
-                dao.process_insert_certificate(row, server["certificate"], server["chain"], 0)
+            for _ in range(repeat):
+                with database.transaction():
+                    dao.process_insert_certificate(row, server["certificate"], server["chain"], 0)
     return database, dao
 
 
+def _remove_raw(database, occurrence_id):
+    """The certificate of the occurrence loses its raw (as a NULL raw of the old layout)."""
+    database.conn.execute("UPDATE CertificateData SET raw_id = NULL WHERE certificate_id = "
+                          "(SELECT certificate_id FROM Occurrences WHERE occurrence_id = ?)", (occurrence_id,))
+    database.conn.commit()
+
+
+def _documents(dao):
+    """The stored results per certificate occurrence, like the former MongoDB documents."""
+    reader = zlint_store.ZlintReader(dao.connection)
+    columns = "certificate_id, leaf_domain, issuer_common_name, issuer_organization, issuer_dn, body_id, error_message"
+    names = columns.split(", ")
+    documents = []
+    for row in reader.documents(columns):
+        document = dict(zip(names, row))
+        body_id = document.pop("body_id")
+        document["zlint_results"] = reader.body(body_id) if body_id is not None else None
+        documents.append(document)
+    return documents
+
+
+def _units(dao):
+    """raw_ids of the distinct certificates, in the order they are linted."""
+    return [row[0] for row in dao.connection.execute(
+        "SELECT DISTINCT COALESCE(raw_id, 0) FROM CertificateData ORDER BY 1")]
+
+
+def _saved_raw_ids(dao):
+    return [row[0] for row in dao.connection.execute("SELECT raw_id FROM ZlintResults ORDER BY raw_id")]
+
+
+def _run_state(dao):
+    return zlint_store.ZlintReader(dao.connection).run_values()["state"]
+
+
+def _record_saves(monkeypatch):
+    """Record the raw_ids of each save of results."""
+    saves = []
+    save = zlint_store.ZlintStore.save
+
+    def recording_save(self, results):
+        if results:
+            saves.append([result.raw_id for result in results])
+        save(self, results)
+
+    monkeypatch.setattr(zlint_store.ZlintStore, "save", recording_save)
+    return saves
+
+
 def _rows(raws):
-    return [(index + 1, f"site{index}.example.test", raw, "CA", "Org", "CN=CA") for index, raw in enumerate(raws)]
+    return [(index + 1, raw) for index, raw in enumerate(raws)]
 
 
 def _settings(zlint, tmp_path, timeout=10):
     return zlint_utils._Settings(str(zlint.path), timeout, str(tmp_path))
 
 
-def test_results_are_stored(fake_zlint, open_database, tmp_path, monkeypatch):
+def _outcomes(results):
+    return [("result" if result.digest is not None else "error", result.raw_id) for result in results]
+
+
+def test_results_are_stored(fake_zlint, open_database, tmp_path, monkeypatch, caplog):
     # Temporary files of the run go here, to check they are removed
     (tmp_path / "tmp").mkdir()
     monkeypatch.setattr(tempfile, "tempdir", str(tmp_path / "tmp"))
     database, dao = _insert_rows(open_database, 5)
-    database.conn.execute("UPDATE Certificates SET raw = NULL WHERE certificate_id = 1")
-    database.conn.commit()
+    _remove_raw(database, 1)
 
     zlint_utils.run_zlint_check(dao)
 
-    mongo = FakeMongo.instances[-1]
-    results = mongo.collections["zlint_results"].documents
-    errors = mongo.collections["zlint_errors"].documents
+    documents = _documents(dao)
+    assert [document["certificate_id"] for document in documents] == [1, 2, 3, 4, 5]
+    results = [document for document in documents if document["error_message"] is None]
     assert [document["certificate_id"] for document in results] == [2, 3, 4, 5]
-    assert results[0]["count_results"] == {"pass": 2, "warn": 1}
+    assert results[0]["leaf_domain"] == "site1.example.test"
     assert results[0]["issuer_common_name"] == "Test Intermediate CA"
     assert results[0]["zlint_results"] == LINTS
-    assert list(results[0]) == ["count_results", "certificate_id", "leaf_domain", "issuer_common_name",
-                                "issuer_organization", "issuer_dn", "zlint_results"]
-    # NULL raw: the same error document as before, without starting zlint
-    assert [document["certificate_id"] for document in errors] == [1]
-    assert errors[0]["error_message"] == "Unexpected error during processing: 'NoneType' object has no attribute 'encode'"
+    # The key order of zlint's output is kept
+    assert list(results[0]["zlint_results"]) == list(LINTS)
+    # NULL raw: the same error as before, without starting zlint
+    assert documents[0]["error_message"] == NULL_RAW_ERROR and documents[0]["zlint_results"] is None
+    assert f"Error processing certificate ID 1: {NULL_RAW_ERROR}" in caplog.text
     assert fake_zlint.starts() == [4]
-    assert mongo.closed
+    # Equal outputs are stored once
+    assert dao.connection.execute("SELECT COUNT(*) FROM ZlintBodies").fetchone()[0] == 1
+    run = zlint_store.ZlintReader(dao.connection).run_values()
+    assert run["state"] == "finished" and run["zlint_version"] == "ZLint version fake" and run["units"] == 5
     assert list((tmp_path / "tmp").iterdir()) == []
+
+
+def test_each_distinct_certificate_is_linted_once(fake_zlint, open_database, caplog):
+    database, dao = _insert_rows(open_database, 3, repeat=2)
+    assert dao.get_certificates_count() == 6 and len(_units(dao)) == 3
+    _remove_raw(database, 3)
+
+    zlint_utils.run_zlint_check(dao)
+
+    documents = _documents(dao)
+    assert [document["certificate_id"] for document in documents] == [1, 2, 3, 4, 5, 6]
+    assert [document["leaf_domain"] for document in documents] == [
+        "site0.example.test", "site0.example.test", "site1.example.test", "site1.example.test",
+        "site2.example.test", "site2.example.test"]
+    errors = [None, None, NULL_RAW_ERROR, NULL_RAW_ERROR, None, None]
+    assert [document["error_message"] for document in documents] == errors
+    # Two certificates with a raw, linted together; the error is logged once per occurrence
+    assert fake_zlint.starts() == [2]
+    assert [record.getMessage() for record in caplog.records if record.levelname == "ERROR"] == [
+        f"Error processing certificate ID 3: {NULL_RAW_ERROR}", f"Error processing certificate ID 4: {NULL_RAW_ERROR}"]
+
+
+def test_intermediate_certificates_seen_many_times_are_linted_once(fake_zlint, open_database):
+    _, dao = _insert_rows(open_database, 1, DatabaseType.INTERMEDIATE, repeat=4)
+    assert dao.get_certificates_count() == 4 and len(_units(dao)) == 1
+
+    zlint_utils.run_zlint_check(dao)
+
+    documents = _documents(dao)
+    assert [document["certificate_id"] for document in documents] == [1, 2, 3, 4]
+    assert all(document["zlint_results"] == LINTS for document in documents)
+    # A single certificate: linted through stdin, as before
+    assert fake_zlint.starts() == [0]
+
+
+def test_a_new_run_replaces_the_previous_results(fake_zlint, open_database):
+    database, dao = _insert_rows(open_database, 3)
+    zlint_utils.run_zlint_check(dao)
+    _remove_raw(database, 2)
+
+    zlint_utils.run_zlint_check(dao)
+
+    assert [document["error_message"] for document in _documents(dao)] == [None, NULL_RAW_ERROR, None]
+    assert _saved_raw_ids(dao) == _units(dao)
+    assert fake_zlint.starts() == [3, 2]
 
 
 def test_failing_certificate_gets_single_error_and_rest_is_retried(fake_zlint, tmp_path):
     rows = _rows(["AAAA", "BBBB", "BAD", "CCCC", "DDDD", "EEEE"])
-    documents = zlint_utils._lint_chunk(rows, _settings(fake_zlint, tmp_path))
+    results = zlint_utils._lint_chunk(rows, _settings(fake_zlint, tmp_path))
 
-    assert [(collection, document["certificate_id"]) for collection, document in documents] == [
-        ("zlint_results", 1), ("zlint_results", 2), ("zlint_errors", 3),
-        ("zlint_results", 4), ("zlint_results", 5), ("zlint_results", 6)]
-    assert documents[2][1]["error_message"] == "Error running ZLint: unable to parse PEM\n"
-    assert set(documents[2][1]) == {"certificate_id", "leaf_domain", "error_message", "timestamp"}
+    assert _outcomes(results) == [("result", 1), ("result", 2), ("error", 3), ("result", 4), ("result", 5),
+                                  ("result", 6)]
+    assert results[2].error_message == "Error running ZLint: unable to parse PEM\n"
+    assert results[2].error_timestamp and results[2].body is None
+    assert zlint_store.decode_body(results[0].body) == LINTS
+    assert results[0].digest == zlint_store.body_digest(results[0].body)
     # One start for the chunk, one (stdin) for the failing certificate, one for the remaining three
     assert fake_zlint.starts() == [6, 0, 3]
 
 
 def test_zlint_linting_only_the_first_file(tmp_path):
     zlint = FakeZlint(tmp_path, extra="break")
-    documents = zlint_utils._lint_chunk(_rows(["A", "B", "C", "D", "E"]), _settings(zlint, tmp_path))
+    results = zlint_utils._lint_chunk(_rows(["A", "B", "C", "D", "E"]), _settings(zlint, tmp_path))
 
-    assert [document["certificate_id"] for _, document in documents] == [1, 2, 3, 4, 5]
-    assert all(collection == "zlint_results" for collection, _ in documents)
+    assert _outcomes(results) == [("result", raw_id) for raw_id in range(1, 6)]
     assert zlint.starts() == [5, 0, 3, 0, 0]
 
 
 def test_output_not_matching_the_files_falls_back_to_one_start_per_certificate(tmp_path):
     zlint = FakeZlint(tmp_path, extra="print('{}')")
-    documents = zlint_utils._lint_chunk(_rows(["A", "B", "C"]), _settings(zlint, tmp_path))
+    results = zlint_utils._lint_chunk(_rows(["A", "B", "C"]), _settings(zlint, tmp_path))
 
     # Two lines per input: as before, the single starts cannot decode their output
-    assert [document["error_message"] for _, document in documents] == ["Error decoding the ZLint JSON output."] * 3
+    assert [result.error_message for result in results] == ["Error decoding the ZLint JSON output."] * 3
     assert zlint.starts() == [3, 0, 0, 0]
 
 
 def test_timeout_keeps_the_results_printed_before(fake_zlint, tmp_path):
-    documents = zlint_utils._lint_chunk(_rows(["A", "SLOW", "C"]), _settings(fake_zlint, tmp_path, timeout=1))
+    results = zlint_utils._lint_chunk(_rows(["A", "SLOW", "C"]), _settings(fake_zlint, tmp_path, timeout=1))
 
-    assert [collection for collection, _ in documents] == ["zlint_results", "zlint_errors", "zlint_results"]
-    assert "timed out after 1 seconds" in documents[1][1]["error_message"]
-    assert documents[1][1]["error_message"].startswith("Unexpected error during processing: ")
+    assert [kind for kind, _ in _outcomes(results)] == ["result", "error", "result"]
+    assert "timed out after 1 seconds" in results[1].error_message
+    assert results[1].error_message.startswith("Unexpected error during processing: ")
     assert fake_zlint.starts() == [3, 0, 0]
-
-
-def test_equal_lint_results_are_shared(fake_zlint, tmp_path):
-    documents = zlint_utils._lint_chunk(_rows(["A", "B"]), _settings(fake_zlint, tmp_path))
-
-    first, second = (document["zlint_results"] for _, document in documents)
-    assert first == second == LINTS
-    # One object for equal results, also across the documents of the chunk
-    assert first["e_lint_a"] is first["n_lint_c"] is second["e_lint_a"]
-
-
-def test_lint_results_that_cannot_be_shared_are_kept():
-    result = {"a": {"result": "pass"}, "b": {"result": "pass", "details": ["x"]}, "c": "text"}
-    assert zlint_utils._share_equal_lints(dict(result), {}) == result
-    assert zlint_utils._share_equal_lints(["text"], {}) == ["text"]
-
-
-def test_only_lint_results_of_strings_are_shared():
-    # Equal values of different types (True == 1 == 1.0) and equal items in another order must not be merged
-    lints = {"int": {"result": "pass", "n": 1}, "bool": {"result": "pass", "n": True}, "float": {"result": "pass", "n": 1.0},
-             "none": {"result": "pass", "n": None}, "none_again": {"result": "pass", "n": None},
-             "text": {"result": "pass", "n": "1"}, "text_again": {"result": "pass", "n": "1"},
-             "reordered": {"n": "1", "result": "pass"}}
-    shared = {}
-    first = zlint_utils._share_equal_lints(copy.deepcopy(lints), shared)
-    second = zlint_utils._share_equal_lints(copy.deepcopy(lints), shared)
-
-    for result in (first, second):
-        assert result == lints
-        assert [[(key, type(value)) for key, value in lint.items()] for lint in result.values()] == [
-            [(key, type(value)) for key, value in lint.items()] for lint in lints.values()]
-    # Objects of strings are shared, also across documents; the others stay distinct
-    assert first["text"] is first["text_again"] is second["text"]
-    distinct = [first[name] for name in ("int", "bool", "float", "none", "none_again", "text", "reordered")]
-    distinct += [second[name] for name in ("int", "bool", "float", "none")]
-    assert len({id(lint) for lint in distinct}) == len(distinct)
 
 
 def test_zlint_that_cannot_start_gives_the_single_certificate_errors(tmp_path):
     settings = zlint_utils._Settings(str(tmp_path / "missing"), 10, str(tmp_path))
-    documents = zlint_utils._lint_chunk(_rows(["A", "B", "C"]), settings)
+    results = zlint_utils._lint_chunk(_rows(["A", "B", "C"]), settings)
 
-    assert [collection for collection, _ in documents] == ["zlint_errors"] * 3
-    assert all(document["error_message"].startswith("Unexpected error during processing: [Errno 2]")
-               for _, document in documents)
+    assert [kind for kind, _ in _outcomes(results)] == ["error"] * 3
+    assert all(result.error_message.startswith("Unexpected error during processing: [Errno 2]") for result in results)
 
 
 def test_unwritable_temporary_files_fall_back_to_one_start_per_certificate(fake_zlint, tmp_path, monkeypatch):
@@ -229,10 +266,18 @@ def test_unwritable_temporary_files_fall_back_to_one_start_per_certificate(fake_
         raise OSError(28, "No space left on device")
 
     monkeypatch.setattr(zlint_utils, "_write_pem_files", no_space)
-    documents = zlint_utils._lint_chunk(_rows(["A", None, "C"]), _settings(fake_zlint, tmp_path))
+    results = zlint_utils._lint_chunk(_rows(["A", None, "C"]), _settings(fake_zlint, tmp_path))
 
-    assert [collection for collection, _ in documents] == ["zlint_results", "zlint_errors", "zlint_results"]
+    assert [kind for kind, _ in _outcomes(results)] == ["result", "error", "result"]
+    assert results[1].error_message == NULL_RAW_ERROR
     assert fake_zlint.starts() == [0, 0]
+
+
+def test_version_of_a_zlint_that_prints_none(tmp_path):
+    assert zlint_utils._zlint_version(str(tmp_path / "missing")) is None
+    zlint = FakeZlint(tmp_path, extra="")
+    zlint.path.write_text("#!/bin/sh\nexit 3\n")
+    assert zlint_utils._zlint_version(str(zlint.path)) is None
 
 
 def test_chunks_run_in_parallel_and_are_saved_in_order_per_db_batch(fake_zlint, open_database, monkeypatch):
@@ -240,24 +285,26 @@ def test_chunks_run_in_parallel_and_are_saved_in_order_per_db_batch(fake_zlint, 
     monkeypatch.setattr(zlint_utils, "BATCH_SIZE", 4)
     monkeypatch.setattr(zlint_utils, "ZLINT_WORKERS", 3)
     _, dao = _insert_rows(open_database, 9)
+    saves = _record_saves(monkeypatch)
 
     zlint_utils.run_zlint_check(dao)
 
-    collection = FakeMongo.instances[-1].collections["zlint_results"]
-    assert collection.inserts == [[1, 2, 3, 4], [5, 6, 7, 8], [9]]
+    units = _units(dao)
+    assert saves == [units[0:4], units[4:8], units[8:9]]
     # The last chunk has a single certificate, linted as before through stdin
     assert sorted(fake_zlint.starts()) == [0, 2, 2, 2, 2]
+    assert len(_documents(dao)) == 9
 
 
 def test_worker_processes_give_the_same_documents(fake_zlint, open_database, monkeypatch):
     _, dao = _insert_rows(open_database, 6)
     zlint_utils.run_zlint_check(dao)
-    with_threads = FakeMongo.instances[-1].collections["zlint_results"].documents
+    with_threads = _documents(dao)
 
     monkeypatch.setattr(zlint_utils, "ZLINT_PROCESSES_FROM", 0)
     monkeypatch.setattr(zlint_utils, "ZLINT_CHUNK_SIZE", 2)
     zlint_utils.run_zlint_check(dao)
-    with_processes = FakeMongo.instances[-1].collections["zlint_results"].documents
+    with_processes = _documents(dao)
 
     assert len(with_threads) == 6
     assert with_processes == with_threads
@@ -273,9 +320,29 @@ def test_threads_when_worker_processes_cannot_start(fake_zlint, open_database, m
 
     zlint_utils.run_zlint_check(dao)
 
-    documents = FakeMongo.instances[-1].collections["zlint_results"].documents
-    assert [document["certificate_id"] for document in documents] == [1, 2, 3]
+    assert [document["certificate_id"] for document in _documents(dao)] == [1, 2, 3]
     assert "Could not start the ZLint worker processes (no processes)" in caplog.text
+
+
+def test_failed_save_is_logged_and_the_run_goes_on(fake_zlint, open_database, monkeypatch, caplog):
+    monkeypatch.setattr(zlint_utils, "ZLINT_CHUNK_SIZE", 2)
+    monkeypatch.setattr(zlint_utils, "BATCH_SIZE", 2)
+    _, dao = _insert_rows(open_database, 4)
+    save = zlint_store.ZlintStore.save
+    calls = []
+
+    def disk_full_once(self, results):
+        calls.append(len(results))
+        if len(calls) == 1:
+            raise sqlite3.OperationalError("database or disk is full")
+        save(self, results)
+
+    monkeypatch.setattr(zlint_store.ZlintStore, "save", disk_full_once)
+    zlint_utils.run_zlint_check(dao)
+
+    assert "Error saving the ZLint results to the database: database or disk is full" in caplog.text
+    assert _saved_raw_ids(dao) == _units(dao)[2:]
+    assert _run_state(dao) == "finished"
 
 
 # A main process holding a pool of 2 zlint workers, with the run directory 'run'. The workers import this script too,
@@ -304,7 +371,7 @@ if __name__ == "__main__":
         executor = zlint_utils._start_executor(1, run)
         if mode == "submit":
             os.environ["SLOW_START"] = "1"
-        rows = [(1, "a.test", "AAAA", "CA", "Org", "CN=CA"), (2, "b.test", "BBBB", "CA", "Org", "CN=CA")]
+        rows = [(1, "AAAA"), (2, "BBBB")]
         settings = zlint_utils._Settings({zlint!r}, 60, run)
         # The idle worker takes one chunk, the other one is started
         chunks = [zlint_utils._submit(executor, rows if mode == "kill" else [], settings) for _ in range(2)]
@@ -481,6 +548,7 @@ def _exited_pid():
 
 
 @pytest.mark.skipif(os.name != "posix", reason="POSIX processes")
+@pytest.mark.skipif(os.name != "posix", reason="POSIX processes")
 def test_directories_of_killed_runs_are_removed_by_the_next_run(fake_zlint, open_database, tmp_path, monkeypatch):
     temp = tmp_path / "tmp"
     monkeypatch.setattr(tempfile, "tempdir", str(temp))
@@ -498,9 +566,9 @@ def test_directories_of_killed_runs_are_removed_by_the_next_run(fake_zlint, open
     run_directories = []
     lint_certificates = zlint_utils._lint_certificates
 
-    def record_directory(dao, mongo, directory, zlint_path):
+    def record_directory(dao, store, directory, zlint_path):
         run_directories.append(Path(directory))
-        lint_certificates(dao, mongo, directory, zlint_path)
+        lint_certificates(dao, store, directory, zlint_path)
 
     monkeypatch.setattr(zlint_utils, "_lint_certificates", record_directory)
     _, dao = _insert_rows(open_database, 2)
@@ -517,11 +585,9 @@ def test_directories_of_killed_runs_are_removed_by_the_next_run(fake_zlint, open
 
 def test_missing_executable(tmp_path, monkeypatch, open_database, caplog):
     monkeypatch.setattr(zlint_utils, "ZLINT_PATH", tmp_path / "missing")
-    monkeypatch.setattr(zlint_utils, "MongoDbDatabase", FakeMongo)
-    FakeMongo.instances.clear()
     _, dao = open_database(DatabaseType.LEAF)
     zlint_utils.run_zlint_check(dao)
-    assert FakeMongo.instances == []
+    assert not zlint_store.has_tables(dao.connection)
     assert f"The ZLint executable '{tmp_path / 'missing'}' is missing or cannot run" in caplog.text
     assert "Run the installer again" in caplog.text
 
@@ -589,60 +655,62 @@ def test_zlint_locations_of_the_project():
 
 
 def test_no_zlint_installed_says_to_run_the_installer(zlint_locations, open_database, monkeypatch, caplog):
-    monkeypatch.setattr(zlint_utils, "MongoDbDatabase", FakeMongo)
-    FakeMongo.instances.clear()
     _, dao = open_database(DatabaseType.LEAF)
 
     zlint_utils.run_zlint_check(dao)
 
-    assert FakeMongo.instances == []
+    assert not zlint_store.has_tables(dao.connection)
     assert "ZLint is not installed, so the certificates cannot be checked with ZLint. Run the installer again" in caplog.text
 
 
-def test_interrupt_saves_the_collected_results(fake_zlint, open_database, monkeypatch):
+def test_interrupt_saves_the_collected_results(fake_zlint, open_database, monkeypatch, caplog):
     monkeypatch.setattr(zlint_utils, "ZLINT_CHUNK_SIZE", 2)
     monkeypatch.setattr(zlint_utils, "BATCH_SIZE", 6)
     monkeypatch.setattr(zlint_utils, "ZLINT_WORKERS", 1)
-    _, dao = _insert_rows(open_database, 9)
+    database, dao = _insert_rows(open_database, 9)
+    _remove_raw(database, 2)
     collect = zlint_utils._collect
     collected = []
 
-    def ctrl_c_on_the_third_chunk(documents, chunk_documents):
+    def ctrl_c_on_the_third_chunk(results, chunk_results):
         if len(collected) == 2:
             raise KeyboardInterrupt
-        collected.append(chunk_documents)
-        collect(documents, chunk_documents)
+        collected.append(chunk_results)
+        collect(results, chunk_results)
 
     monkeypatch.setattr(zlint_utils, "_collect", ctrl_c_on_the_third_chunk)
     with pytest.raises(KeyboardInterrupt):
         zlint_utils.run_zlint_check(dao)
 
-    mongo = FakeMongo.instances[-1]
     # The first two chunks of the batch were collected: saved, although the batch was not complete
-    assert mongo.collections["zlint_results"].inserts == [[1, 2, 3, 4]]
-    assert mongo.closed
+    assert _saved_raw_ids(dao) == sorted(_units(dao)[:4])
+    assert _run_state(dao) == "interrupted"
+    # The errors of the saved results are logged
+    assert f"Error processing certificate ID 2: {NULL_RAW_ERROR}" in caplog.text
+    assert dao.connection.execute("SELECT name FROM sqlite_temp_master WHERE name = 'zlint_units'").fetchone() is None
 
 
 def test_interrupted_batch_save_is_not_repeated(fake_zlint, open_database, monkeypatch):
     monkeypatch.setattr(zlint_utils, "ZLINT_CHUNK_SIZE", 2)
     monkeypatch.setattr(zlint_utils, "BATCH_SIZE", 2)
     _, dao = _insert_rows(open_database, 4)
-    save = zlint_utils._save_documents
+    save = zlint_utils._save_results
     saved = []
 
-    def ctrl_c_while_saving(mongo, documents):
-        saved.append([document["certificate_id"] for document in documents["zlint_results"]])
-        save(mongo, documents)
+    def ctrl_c_while_saving(store, results):
+        saved.append([result.raw_id for result in results])
+        save(store, results)
         if len(saved) == 1:
             raise KeyboardInterrupt
 
-    monkeypatch.setattr(zlint_utils, "_save_documents", ctrl_c_while_saving)
+    monkeypatch.setattr(zlint_utils, "_save_results", ctrl_c_while_saving)
     with pytest.raises(KeyboardInterrupt):
         zlint_utils.run_zlint_check(dao)
 
     # The interrupted save is not repeated at the end; nothing else was collected
-    assert saved == [[1, 2], []]
-    assert FakeMongo.instances[-1].collections["zlint_results"].inserts == [[1, 2]]
+    units = _units(dao)
+    assert saved == [units[:2], []]
+    assert _saved_raw_ids(dao) == units[:2]
 
 
 @pytest.mark.skipif(not hasattr(signal, "pthread_sigmask"), reason="POSIX signals")
@@ -650,16 +718,16 @@ def test_ctrl_c_during_a_batch_save_waits_for_its_end(fake_zlint, open_database,
     monkeypatch.setattr(zlint_utils, "ZLINT_CHUNK_SIZE", 2)
     monkeypatch.setattr(zlint_utils, "BATCH_SIZE", 2)
     _, dao = _insert_rows(open_database, 4)
-    save = zlint_utils._save_documents
+    save = zlint_utils._save_results
     saved = []
 
-    def ctrl_c_while_saving(mongo, documents):
+    def ctrl_c_while_saving(store, results):
         if not saved:
             signal.raise_signal(signal.SIGINT)
-        saved.append([document["certificate_id"] for document in documents["zlint_results"]])
-        save(mongo, documents)
+        saved.append([result.raw_id for result in results])
+        save(store, results)
 
-    monkeypatch.setattr(zlint_utils, "_save_documents", ctrl_c_while_saving)
+    monkeypatch.setattr(zlint_utils, "_save_results", ctrl_c_while_saving)
     previous = signal.signal(signal.SIGINT, signal.default_int_handler)
     try:
         with pytest.raises(KeyboardInterrupt):
@@ -668,32 +736,32 @@ def test_ctrl_c_during_a_batch_save_waits_for_its_end(fake_zlint, open_database,
         signal.signal(signal.SIGINT, previous)
 
     # The Ctrl+C stops the stage only once the batch is saved, and the batch is saved once
-    assert saved == [[1, 2], []]
-    assert FakeMongo.instances[-1].collections["zlint_results"].inserts == [[1, 2]]
+    units = _units(dao)
+    assert saved == [units[:2], []]
+    assert _saved_raw_ids(dao) == units[:2]
+    assert _run_state(dao) == "interrupted"
 
 
 @pytest.mark.skipif(not hasattr(signal, "SIGHUP"), reason="POSIX signals")
 @pytest.mark.parametrize("stop_signal", ["SIGHUP", "SIGTERM"])
 def test_closing_the_terminal_during_a_batch_save_stops_like_ctrl_c(fake_zlint, open_database, monkeypatch, stop_signal):
-    from db import mongo_server
-
     monkeypatch.setattr(zlint_utils, "ZLINT_CHUNK_SIZE", 2)
     monkeypatch.setattr(zlint_utils, "BATCH_SIZE", 2)
     _, dao = _insert_rows(open_database, 4)
-    save = zlint_utils._save_documents
+    save = zlint_utils._save_results
     saved, silenced, directories = [], [], []
 
-    def window_closed_while_saving(mongo, documents):
+    def window_closed_while_saving(store, results):
         if not saved:
             signal.raise_signal(getattr(signal, stop_signal))
-        saved.append([document["certificate_id"] for document in documents["zlint_results"]])
+        saved.append([result.raw_id for result in results])
         directories.extend(Path(tempfile.gettempdir()).glob(f"zlint_{os.getpid()}-*"))
-        save(mongo, documents)
+        save(store, results)
 
-    monkeypatch.setattr(zlint_utils, "_save_documents", window_closed_while_saving)
+    monkeypatch.setattr(zlint_utils, "_save_results", window_closed_while_saving)
     # The output of the tests is not a closed terminal, and the other tests must not see a stop
-    monkeypatch.setattr(mongo_server, "_silence_closed_terminal", lambda: silenced.append(True))
-    monkeypatch.setattr(mongo_server, "_stop_received", False)
+    monkeypatch.setattr(process_utils, "_silence_closed_terminal", lambda: silenced.append(True))
+    monkeypatch.setattr(process_utils, "_stop_received", False)
     signals = (signal.SIGINT, signal.SIGHUP, signal.SIGTERM)
     previous = {number: signal.getsignal(number) for number in signals}
     signal.signal(signal.SIGINT, signal.default_int_handler)
@@ -709,12 +777,12 @@ def test_closing_the_terminal_during_a_batch_save_stops_like_ctrl_c(fake_zlint, 
             signal.signal(number, handler)
 
     # Like Ctrl+C: the stage stops once the batch is saved, the batch is saved once, the temporary files are removed
-    assert saved == [[1, 2], []]
-    assert FakeMongo.instances[-1].collections["zlint_results"].inserts == [[1, 2]]
-    assert FakeMongo.instances[-1].closed
+    units = _units(dao)
+    assert saved == [units[:2], []]
+    assert _saved_raw_ids(dao) == units[:2]
     assert directories and not any(directory.exists() for directory in directories)
     assert silenced == ([True] if stop_signal == "SIGHUP" else [])
-    assert mongo_server.stop_requested()
+    assert process_utils.stop_requested()
 
 
 def test_error_while_stopping_after_the_window_was_closed_still_stops(fake_zlint, open_database, monkeypatch):
@@ -727,34 +795,15 @@ def test_error_while_stopping_after_the_window_was_closed_still_stops(fake_zlint
     _, dao = _insert_rows(open_database, 2)
     with pytest.raises(KeyboardInterrupt):
         zlint_utils.run_zlint_check(dao)
-    assert FakeMongo.instances[-1].closed
+    assert _run_state(dao) == "interrupted"
 
 
-def test_bundled_mongodb_that_cannot_start_is_reported(fake_zlint, open_database, monkeypatch, caplog):
-    class UnavailableMongo(FakeMongo):
-        def connect(self):
-            raise zlint_utils.MongoServerError("Port 27017 is used by another program. Close it.")
+def test_unexpected_error_is_logged_and_the_analysis_goes_on(fake_zlint, open_database, monkeypatch, caplog):
+    def broken(*args):
+        raise RuntimeError("broken")
 
-    monkeypatch.setattr(zlint_utils, "MongoDbDatabase", UnavailableMongo)
+    monkeypatch.setattr(zlint_utils, "_lint_certificates", broken)
     _, dao = _insert_rows(open_database, 2)
-
     zlint_utils.run_zlint_check(dao)
-
-    assert "Port 27017 is used by another program. Close it." in caplog.text
-    assert "check that the service is running" not in caplog.text
-    assert fake_zlint.starts() == []
-    assert FakeMongo.instances[-1].closed
-
-
-def test_unreachable_mongodb_keeps_the_message(fake_zlint, open_database, monkeypatch, caplog):
-    class UnreachableMongo(FakeMongo):
-        def connect(self):
-            raise OSError("connection refused")
-
-    monkeypatch.setattr(zlint_utils, "MongoDbDatabase", UnreachableMongo)
-    _, dao = _insert_rows(open_database, 2)
-
-    zlint_utils.run_zlint_check(dao)
-
-    assert "Could not connect to MongoDB: check that the service is running (see the README)." in caplog.text
-    assert fake_zlint.starts() == []
+    assert "Error running run_zlint_check: broken" in caplog.text
+    assert _run_state(dao) == "failed"

@@ -1,4 +1,4 @@
-"""Tests of scripts/install_tools.py: no network, no real ZLint, MongoDB or Go (local files and monkeypatching)."""
+"""Tests of scripts/install_tools.py: no network, no real ZLint or Go (local files and monkeypatching)."""
 import hashlib
 import importlib.util
 import io
@@ -25,6 +25,7 @@ sys.modules["install_tools"] = it  # dataclasses look the module up while the cl
 _spec.loader.exec_module(it)
 
 posix_only = pytest.mark.skipif(os.name == "nt", reason="the fake programs are shell scripts")
+REAL_INSTALL_RELEASE_ZLINT = it.install_release_zlint  # The autouse fixture replaces it
 
 MACOS_ARM = it.PlatformInfo("macos", "arm64", mac_version=(26, 6))
 LINUX_X86 = it.PlatformInfo("linux", "x86_64", libc="glibc",
@@ -33,11 +34,11 @@ LINUX_X86 = it.PlatformInfo("linux", "x86_64", libc="glibc",
 
 @pytest.fixture(autouse=True)
 def isolated(monkeypatch):
-    """No pauses between retries, no real sslyze, and no MongoDB server that happens to run on this computer."""
+    """No pauses between retries, no real sslyze, and no release download (the tests that need one set it up)."""
     monkeypatch.setattr(it, "RETRY_DELAYS", (0, 0, 0))
     monkeypatch.delenv("DCA_ZLINT_PATH", raising=False)
     monkeypatch.setattr(it, "check_sslyze", lambda ctx: it.Status("sslyze", "ok", "sslyze (not run by the tests)"))
-    monkeypatch.setattr(it, "mongodb_server_answers", lambda: False)
+    monkeypatch.setattr(it, "install_release_zlint", lambda ctx: False)
 
 
 @pytest.fixture
@@ -70,7 +71,7 @@ def sha256(data):
     return hashlib.sha256(data).hexdigest()
 
 
-# --- Platform and MongoDB build selection -----------------------------------------------------------------------------
+# --- Platform ---------------------------------------------------------------------------------------------------------
 
 def test_parse_os_release_handles_quotes_and_comments():
     text = '# comment\nID=ubuntu\nVERSION_ID="22.04"\nID_LIKE=\'debian\'\n\nBROKEN LINE\n'
@@ -81,89 +82,6 @@ def test_parse_os_release_handles_quotes_and_comments():
                                                ("aarch64", "arm64"), ("armv7l", "armv7l")])
 def test_normalize_arch(machine, expected):
     assert it.normalize_arch(machine) == expected
-
-
-@pytest.mark.parametrize("plat, key, version", [
-    (it.PlatformInfo("macos", "arm64", mac_version=(26, 6)), "macos-arm64", it.MONGODB_VERSION),
-    (it.PlatformInfo("macos", "x86_64", mac_version=(14, 0)), "macos-x86_64", it.MONGODB_VERSION),
-    (it.PlatformInfo("macos", "arm64", mac_version=(13, 6, 1)), "macos-arm64", it.MONGODB_FALLBACK_VERSION),
-    (it.PlatformInfo("macos", "x86_64", mac_version=(10, 15)), "macos-x86_64", it.MONGODB_FALLBACK_VERSION),
-    (it.PlatformInfo("windows", "x86_64", windows_build=19045), "windows-x86_64", it.MONGODB_VERSION),
-    (it.PlatformInfo("windows", "arm64", windows_build=26100), "windows-x86_64", it.MONGODB_VERSION),
-])
-def test_mongodb_candidates_on_macos_and_windows(plat, key, version):
-    builds, reason = it.mongodb_candidates(plat)
-    assert reason == ""
-    assert [(build.key, build.version) for build in builds] == [(key, version)]
-    assert builds[0].sha256 == it.MONGODB_SHA256[version][key]
-
-
-def test_windows_build_reads_only_mongod_exe():
-    build = it.mongodb_candidates(it.PlatformInfo("windows", "x86_64", windows_build=22631))[0][0]
-    assert build.url == "https://fastdl.mongodb.org/windows/mongodb-windows-x86_64-8.0.34.zip"
-    assert build.mongod_sha256 == "4c9e9764cbac5be8eb92733e23ce7f70b52f8ae84b6879b4d5cc010c90ec6082"
-
-
-@pytest.mark.parametrize("plat", [
-    it.PlatformInfo("macos", "x86_64", mac_version=(10, 13)),
-    it.PlatformInfo("macos", "arm64", mac_version=(10, 16)),
-    it.PlatformInfo("windows", "arm64", windows_build=19045),
-    it.PlatformInfo("windows", "x86", windows_build=19045),
-    it.PlatformInfo("linux", "x86_64", libc="musl", os_release={"ID": "alpine", "VERSION_ID": "3.20"}),
-    it.PlatformInfo("linux", "x86_64", libc="glibc", os_release={"ID": "nixos"}),
-    it.PlatformInfo("linux", "riscv64", libc="glibc", os_release={"ID": "ubuntu", "VERSION_ID": "24.04"}),
-    it.PlatformInfo("freebsd14", "x86_64"),
-])
-def test_mongodb_candidates_explain_unsupported_systems(plat):
-    builds, reason = it.mongodb_candidates(plat)
-    assert builds == []
-    assert reason
-
-
-@pytest.mark.parametrize("os_release, arch, expected", [
-    ({"ID": "ubuntu", "VERSION_ID": "24.04"}, "x86_64", ["8.0.34 linux-x86_64-ubuntu2404"]),
-    ({"ID": "ubuntu", "VERSION_ID": "26.04"}, "arm64", ["8.0.34 linux-aarch64-ubuntu2404"]),
-    ({"ID": "ubuntu", "VERSION_ID": "22.04"}, "arm64", ["8.0.34 linux-aarch64-ubuntu2204"]),
-    ({"ID": "ubuntu", "VERSION_ID": "20.04"}, "x86_64", ["8.0.34 linux-x86_64-ubuntu2004"]),
-    ({"ID": "linuxmint", "ID_LIKE": "ubuntu debian", "VERSION_ID": "21.3", "UBUNTU_CODENAME": "jammy"}, "x86_64",
-     ["8.0.34 linux-x86_64-ubuntu2204"]),
-    ({"ID": "pop", "ID_LIKE": "ubuntu debian", "VERSION_ID": "24.04", "UBUNTU_CODENAME": "noble"}, "x86_64",
-     ["8.0.34 linux-x86_64-ubuntu2404"]),
-    ({"ID": "debian", "VERSION_ID": "12"}, "x86_64", ["8.0.34 linux-x86_64-debian12"]),
-    ({"ID": "debian", "VERSION_ID": "12"}, "arm64", ["8.0.34 linux-aarch64-ubuntu2204"]),
-    ({"ID": "debian", "VERSION_ID": "13"}, "x86_64", ["8.0.34 linux-x86_64-debian12", "8.0.34 linux-x86_64-ubuntu2404"]),
-    ({"ID": "debian", "VERSION_ID": "11"}, "x86_64", ["7.0.45 linux-x86_64-debian11"]),
-    ({"ID": "kali", "ID_LIKE": "debian", "VERSION_ID": "2026.3"}, "x86_64",
-     ["8.0.34 linux-x86_64-debian12", "8.0.34 linux-x86_64-ubuntu2404"]),
-    ({"ID": "rhel", "VERSION_ID": "8.10"}, "x86_64", ["8.0.34 linux-x86_64-rhel8"]),
-    ({"ID": "rocky", "ID_LIKE": "rhel centos fedora", "VERSION_ID": "9.4"}, "arm64", ["8.0.34 linux-aarch64-rhel93"]),
-    ({"ID": "almalinux", "ID_LIKE": "rhel centos fedora", "VERSION_ID": "10.0"}, "x86_64", ["8.0.34 linux-x86_64-rhel10"]),
-    ({"ID": "centos", "ID_LIKE": "rhel fedora", "VERSION_ID": "7"}, "x86_64", ["7.0.45 linux-x86_64-rhel70"]),
-    ({"ID": "fedora", "VERSION_ID": "42"}, "x86_64", ["8.0.34 linux-x86_64-rhel93", "8.0.34 linux-x86_64-rhel10"]),
-    ({"ID": "amzn", "ID_LIKE": "centos rhel fedora", "VERSION_ID": "2023"}, "arm64", ["8.0.34 linux-aarch64-amazon2023"]),
-    ({"ID": "amzn", "ID_LIKE": "centos rhel fedora", "VERSION_ID": "2"}, "x86_64", ["7.0.45 linux-x86_64-amazon2"]),
-    ({"ID": "sles", "VERSION_ID": "15.6"}, "x86_64", ["8.0.34 linux-x86_64-suse15"]),
-    ({"ID": "sles", "VERSION_ID": "15.6"}, "arm64", []),
-    ({"ID": "arch"}, "x86_64", ["8.0.34 linux-x86_64-rhel93", "8.0.34 linux-x86_64-ubuntu2204"]),
-    ({"ID": "opensuse-tumbleweed", "ID_LIKE": "opensuse suse", "VERSION_ID": "20261020"}, "x86_64",
-     ["8.0.34 linux-x86_64-rhel93", "8.0.34 linux-x86_64-ubuntu2204"]),
-])
-def test_linux_mongodb_candidates(os_release, arch, expected):
-    builds, reason = it.mongodb_candidates(it.PlatformInfo("linux", arch, libc="glibc", os_release=os_release))
-    assert [f"{build.version} {build.key}" for build in builds] == expected
-    assert bool(reason) == (not expected)
-    for build in builds:
-        target = build.key.split("-", 2)[2]
-        assert build.url == f"https://fastdl.mongodb.org/linux/mongodb-{build.key}-{build.version}.tgz"
-        assert len(build.sha256) == 64 and target in build.url
-
-
-def test_every_pinned_mongodb_build_has_a_valid_url_and_hash():
-    for version, builds in it.MONGODB_SHA256.items():
-        for key, digest in builds.items():
-            build = it.mongo_build(version, key)
-            assert build.url.startswith("https://fastdl.mongodb.org/") and version in build.filename
-            assert len(digest) == 64 and int(digest, 16) >= 0
 
 
 @pytest.mark.parametrize("plat, name", [
@@ -205,59 +123,6 @@ def test_prebuilt_zlint_fallback_only_where_it_can_run(monkeypatch):
     assert it.prebuilt_zlint_available(it.PlatformInfo("macos", "arm64"))
     monkeypatch.setattr(it, "rosetta_installed", lambda: False)
     assert not it.prebuilt_zlint_available(it.PlatformInfo("macos", "arm64"))  # An Intel program needs Rosetta
-
-
-@pytest.mark.parametrize("arch, cpuinfo, supported", [
-    ("x86_64", "flags\t\t: fpu vme sse sse2 avx avx2\n", True),
-    ("x86_64", "flags\t\t: fpu vme sse sse2 sse4_2\n", False),
-    ("arm64", "Features\t: fp asimd evtstrm aes atomics\n", True),
-    ("arm64", "Features\t: fp asimd evtstrm crc32\n", False),
-    ("x86_64", "", True),  # Unknown: the start of mongod decides
-])
-def test_cpu_check_on_linux(arch, cpuinfo, supported):
-    assert it.cpu_supports_mongodb(it.PlatformInfo("linux", arch), cpuinfo=cpuinfo)[0] is supported
-
-
-def test_cpu_check_on_intel_mac():
-    plat = it.PlatformInfo("macos", "x86_64", mac_version=(14, 0))
-    assert it.cpu_supports_mongodb(plat, mac_features="FPU SSE AVX1.0 RDRAND")[0]
-    assert not it.cpu_supports_mongodb(plat, mac_features="FPU SSE SSE4.2")[0]
-
-
-def test_missing_vc_runtime(tmp_path):
-    (tmp_path / "vcruntime140.dll").write_bytes(b"")
-    assert it.missing_vc_runtime(tmp_path) == ["msvcp140.dll", "msvcp140_1.dll", "vcruntime140_1.dll"]
-
-
-@pytest.mark.parametrize("returncode, stderr, expected", [
-    (-4, "", "processor"),
-    (0xC0000135, "", "Visual C++"),
-    (127, "mongod: error while loading shared libraries: libcurl.so.4: cannot open shared object file", "libcurl.so.4"),
-    (1, "mongod: /lib64/libcurl.so.4: version `CURL_OPENSSL_4' not found (required by mongod)", "too old"),
-    (it.PROCESS_NOT_STARTED, "Permission denied", "cannot be started"),
-])
-def test_explain_mongod_failure(returncode, stderr, expected):
-    result = subprocess.CompletedProcess(["mongod"], returncode, "", stderr)
-    reason, hint = it.explain_mongod_failure(LINUX_X86, result)
-    assert expected in reason
-    assert hint
-
-
-def test_library_hint_names_the_package_manager():
-    rocky = it.PlatformInfo("linux", "x86_64", os_release={"ID": "rocky", "ID_LIKE": "rhel centos fedora"})
-    assert "apt install" in it._library_hint(LINUX_X86)
-    assert "dnf install" in it._library_hint(rocky)
-
-
-def test_newer_data_is_never_opened_by_an_older_mongodb(project):
-    ctx = make_context(project, manifest={"components": {"mongodb": {"status": "installed", "version": "8.0.34"}}})
-    (ctx.layout.mongodb_data / "WiredTiger").parent.mkdir(parents=True)
-    (ctx.layout.mongodb_data / "WiredTiger").write_text("WiredTiger\n")
-    older = [it.mongo_build(it.MONGODB_FALLBACK_VERSION, "macos-arm64")]
-    builds, reason = it.guard_data_version(ctx, older, "")
-    assert builds == [] and "newer" in reason
-    newer = [it.mongo_build(it.MONGODB_VERSION, "macos-arm64")]
-    assert it.guard_data_version(ctx, newer, "") == (newer, "")
 
 
 # --- Downloads and checksums ------------------------------------------------------------------------------------------
@@ -341,63 +206,6 @@ def test_fetch_bytes_retries(monkeypatch):
     assert it.fetch_bytes("https://x.invalid/list.json", "the list") == b"data"
 
 
-def test_http_range_reader_extracts_one_member_of_a_remote_zip(monkeypatch):
-    buffer = io.BytesIO()
-    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zipped:
-        zipped.writestr("mongodb-win32-x86_64-windows-8.0.34/bin/mongod.pdb", os.urandom(300_000))
-        zipped.writestr("mongodb-win32-x86_64-windows-8.0.34/bin/mongod.exe", b"MZ" + b"x" * 50_000)
-    archive = buffer.getvalue()
-
-    def server(url, headers=None):
-        start, end = (int(value) for value in headers["Range"].split("=")[1].split("-"))
-        return FakeResponse(archive[start:end + 1], 206, {"Content-Range": f"bytes {start}-{end}/{len(archive)}"})
-
-    monkeypatch.setattr(it, "_urlopen", server)
-    reader = it.HttpRangeReader.open("https://fastdl.invalid/mongodb.zip", block_size=16_384)
-    with zipfile.ZipFile(reader) as zipped:
-        member = next(info for info in zipped.infolist() if it.select_mongod(info.filename))
-        assert zipped.read(member) == b"MZ" + b"x" * 50_000
-    assert reader.fetched < len(archive) / 2  # The large .pdb was not downloaded
-
-
-def range_server(archive):
-    def server(url, headers=None):
-        start, end = (int(value) for value in headers["Range"].split("=")[1].split("-"))
-        return FakeResponse(archive[start:end + 1], 206, {"Content-Range": f"bytes {start}-{end}/{len(archive)}"})
-    return server
-
-
-def test_http_range_reader_fills_reads_across_blocks(monkeypatch):
-    data = bytes(range(256)) * 40
-    monkeypatch.setattr(it, "_urlopen", range_server(data))
-    reader = it.HttpRangeReader.open("https://x.invalid/file", block_size=1000)
-    reader.seek(990)
-    assert reader.read(2500) == data[990:3490]  # Crosses three blocks, in one read
-    reader.seek(len(data) - 5)
-    assert reader.read(100) == data[-5:] and reader.read(10) == b""
-
-
-def test_http_range_reader_reads_a_central_directory_larger_than_a_block(monkeypatch):
-    # zipfile reads the central directory with one read(): a short read made it fail with "Truncated central directory"
-    buffer = io.BytesIO()
-    with zipfile.ZipFile(buffer, "w") as zipped:
-        for number in range(400):
-            zipped.writestr(f"mongodb-win32-x86_64-windows-8.0.34/lib/file-with-a-long-name-{number:04d}.txt", b"x")
-        zipped.writestr("mongodb-win32-x86_64-windows-8.0.34/bin/mongod.exe", b"MZ server")
-    archive = buffer.getvalue()
-    monkeypatch.setattr(it, "_urlopen", range_server(archive))
-    reader = it.HttpRangeReader.open("https://fastdl.invalid/mongodb.zip", block_size=4096)
-    with zipfile.ZipFile(reader) as zipped:
-        member = next(info for info in zipped.infolist() if it.select_mongod(info.filename))
-        assert zipped.read(member) == b"MZ server"
-
-
-def test_http_range_reader_detects_servers_without_ranges(monkeypatch):
-    monkeypatch.setattr(it, "_urlopen", lambda url, headers=None: FakeResponse(b"whole file", 200))
-    with pytest.raises(it.RangeNotSupported):
-        it.HttpRangeReader.open("https://x.invalid/file.zip")
-
-
 # --- Archive extraction -----------------------------------------------------------------------------------------------
 
 def make_tar(path, members):
@@ -441,18 +249,6 @@ def test_extract_tar_refuses_paths_and_links_leaving_the_folder(tmp_path):
     with pytest.raises(it.InstallError):
         it.extract_archive(linked, tmp_path / "out2")
     assert not (tmp_path / "evil.txt").exists()
-
-
-def test_extract_only_mongod_from_a_mongodb_archive(tmp_path):
-    archive = make_tar(tmp_path / "mongodb.tgz", [
-        ("mongodb-macos-aarch64--8.0.34/LICENSE-Community.txt", b"license", 0o644),
-        ("mongodb-macos-aarch64--8.0.34/bin/mongod", b"server", 0o755),
-        ("mongodb-macos-aarch64--8.0.34/bin/mongos", b"router", 0o755),
-    ])
-    written = it.extract_archive(archive, tmp_path / "out", it.select_mongod)
-    assert written == [tmp_path / "out" / "bin" / "mongod"]
-    assert it.select_mongod("mongodb-win32-x86_64-windows-8.0.34\\bin\\mongod.exe") == "bin/mongod.exe"
-    assert it.select_mongod("mongodb-win32-x86_64-windows-8.0.34/bin/mongod.pdb") is None
 
 
 def test_damaged_archive_gives_a_clear_error(tmp_path):
@@ -556,43 +352,6 @@ def test_go_archive_is_kept_only_after_a_failed_build(project, monkeypatch, buil
     assert not ctx.layout.go_dir.exists()  # The toolchain and the caches are always removed
 
 
-@posix_only
-def test_installed_mongodb_is_skipped(project, monkeypatch):
-    ctx = make_context(project, plat=MACOS_ARM)
-    binary = fake_program(ctx.layout.mongod, "db version v8.0.34")
-    ctx.manifest = {"components": {"mongodb": {"status": "installed", "version": "8.0.34", "build": "macos-arm64",
-                                               "sha256": it.file_sha256(binary)}}}
-    monkeypatch.setattr(it, "_try_mongodb_build", lambda ctx, build: pytest.fail("MongoDB must not be reinstalled"))
-    assert it.mongodb_current(ctx) == "MongoDB 8.0.34 server"
-
-
-@posix_only
-def test_mongodb_install_tries_the_next_build_and_records_it(project, monkeypatch):
-    plat = it.PlatformInfo("linux", "x86_64", libc="glibc", os_release={"ID": "arch"})
-    ctx = make_context(project, plat=plat)
-    monkeypatch.setattr(it, "cpu_supports_mongodb", lambda plat: (True, ""))
-
-    def fetch(ctx, build, staging):
-        it.remove_tree(staging)
-        works = build.key.endswith("ubuntu2204")
-        return fake_program(staging / "bin" / "mongod", "db version v8.0.34" if works else "", 0 if works else 127)
-
-    monkeypatch.setattr(it, "_fetch_mongod", fetch)
-    it.install_mongodb(ctx)
-    entry = json.loads(ctx.layout.manifest.read_text())["components"]["mongodb"]
-    assert (entry["status"], entry["build"], entry["official_build"]) == ("installed", "linux-x86_64-ubuntu2204", False)
-    assert ctx.layout.mongod.is_file() and ctx.layout.mongodb_data.is_dir()
-    assert (ctx.layout.mongodb_dir / "VERSION").read_text().strip() == "8.0.34"
-
-
-def test_mongodb_unavailable_is_a_warning_with_a_way_out(project):
-    ctx = make_context(project, plat=it.PlatformInfo("linux", "x86_64", libc="musl", os_release={"ID": "alpine"}))
-    it.install_mongodb(ctx)
-    assert "[WARN]" in output_of(ctx) and "localhost:27017" in output_of(ctx)
-    assert component_status(ctx, "mongodb") == "unavailable"
-    assert it.check_mongodb(ctx).state == "warn"
-
-
 def component_status(ctx, name):
     return json.loads(ctx.layout.manifest.read_text())["components"][name]["status"]
 
@@ -636,9 +395,9 @@ def test_missing_log_list_is_downloaded_and_its_signature_checked(project, monke
 def test_force_keeps_a_valid_log_list_unless_it_is_named():
     everything = list(it.COMPONENT_NAMES)
     assert it.forced_components(False, everything, None) == frozenset()
-    assert it.forced_components(True, everything, None) == {"zlint", "mongodb"}
+    assert it.forced_components(True, everything, None) == {"zlint"}
     assert it.forced_components(True, ["log_list"], ["log_list"]) == {"log_list"}
-    assert it.parse_args(["--force"]).forced == {"zlint", "mongodb"}
+    assert it.parse_args(["--force"]).forced == {"zlint"}
 
 
 def project_log_list(ctx, logs=165):
@@ -700,14 +459,288 @@ def test_signature_check_with_google_key_rejects_garbage():
     assert not it.rsa_sha256_signature_valid(it.LOG_LIST_PUBLIC_KEY, b"{}", b"short")
 
 
+# --- ZLint from the project's release --------------------------------------------------------------------------------
+
+@pytest.mark.parametrize("plat, name", [
+    (MACOS_ARM, "zlint-macos-arm64"),
+    (LINUX_X86, "zlint-linux-x86_64"),
+    (it.PlatformInfo("windows", "arm64"), "zlint-windows-arm64.exe"),
+    (it.PlatformInfo("macos", "x86_64", mac_version=(12, 7)), None),   # Programs built with Go 1.27 need macOS 13
+    (it.PlatformInfo("linux", "riscv64"), None),
+])
+def test_zlint_release_asset(plat, name):
+    assert it.zlint_release_asset(plat) == name
+
+
+def test_every_release_asset_has_a_pinned_checksum():
+    for (system, arch), digest in it.ZLINT_BUILD_SHA256.items():
+        assert len(digest) == 64 and int(digest, 16) >= 0
+        assert it.zlint_release_asset(it.PlatformInfo(system, arch, mac_version=(26,))) is not None
+    assert it.ZLINT_RELEASE_URL.endswith(f"/releases/download/zlint-{it.ZLINT_VERSION}/")
+
+
+def use_release(monkeypatch, fetch):
+    monkeypatch.setattr(it, "install_release_zlint", REAL_INSTALL_RELEASE_ZLINT)
+    monkeypatch.setattr(it, "_fetch", fetch)
+    built = []
+    monkeypatch.setattr(it, "build_zlint", lambda ctx: built.append(True))
+    return built
+
+
+@posix_only
+def test_release_zlint_is_installed_when_it_is_the_pinned_build(project, monkeypatch):
+    ctx = make_context(project)
+    program = f"#!/bin/sh\necho 'ZLint version {it.ZLINT_VERSION}'\n".encode()
+    monkeypatch.setitem(it.ZLINT_BUILD_SHA256, ("linux", "x86_64"), sha256(program))
+    requested = []
+
+    def fetch(ui, url, part, label):
+        requested.append(url)
+        part.write_bytes(program)
+
+    built = use_release(monkeypatch, fetch)
+    it.install_zlint(ctx)
+    assert requested == [it.ZLINT_RELEASE_URL + "zlint-linux-x86_64"] and not built
+    entry = ctx.manifest["components"]["zlint"]
+    assert entry["source"] == "release" and entry["reference_build"] is True and entry["commit"] == it.ZLINT_COMMIT
+    assert os.access(ctx.layout.zlint, os.X_OK) and not (ctx.layout.tools / "zlint.new").exists()
+
+
+@posix_only
+def test_release_zlint_with_another_checksum_is_refused_and_built_instead(project, monkeypatch):
+    ctx = make_context(project)
+    built = use_release(monkeypatch, lambda ui, url, part, label: part.write_bytes(b"#!/bin/sh\necho changed\n"))
+    it.install_zlint(ctx)
+    assert built == [True]
+    assert "its SHA-256 differs from the pinned build" in output_of(ctx)
+    assert not ctx.layout.zlint.exists() and not (ctx.layout.tools / "zlint.new").exists()
+
+
+@posix_only
+def test_release_zlint_that_does_not_run_is_removed_and_built_instead(project, monkeypatch):
+    ctx = make_context(project)
+    program = b"#!/bin/sh\necho 'ZLint version v0.0.1'\n"
+    monkeypatch.setitem(it.ZLINT_BUILD_SHA256, ("linux", "x86_64"), sha256(program))
+    built = use_release(monkeypatch, lambda ui, url, part, label: part.write_bytes(program))
+    it.install_zlint(ctx)
+    assert built == [True] and not ctx.layout.zlint.exists()
+
+
+def test_unpublished_release_falls_back_to_the_build_at_once(project, monkeypatch):
+    ctx = make_context(project)
+    calls = []
+
+    def not_found(ui, url, part, label):
+        calls.append(url)
+        raise urllib.error.HTTPError(url, 404, "Not Found", {}, None)
+
+    built = use_release(monkeypatch, not_found)
+    it.install_zlint(ctx)
+    assert len(calls) == 1 and built == [True]   # No retries and no pauses for a release that does not exist
+    assert "it is not published yet" in output_of(ctx)
+
+
+# --- The unused parts of Python and the leftovers of older versions ---------------------------------------------------
+
+PYTHON_FILES = ("lib/python3.12/ensurepip/__init__.py", "lib/python3.12/idlelib/idle.py",
+                "lib/python3.12/tkinter/__init__.py", "lib/python3.12/turtledemo/demo.py", "lib/python3.12/turtle.py",
+                "lib/python3.12/lib-dynload/_tkinter.cpython-312-darwin.so", "lib/python3.12/site-packages/pip/x.py",
+                "lib/tcl9.0/init.tcl", "lib/tk9.0/tk.tcl", "lib/libtcl9.0.dylib", "lib/libtcl9tk9.0.dylib",
+                "lib/itcl4.3.8/itcl.tcl", "lib/thread3.0.6/thread.tcl", "include/python3.12/Python.h",
+                "share/man/man1/python3.1", "bin/pip3", "bin/idle3", "bin/2to3")
+PYTHON_KEPT = ("lib/python3.12/json/__init__.py", "lib/python3.12/lib-dynload/_ssl.cpython-312-darwin.so",
+               "lib/python3.12/site-packages/README.txt", "lib/pkgconfig/python3.pc", "lib/python3.12/os.py")
+
+
+def fake_python(base, linked):
+    """A Python installation laid out like python-build-standalone's on macOS and Linux."""
+    for name in PYTHON_FILES + PYTHON_KEPT + ("lib/libpython3.12.dylib",):
+        (base / name).parent.mkdir(parents=True, exist_ok=True)
+        (base / name).write_text(name)
+    (base / "bin" / "python3.12").write_bytes(b"\x7fELF..." + (b"libpython3.12.so.1.0" if linked else b"static"))
+    return base
+
+
+@pytest.mark.parametrize("linked", [False, True])
+def test_python_unused_files(tmp_path, linked):
+    base = fake_python(tmp_path / "cpython-3.12.13-macos-aarch64-none", linked)
+    unused = {path.relative_to(base).as_posix() for path in it.python_unused_files(base, windows=False, version=(3, 12))}
+    stdlib = "lib/python3.12/"
+    expected = {stdlib + "ensurepip", stdlib + "idlelib", stdlib + "tkinter", stdlib + "turtledemo", stdlib + "turtle.py",
+                stdlib + "lib-dynload/_tkinter.cpython-312-darwin.so", stdlib + "site-packages/pip", "lib/tcl9.0",
+                "lib/tk9.0", "lib/libtcl9.0.dylib", "lib/libtcl9tk9.0.dylib", "lib/itcl4.3.8", "lib/thread3.0.6",
+                "include", "share", "bin/pip3", "bin/idle3", "bin/2to3"}
+    if not linked:
+        expected.add("lib/libpython3.12.dylib")
+    assert unused == expected
+    assert not any(name.startswith(kept) for kept in PYTHON_KEPT + ("bin/python3.12",) for name in unused)
+
+
+def test_python_unused_files_on_windows(tmp_path):
+    for name in ("Lib/tkinter/__init__.py", "Lib/json/__init__.py", "DLLs/_tkinter.pyd", "DLLs/tcl86t.dll",
+                 "DLLs/_ssl.pyd", "tcl/tcl8.6/init.tcl", "include/Python.h", "libs/python312.lib",
+                 "Lib/site-packages/pip/x.py", "Scripts/pip.exe", "python312.dll"):
+        (tmp_path / name).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / name).write_text(name)
+    unused = {path.relative_to(tmp_path).as_posix() for path in it.python_unused_files(tmp_path, windows=True)}
+    assert unused == {"Lib/tkinter", "DLLs/_tkinter.pyd", "DLLs/tcl86t.dll", "tcl", "include", "libs",
+                      "Lib/site-packages/pip", "Scripts/pip.exe"}
+
+
+def python_check(monkeypatch, code, calls=None):
+    def check(ctx):
+        if calls is not None:
+            calls.append(sorted(p.name for p in (ctx.layout.tools / it.PRUNE_FOLDER).iterdir()))
+        if isinstance(code, BaseException):
+            raise code
+        return subprocess.CompletedProcess([], code, "", "ImportError: No module named 'something'")
+    monkeypatch.setattr(it, "python_works", check)
+
+
+def test_unused_parts_of_python_are_deleted_only_after_python_still_works(project, monkeypatch):
+    ctx = make_context(project)
+    base = fake_python(ctx.layout.python_dir / "cpython-3.12.13-macos-aarch64-none", linked=False)
+    calls = []
+    python_check(monkeypatch, 0, calls)
+    it.prune_python(ctx, base, (3, 12))
+    assert calls and it.PRUNE_RECORD in calls[0]          # Moved aside while the check ran
+    assert not any((base / name).exists() for name in PYTHON_FILES)
+    assert all((base / name).exists() for name in PYTHON_KEPT + ("bin/python3.12",))
+    assert not (ctx.layout.tools / it.PRUNE_FOLDER).exists()
+    assert "Removed" in output_of(ctx) and "never uses" in output_of(ctx)
+
+
+@pytest.mark.parametrize("failure", [1, KeyboardInterrupt()])
+def test_unused_parts_of_python_are_put_back_when_python_breaks(project, monkeypatch, failure):
+    ctx = make_context(project)
+    base = fake_python(ctx.layout.python_dir / "cpython-3.12.13-macos-aarch64-none", linked=False)
+    python_check(monkeypatch, failure)
+    if isinstance(failure, BaseException):
+        with pytest.raises(KeyboardInterrupt):
+            it.prune_python(ctx, base, (3, 12))
+    else:
+        it.prune_python(ctx, base, (3, 12))
+        assert "so they are kept" in output_of(ctx) and "ImportError" in output_of(ctx)
+    assert all((base / name).read_text() == name for name in PYTHON_FILES + ("lib/libpython3.12.dylib",))
+    assert not (ctx.layout.tools / it.PRUNE_FOLDER).exists()
+
+
+def test_what_a_killed_run_moved_aside_is_put_back(project):
+    ctx = make_context(project)
+    original = ctx.layout.python_dir / "cpython" / "lib" / "python3.12" / "tkinter"
+    folder = ctx.layout.tools / it.PRUNE_FOLDER
+    (folder / "0-tkinter").mkdir(parents=True)
+    (folder / "0-tkinter" / "__init__.py").write_text("tk")
+    original.parent.mkdir(parents=True)
+    (folder / it.PRUNE_RECORD).write_text(json.dumps([[str(original), str(folder / "0-tkinter")],
+                                                      [str(original.parent / "x"), str(folder / "1-x")]]))
+    it.prune_python(ctx)          # The Python of the tests is not the project's: only the restore happens
+    assert (original / "__init__.py").read_text() == "tk" and not folder.exists()
+
+
+def test_only_the_projects_own_python_is_ever_pruned(project, monkeypatch):
+    layout = make_context(project).layout
+    monkeypatch.setattr(sys, "base_prefix", str(project / "elsewhere"))
+    assert it.bundled_python(layout) is None
+    monkeypatch.setattr(sys, "base_prefix", str(layout.python_dir / "cpython-3.12.13-linux-x86_64-gnu"))
+    assert it.bundled_python(layout) == (layout.python_dir / "cpython-3.12.13-linux-x86_64-gnu").resolve()
+
+
+@posix_only
+def test_tree_size_counts_a_linked_file_once(tmp_path):
+    (tmp_path / "a").write_bytes(b"x" * 1000)
+    os.link(tmp_path / "a", tmp_path / "b")
+    (tmp_path / "c").symlink_to(tmp_path / "a")
+    assert it.tree_size(tmp_path) == 1000
+
+
+@pytest.mark.parametrize("success", [True, False])
+def test_leftovers_of_older_versions_are_removed(project, success):
+    ctx = make_context(project)
+    for folder in (ctx.layout.legacy_mongodb / "bin", ctx.layout.go_dir / "toolchain", ctx.layout.downloads):
+        folder.mkdir(parents=True)
+        (folder / "file").write_text("x")
+    it.remove_leftovers(ctx, success)
+    assert not ctx.layout.legacy_mongodb.exists()
+    # After a failed build the verified Go archive is kept for the next run
+    assert ctx.layout.go_dir.exists() != success and ctx.layout.downloads.exists() != success
+
+
+def test_bytecode_of_an_older_location_of_the_project_is_removed(project):
+    ctx = make_context(project)
+    cache = ctx.layout.pycache
+    current = cache.joinpath(*Path(os.path.realpath(project)).parts[1:]) / ".venv" / "x.cpython-312.pyc"
+    old = cache.joinpath(*Path(os.path.realpath(project)).parent.parts[1:]) / "old-copy" / ".venv" / "x.cpython-312.pyc"
+    elsewhere = cache / "somewhere" / "else.pyc"
+    for path in (current, old, elsewhere):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"bytecode")
+    it.remove_leftovers(ctx, True)
+    assert current.is_file() and not old.exists() and not elsewhere.exists()
+    assert "older location of the project" in output_of(ctx)
+    it.remove_leftovers(ctx, True)            # Nothing left to remove: the current bytecode stays
+    assert current.is_file()
+
+
+def old_mongodb_data(ctx):
+    data = ctx.layout.legacy_mongodb_data
+    data.mkdir(parents=True)
+    (data / "collection-0.wt").write_bytes(b"x" * 2048)
+    return data
+
+
+def test_old_mongodb_data_is_only_reported_without_a_terminal(project):
+    ctx = make_context(project)
+    data = old_mongodb_data(ctx)
+    it.remove_leftovers(ctx, True)
+    assert data.is_dir() and "ZLint results of an older version" in output_of(ctx) and "It is kept" in output_of(ctx)
+    row = it.check_legacy_data(ctx)
+    assert row.state == "warn" and str(data) in row.detail
+
+
+@pytest.mark.parametrize("answer", [True, False])
+def test_old_mongodb_data_is_deleted_only_when_the_user_says_so(project, monkeypatch, answer):
+    ctx = make_context(project)
+    data = old_mongodb_data(ctx)
+    questions = []
+    monkeypatch.setattr(ctx.ui, "confirm", lambda question: questions.append(question) or answer)
+    it.remove_leftovers(ctx, True)
+    assert len(questions) == 1 and str(data) in questions[0]
+    assert data.exists() != answer and (project / "data").exists() != answer
+    assert (it.check_legacy_data(ctx) is None) == answer
+
+
+def test_confirm_without_a_terminal_answers_no(monkeypatch):
+    monkeypatch.setattr("builtins.input", lambda prompt: pytest.fail("asked without a terminal"))
+    assert it.Ui(io.StringIO(), color=False).confirm("Delete?") is False
+
+
+def test_scan_file_can_be_compressed(project):
+    ctx = make_context(project)
+    (project / "res" / "certs_polito.json.zst").write_bytes(b"z")
+    status = it.check_scan_file(ctx)
+    assert status.state == "ok" and status.detail.startswith("res/certs_polito.json.zst") and not status.hint
+    (project / "res" / "certs_polito.json").write_text("{}\n")
+    status = it.check_scan_file(ctx)
+    assert status.detail.startswith("res/certs_polito.json (") and "also certs_polito.json.zst (not used)" in status.detail
+    assert "--compress_input" in status.hint
+
+
 # --- Command line and --check -----------------------------------------------------------------------------------------
 
 def test_select_components():
-    assert it.select_components(None, None) == ["zlint", "mongodb", "log_list"]
-    assert it.select_components(["mongodb,zlint"], None) == ["zlint", "mongodb"]
-    assert it.select_components(None, ["mongodb", "log-list"]) == ["zlint"]
+    assert it.select_components(None, None) == ["zlint", "log_list"]
+    assert it.select_components(["log-list,zlint"], None) == ["zlint", "log_list"]
+    assert it.select_components(None, ["log-list"]) == ["zlint"]
     with pytest.raises(SystemExit):
         it.parse_args(["--skip", "everything"])
+
+
+def test_the_old_mongodb_component_is_accepted_and_ignored():
+    """Commands written for older versions (--skip mongodb) keep working: MongoDB is simply no longer installed."""
+    assert it.select_components(None, ["mongodb"]) == ["zlint", "log_list"]
+    assert it.select_components(["zlint,mongo"], None) == ["zlint"]
+    assert it.parse_args(["--skip", "mongodb", "--force"]).forced == {"zlint"}
 
 
 @posix_only
@@ -718,11 +751,12 @@ def test_check_reports_every_component_and_fails_when_one_is_missing(project, mo
     status = it.main(["--check", "--project-dir", str(project)])
     output = capsys.readouterr().out
     assert status == 1
-    for row in ("Python", "Python packages", "sslyze", "ZLint", "MongoDB", "CT log list", "Scan file", "Disk space"):
+    for row in ("Python", "Python packages", "sslyze", "ZLint", "CT log list", "Scan file", "Disk space",
+                "Installation"):
         assert row in output
+    assert "MongoDB" not in output
     assert "[ OK ] ZLint" in output and it.ZLINT_VERSION in output
-    assert "[FAIL] MongoDB" in output and "What to do:" in output
-    assert "[FAIL] CT log list" in output
+    assert "[FAIL] CT log list" in output and "What to do:" in output
 
 
 @posix_only
@@ -732,20 +766,19 @@ def test_check_passes_when_everything_is_ready(project, monkeypatch, capsys):
     ctx.layout.log_list.write_text(json.dumps({"operators": [{"logs": [{}]}]}))
     (project / "dca").chmod(0o755)
     monkeypatch.setattr(it, "detect_platform", lambda: LINUX_X86)
-    monkeypatch.setattr(it, "mongodb_server_answers", lambda: True)  # The user's own MongoDB
     monkeypatch.setattr(it, "check_python", lambda ctx: it.Status("Python", "ok", "3.12"))
     monkeypatch.setattr(it, "check_packages", lambda ctx: it.Status("Python packages", "ok", "all"))
     assert it.main(["--check", "--project-dir", str(project)]) == 0
     output = capsys.readouterr().out
-    assert "a MongoDB server answers on localhost:27017" in output
+    assert "Installation" in output and ".tools 0 MB, .venv 0 MB" in output
     assert "Everything needed is ready." in output
 
 
 def test_check_with_skip_leaves_the_component_out(project, monkeypatch, capsys):
     monkeypatch.setattr(it, "detect_platform", lambda: LINUX_X86)
-    it.main(["--check", "--skip", "mongodb,zlint", "--project-dir", str(project)])
+    it.main(["--check", "--skip", "zlint", "--project-dir", str(project)])
     output = capsys.readouterr().out
-    assert "MongoDB" not in output and "ZLint" not in output and "CT log list" in output
+    assert "ZLint" not in output and "CT log list" in output
 
 
 def test_scan_file_hint_points_to_the_guide(project):
@@ -822,7 +855,8 @@ shell_only = pytest.mark.skipif(os.name == "nt" or not shutil.which("bash") or n
 def test_piped_install_sh_shows_its_help(tmp_path):
     result = piped_install_sh(tmp_path, tmp_path, ["--help"])
     assert result.returncode == 0
-    assert "--skip mongodb" in result.stdout and "DCA_INSTALL_DIR" in result.stdout
+    assert "--only zlint" in result.stdout and "DCA_INSTALL_DIR" in result.stdout
+    assert "mongo" not in result.stdout.lower()
 
 
 @shell_only
@@ -834,11 +868,11 @@ def test_piped_install_sh_inside_a_copy_updates_that_copy(tmp_path):
     copy = fake_project(tmp_path / "my copy", "res/certs_polito.json")
     (copy / "install.sh").unlink()
 
-    result = piped_install_sh(copy, tmp_path / "home", ["--skip", "mongodb"], DCA_ARCHIVE_URL=archive.as_uri())
+    result = piped_install_sh(copy, tmp_path / "home", ["--skip", "zlint"], DCA_ARCHIVE_URL=archive.as_uri())
 
     assert result.returncode == 0, result.stderr
     assert (copy / "UPDATED_MARKER.txt").is_file() and (copy / "res" / "certs_polito.json").is_file()
-    assert f"stub installer in {copy.resolve()} with: --skip mongodb" in result.stdout
+    assert f"stub installer in {copy.resolve()} with: --skip zlint" in result.stdout
     assert not (tmp_path / "home" / "DigitalCertiAnalytics").exists()
 
 
